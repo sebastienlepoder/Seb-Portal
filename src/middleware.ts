@@ -7,6 +7,11 @@ const PUBLIC_PATHS = ['/login', '/api/auth/login', '/api/webhook/urgent', '/_nex
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // Allow Docker healthcheck without authentication
+  if (pathname === "/api/health") {
+    return NextResponse.next();
+  }
+
   // Allow public paths
   if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
     return NextResponse.next();
