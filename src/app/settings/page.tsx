@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/usePortal';
 import { ArrowLeft, Shield, Key, Lock, QrCode, Check, X, Loader2 } from 'lucide-react';
+import { UpdatePanel } from '@/components/admin/UpdatePanel';
 
 export default function SettingsPage() {
   const { user, loading } = useAuth();
@@ -157,6 +158,13 @@ export default function SettingsPage() {
             </div>
           )}
         </section>
+
+        {/* Update Panel - Admin only */}
+        {user.role === 'admin' && (
+          <div className="mb-4">
+            <UpdatePanel csrfToken={user.csrfToken} />
+          </div>
+        )}
 
         {/* Microsoft Integration */}
         <section className="bg-portal-card border border-portal-border rounded-xl p-6">

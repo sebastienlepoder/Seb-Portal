@@ -21,6 +21,8 @@ services:
       - portal-icons:/app/public/icons/generated
       # Config file (editable on host)
       - ./config:/app/config:ro
+      # Update trigger/status files (for self-update feature)
+      - ./data:/data
     env_file:
       - .env
     environment:
