@@ -12,11 +12,11 @@ export async function GET(request: Request) {
       return NextResponse.json({ ok: false, error: 'Not authenticated' }, { status: 401 });
     }
 
-    const accessToken = (session as Record<string, unknown>).msftAccessToken as string;
+    const accessToken = session.msftAccessToken;
     if (!accessToken) {
       return NextResponse.json(
         { ok: false, error: 'Microsoft account not connected. Go to Settings to connect.' },
-        { status: 403 }
+        { status: 401 }
       );
     }
 
