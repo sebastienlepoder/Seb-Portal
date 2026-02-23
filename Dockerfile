@@ -37,6 +37,7 @@ COPY --from=builder /app/config ./config
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
+COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
 COPY --from=builder /app/node_modules/argon2 ./node_modules/argon2
 
 # Create data directory for SQLite
