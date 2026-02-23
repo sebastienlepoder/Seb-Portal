@@ -7,7 +7,7 @@ const SESSION_OPTIONS = {
   password: process.env.AUTH_SECRET || 'CHANGE_ME_GENERATE_A_RANDOM_64_CHAR_HEX_STRING_AT_LEAST_32',
   cookieName: 'lepoder_session',
   cookieOptions: {
-    secure: process.env.NODE_ENV === 'production',
+    secure: process.env.SESSION_COOKIE_SECURE === 'true',
     httpOnly: true,
     sameSite: 'lax' as const,
     maxAge: 60 * 60 * 24 * 7, // 7 days
