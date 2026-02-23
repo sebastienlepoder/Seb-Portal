@@ -159,6 +159,13 @@ export default function DashboardPage() {
             </a>
           )}
           <a
+            href="/settings"
+            className="flex items-center gap-2 px-3 py-2 text-xs text-portal-text-dim hover:text-portal-text hover:bg-portal-card-hover rounded-lg transition-colors"
+          >
+            <Settings className="h-3.5 w-3.5" />
+            Settings
+          </a>
+          <a
             href="/admin/reports"
             className="flex items-center gap-2 px-3 py-2 text-xs text-portal-text-dim hover:text-portal-text hover:bg-portal-card-hover rounded-lg transition-colors"
           >
