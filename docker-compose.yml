@@ -45,3 +45,11 @@ volumes:
 networks:
   portal-net:
     driver: bridge
+
+migrate:
+  build: .
+  env_file: .env
+  volumes:
+    - portal-data:/app/data
+    - portal-icons:/app/public/icons/generated
+  command: sh -lc "npx prisma db push"
