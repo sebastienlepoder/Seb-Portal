@@ -52,6 +52,11 @@ export interface SessionUser {
 export interface SessionData {
   user?: SessionUser;
   csrfToken?: string;
+
+  // Microsoft Graph (delegated OAuth tokens stored in session)
+  msftAccessToken?: string;
+  msftRefreshToken?: string;
+  msftExpiresAt?: number; // epoch ms
 }
 
 // ─── VPN Types ───────────────────────────────────────────────

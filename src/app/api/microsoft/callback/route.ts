@@ -56,8 +56,11 @@ export async function GET(request: Request) {
 
     // Store tokens securely in session (not in DB for delegated flow)
     // In production, encrypt tokens at rest
-    (session as Record<string, unknown>).msftAccessToken = tokens.access_token;
-    (session as Record<string, unknown>).msftRefreshToken = tokens.refresh_token;
+    session.msftAccessToken = tokens.access_token;
+    session.msftRefreshToken = tokens.refresh_token ?? undefined;
+    session.msftExpiresAt = tokens.expires_in
+      ? Date.now() + Number(tokens.expires_in) * 1000
+      : undefined;
     await session.save();
 
     return NextResponse.redirect(new URL('/settings?msft_connected=true', request.url));
