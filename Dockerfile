@@ -40,7 +40,8 @@ COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/node_modules ./node_modules
 
 # Create data directory for SQLite
-RUN mkdir -p /app/data /app/public/icons/generated && chown -R nextjs:nodejs /app/data /app/public/icons
+RUN mkdir -p /app/data /app/public/icons/generated \
+  && chown -R nextjs:nodejs /app/data /app/public/icons /app/node_modules /app/.next
 
 USER nextjs
 
