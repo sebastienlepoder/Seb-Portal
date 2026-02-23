@@ -35,6 +35,14 @@ services:
       timeout: 5s
       retries: 3
       start_period: 30s
+    migrate:
+      build: .
+      env_file: .env
+      volumes:
+        - portal-data:/app/data
+        - portal-icons:/app/public/icons/generated
+      command: sh -lc "npx prisma db push"
+
 
 volumes:
   portal-data:
