@@ -1,5 +1,7 @@
 {
   "compilerOptions": {
+    "target": "ES2018",
+    "downlevelIteration": true,
     "lib": ["dom", "dom.iterable", "esnext"],
     "allowJs": true,
     "skipLibCheck": true,
@@ -13,7 +15,8 @@
     "jsx": "preserve",
     "incremental": true,
     "plugins": [{ "name": "next" }],
-    "paths": {
+
+        "paths": {
       "@/*": ["./src/*"]
     }
   },
