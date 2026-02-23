@@ -1,0 +1,47 @@
+###############################################################
+# LEPODER Portal — Docker Compose
+# Deploy: docker compose up -d --build
+###############################################################
+
+version: "3.8"
+
+services:
+  portal:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: lepoder-portal
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      # Persist SQLite database
+      - portal-data:/app/data
+      # Persist generated icons
+      - portal-icons:/app/public/icons/generated
+      # Config file (editable on host)
+      - ./config:/app/config:ro
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=file:/app/data/portal.db
+    # If using Tailscale on host, use host network mode:
+    # network_mode: host
+    networks:
+      - portal-net
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/auth/me"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  portal-data:
+    driver: local
+  portal-icons:
+    driver: local
+
+networks:
+  portal-net:
+    driver: bridge

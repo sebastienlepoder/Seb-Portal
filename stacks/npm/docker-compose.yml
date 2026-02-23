@@ -1,0 +1,46 @@
+###############################################################
+# Nginx Proxy Manager Stack — Reverse Proxy + SSL
+#
+# Deploy on Synology:
+#   cd stacks/npm && docker compose up -d
+#
+# Access: http://synology-ip:81
+# Default login: admin@example.com / changeme
+#
+# Setup:
+# 1. Change default admin credentials immediately
+# 2. Add proxy hosts for:
+#    - lepoder.com -> portal container (port 3000)
+#    - n8n.lepoder.com -> n8n container (port 5678)
+# 3. Enable SSL with Let's Encrypt
+# 4. Force HTTPS redirect
+###############################################################
+
+version: "3.8"
+
+services:
+  npm:
+    image: jc21/nginx-proxy-manager:latest
+    container_name: nginx-proxy-manager
+    restart: unless-stopped
+    ports:
+      - "80:80"     # HTTP
+      - "443:443"   # HTTPS
+      - "81:81"     # Admin UI
+    volumes:
+      - npm-data:/data
+      - npm-letsencrypt:/etc/letsencrypt
+    environment:
+      DB_SQLITE_FILE: /data/database.sqlite
+    networks:
+      - proxy-net
+
+volumes:
+  npm-data:
+    driver: local
+  npm-letsencrypt:
+    driver: local
+
+networks:
+  proxy-net:
+    driver: bridge

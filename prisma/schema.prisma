@@ -1,0 +1,213 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Users & Auth ────────────────────────────────────────────
+
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  passwordHash  String
+  displayName   String?
+  role          String   @default("user") // admin | user
+  totpSecret    String?
+  totpEnabled   Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  sessions      Session[]
+  favorites     Favorite[]
+  notes         AiNote[]
+  aiThreads     AiThread[]
+  bookmarks     Bookmark[]
+  auditLogs     AuditLog[]
+  clickEvents   ClickEvent[]
+  urgentItems   UrgentItem[]
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  ipAddress String?
+  userAgent String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ─── Services ────────────────────────────────────────────────
+
+model Service {
+  id              String   @id @default(uuid())
+  slug            String   @unique
+  name            String
+  url             String
+  type            String   @default("external") // internal|external|github|email|remote|bookmark|tool|ai
+  description     String?
+  tags            String?  // JSON array
+  category        String   @default("Uncategorized")
+  section         String   @default("General")
+  openMode        String   @default("new_tab") // new_tab|iframe|modal|sidepanel
+  requiresVPN     Boolean  @default(false)
+  statusCheckUrl  String?
+  statusEnabled   Boolean  @default(true)
+  favoriteDefault Boolean  @default(false)
+  icon            String?  // path or URL
+  iconGenerated   Boolean  @default(false)
+  credentialsHint String?  // admin-only, never real secrets
+  sortOrder       Int      @default(0)
+  enabled         Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  favorites   Favorite[]
+  clickEvents ClickEvent[]
+  statusLogs  StatusLog[]
+}
+
+// ─── Favorites ───────────────────────────────────────────────
+
+model Favorite {
+  id        String   @id @default(uuid())
+  userId    String
+  serviceId String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, serviceId])
+}
+
+// ─── Status Logs ─────────────────────────────────────────────
+
+model StatusLog {
+  id        String   @id @default(uuid())
+  serviceId String
+  status    String   // green|yellow|red|gray
+  latencyMs Int?
+  message   String?
+  checkedAt DateTime @default(now())
+
+  service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@index([serviceId, checkedAt])
+}
+
+// ─── Audit Logs ──────────────────────────────────────────────
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  action    String   // login_success|login_fail|logout|admin_action|...
+  details   String?  // JSON
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([action, createdAt])
+}
+
+// ─── Click / Usage Events ────────────────────────────────────
+
+model ClickEvent {
+  id        String   @id @default(uuid())
+  userId    String
+  serviceId String
+  createdAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@index([serviceId, createdAt])
+  @@index([userId, createdAt])
+}
+
+// ─── AI Notes ────────────────────────────────────────────────
+
+model AiNote {
+  id        String   @id @default(uuid())
+  userId    String
+  title     String?
+  content   String
+  tags      String?  // JSON array
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ─── AI Chat Threads ─────────────────────────────────────────
+
+model AiThread {
+  id        String   @id @default(uuid())
+  userId    String
+  provider  String   // openai | anthropic
+  title     String?
+  messages  String   // JSON array of {role, content}
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ─── Bookmarks (imported) ────────────────────────────────────
+
+model Bookmark {
+  id        String   @id @default(uuid())
+  userId    String
+  title     String
+  url       String
+  folder    String?
+  icon      String?
+  tags      String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ─── Urgent Inbox Items ──────────────────────────────────────
+
+model UrgentItem {
+  id        String   @id @default(uuid())
+  userId    String?
+  source    String   @default("n8n") // n8n | manual
+  priority  String   @default("normal") // critical|high|normal|low
+  title     String
+  snippet   String?
+  actionUrl String?
+  done      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([done, createdAt])
+}
+
+// ─── Icon Cache ──────────────────────────────────────────────
+
+model IconCache {
+  id        String   @id @default(uuid())
+  key       String   @unique // domain or service slug
+  path      String   // file path on disk
+  provider  String   // cloud_api | fallback
+  createdAt DateTime @default(now())
+}
+
+// ─── App Settings ────────────────────────────────────────────
+
+model AppSetting {
+  key   String @id
+  value String
+}

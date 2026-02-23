@@ -1,0 +1,325 @@
+# ═══════════════════════════════════════════════════════════════
+# LEPODER Portal — Services Configuration
+# Edit this file and restart, or use Admin UI to manage services.
+# ═══════════════════════════════════════════════════════════════
+
+sections:
+  - Home Automation
+  - Business
+  - Banking & Markets
+  - Accounting
+  - Dev & Infra
+  - Loisirs / Personal
+  - AI
+  - Remote Access
+  - Email
+  - Bookmarks
+
+services:
+  # ─── Home Automation ────────────────────────────────────────
+  - id: homeassistant-local
+    name: Home Assistant (Local)
+    url: "http://homeassistant.local:8123/"
+    type: internal
+    description: Home automation hub — local access
+    tags: ["home", "automation", "iot", "smart-home"]
+    category: Smart Home
+    section: Home Automation
+    openMode: new_tab
+    requiresVPN: true
+    statusCheckUrl: "http://homeassistant.local:8123/api/"
+    favoriteDefault: true
+    sortOrder: 1
+
+  - id: homeassistant-cloud
+    name: Home Assistant (Cloud)
+    url: "https://28jpvxqomovzchbm1zuvz8pmztuzakhj.ui.nabu.casa"
+    type: external
+    description: Home Assistant via Nabu Casa cloud
+    tags: ["home", "automation", "cloud"]
+    category: Smart Home
+    section: Home Automation
+    openMode: new_tab
+    requiresVPN: false
+    favoriteDefault: false
+    sortOrder: 2
+
+  - id: flair
+    name: Flair
+    url: "https://my.flair.co/h/86770"
+    type: external
+    description: Smart vents and HVAC zoning
+    tags: ["hvac", "climate", "smart-home"]
+    category: Climate
+    section: Home Automation
+    openMode: new_tab
+    requiresVPN: false
+    sortOrder: 3
+
+  - id: pihole
+    name: Pi-hole
+    url: "http://pihole.local/admin/"
+    type: internal
+    description: DNS ad blocker and network monitor
+    tags: ["dns", "adblock", "network", "security"]
+    category: Network
+    section: Home Automation
+    openMode: new_tab
+    requiresVPN: true
+    statusCheckUrl: "http://pihole.local/admin/api.php"
+    sortOrder: 4
+
+  - id: router
+    name: Mon Router
+    url: "http://192.168.1.1"
+    type: internal
+    description: Home router admin panel
+    tags: ["network", "router", "admin"]
+    category: Network
+    section: Home Automation
+    openMode: new_tab
+    requiresVPN: true
+    sortOrder: 5
+    credentialsHint: "Default router login (DO NOT store real credentials here)"
+
+  # ─── Business ───────────────────────────────────────────────
+  - id: shopify-acrylic
+    name: Acrylic United States
+    url: "https://acrylicunitedstates.com"
+    type: external
+    description: Shopify storefront — acrylicunitedstates.com
+    tags: ["shopify", "ecommerce", "business"]
+    category: Storefront
+    section: Business
+    openMode: new_tab
+    requiresVPN: false
+    sortOrder: 1
+
+  - id: shopify-admin
+    name: Shopify Admin
+    url: "https://admin.shopify.com"
+    type: external
+    description: Shopify admin dashboard
+    tags: ["shopify", "admin", "orders"]
+    category: Operations
+    section: Business
+    openMode: new_tab
+    requiresVPN: false
+    sortOrder: 2
+
+  # ─── Banking & Markets ──────────────────────────────────────
+  - id: spy-tracker
+    name: "SPY / S&P 500"
+    url: "https://finance.yahoo.com/quote/SPY"
+    type: external
+    description: S&P 500 ETF tracker
+    tags: ["markets", "stocks", "spy", "finance"]
+    category: Markets
+    section: Banking & Markets
+    openMode: new_tab
+    requiresVPN: false
+    sortOrder: 1
+
+  - id: market-watchlist
+    name: Market Watchlist
+    url: "https://finance.yahoo.com/watchlists"
+    type: external
+    description: Custom market watchlist
+    tags: ["markets", "watchlist", "finance"]
+    category: Markets
+    section: Banking & Markets
+    openMode: new_tab
+    requiresVPN: false
+    sortOrder: 2
+
+  # ─── Accounting ─────────────────────────────────────────────
+  - id: quickbooks
+    name: QuickBooks
+    url: "https://app.qbo.intuit.com"
+    type: external
+    description: QuickBooks Online accounting
+    tags: ["accounting", "finance", "bookkeeping"]
+    category: Accounting
+    section: Accounting
+    openMode: new_tab
+    requiresVPN: false
+    sortOrder: 1
+
+  # ─── Dev & Infra ────────────────────────────────────────────
+  - id: n8n
+    name: n8n
+    url: "http://n8n.lepoder.com:5678"
+    type: internal
+    description: Workflow automation (Server n8n)
+    tags: ["automation", "workflow", "n8n", "nocode"]
+    category: Automation
+    section: Dev & Infra
+    openMode: new_tab
+    requiresVPN: true
+    statusCheckUrl: "http://n8n.lepoder.com:5678/healthz"
+    favoriteDefault: true
+    sortOrder: 1
+
+  - id: github
+    name: GitHub
+    url: "https://github.com"
+    type: github
+    description: Source code repositories
+    tags: ["git", "code", "dev", "github"]
+    category: Code
+    section: Dev & Infra
+    openMode: new_tab
+    requiresVPN: false
+    favoriteDefault: true
+    sortOrder: 2
+
+  - id: synology-dsm
+    name: Synology DSM
+    url: "https://synology.local:5001"
+    type: internal
+    description: Synology NAS management
+    tags: ["nas", "storage", "synology", "infra"]
+    category: Infrastructure
+    section: Dev & Infra
+    openMode: new_tab
+    requiresVPN: true
+    sortOrder: 3
+
+  - id: portainer
+    name: Portainer
+    url: "https://synology.local:9443"
+    type: internal
+    description: Docker container management
+    tags: ["docker", "containers", "devops"]
+    category: Infrastructure
+    section: Dev & Infra
+    openMode: new_tab
+    requiresVPN: true
+    sortOrder: 4
+
+  - id: node-red
+    name: Node-RED
+    url: "http://synology.local:1880"
+    type: internal
+    description: Flow-based programming for IoT
+    tags: ["iot", "automation", "flows"]
+    category: Automation
+    section: Dev & Infra
+    openMode: new_tab
+    requiresVPN: true
+    sortOrder: 5
+
+  - id: nginx-proxy-manager
+    name: Nginx Proxy Manager
+    url: "http://synology.local:81"
+    type: internal
+    description: Reverse proxy management
+    tags: ["proxy", "nginx", "ssl", "infra"]
+    category: Infrastructure
+    section: Dev & Infra
+    openMode: new_tab
+    requiresVPN: true
+    sortOrder: 6
+
+  # ─── Loisirs / Personal ────────────────────────────────────
+  - id: youtube
+    name: YouTube
+    url: "https://youtube.com"
+    type: external
+    description: Video streaming
+    tags: ["video", "entertainment", "loisirs"]
+    category: Entertainment
+    section: Loisirs / Personal
+    openMode: new_tab
+    requiresVPN: false
+    sortOrder: 1
+
+  - id: netflix
+    name: Netflix
+    url: "https://netflix.com"
+    type: external
+    description: Movie and TV streaming
+    tags: ["streaming", "entertainment", "loisirs"]
+    category: Entertainment
+    section: Loisirs / Personal
+    openMode: new_tab
+    requiresVPN: false
+    sortOrder: 2
+
+  # ─── AI ─────────────────────────────────────────────────────
+  - id: chatgpt
+    name: ChatGPT
+    url: "https://chatgpt.com"
+    type: ai
+    description: OpenAI ChatGPT assistant
+    tags: ["ai", "llm", "chatgpt", "openai"]
+    category: AI Assistants
+    section: AI
+    openMode: new_tab
+    requiresVPN: false
+    favoriteDefault: true
+    sortOrder: 1
+
+  - id: claude
+    name: Claude
+    url: "https://claude.ai"
+    type: ai
+    description: Anthropic Claude assistant
+    tags: ["ai", "llm", "claude", "anthropic"]
+    category: AI Assistants
+    section: AI
+    openMode: new_tab
+    requiresVPN: false
+    favoriteDefault: true
+    sortOrder: 2
+
+  # ─── Remote Access ──────────────────────────────────────────
+  - id: guacamole
+    name: Apache Guacamole
+    url: "http://synology.local:8080/guacamole"
+    type: remote
+    description: Browser-based remote desktop gateway (RDP/VNC/SSH)
+    tags: ["remote", "rdp", "vnc", "ssh", "guacamole"]
+    category: Remote Desktop
+    section: Remote Access
+    openMode: new_tab
+    requiresVPN: true
+    sortOrder: 1
+
+  - id: rustdesk
+    name: RustDesk
+    url: "https://rustdesk.com"
+    type: remote
+    description: Open-source remote desktop
+    tags: ["remote", "desktop", "rustdesk"]
+    category: Remote Desktop
+    section: Remote Access
+    openMode: new_tab
+    requiresVPN: false
+    sortOrder: 2
+    credentialsHint: "Store your RustDesk ID here for reference (admin-only)"
+
+  # ─── Email ──────────────────────────────────────────────────
+  - id: gmail
+    name: Gmail
+    url: "https://mail.google.com"
+    type: email
+    description: Google email
+    tags: ["email", "google", "gmail"]
+    category: Email
+    section: Email
+    openMode: new_tab
+    requiresVPN: false
+    sortOrder: 1
+
+  - id: outlook
+    name: Outlook / M365
+    url: "https://outlook.office365.com"
+    type: email
+    description: Microsoft Outlook and Office 365
+    tags: ["email", "microsoft", "outlook", "office"]
+    category: Email
+    section: Email
+    openMode: new_tab
+    requiresVPN: false
+    sortOrder: 2

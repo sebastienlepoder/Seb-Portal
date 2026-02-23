@@ -1,0 +1,16 @@
+node_modules/
+.next/
+out/
+dist/
+.env
+.env.local
+.env.production
+*.db
+*.db-journal
+data/
+public/icons/generated/
+.DS_Store
+Thumbs.db
+*.log
+coverage/
+.turbo/

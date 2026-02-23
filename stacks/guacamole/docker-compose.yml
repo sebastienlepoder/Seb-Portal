@@ -1,0 +1,65 @@
+###############################################################
+# Apache Guacamole Stack — Remote Desktop Gateway
+#
+# Deploy on Synology:
+#   cd stacks/guacamole && docker compose up -d
+#
+# Access: http://synology-ip:8080/guacamole
+# Default login: guacadmin / guacadmin (CHANGE IMMEDIATELY)
+#
+# Then add a tile in the portal config:
+#   url: http://synology.local:8080/guacamole
+#   requiresVPN: true
+###############################################################
+
+version: "3.8"
+
+services:
+  guacd:
+    image: guacamole/guacd:latest
+    container_name: guacd
+    restart: unless-stopped
+    networks:
+      - guac-net
+
+  guacamole-db:
+    image: postgres:15-alpine
+    container_name: guacamole-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: guacamole_db
+      POSTGRES_USER: guacamole_user
+      POSTGRES_PASSWORD: ${GUAC_DB_PASSWORD:-ChangeThisStrongPassword}
+    volumes:
+      - guacamole-db-data:/var/lib/postgresql/data
+      # Init script: generate with:
+      # docker run --rm guacamole/guacamole /opt/guacamole/bin/initdb.sh --postgresql > ./initdb.sql
+      - ./initdb.sql:/docker-entrypoint-initdb.d/initdb.sql:ro
+    networks:
+      - guac-net
+
+  guacamole:
+    image: guacamole/guacamole:latest
+    container_name: guacamole
+    restart: unless-stopped
+    depends_on:
+      - guacd
+      - guacamole-db
+    environment:
+      GUACD_HOSTNAME: guacd
+      POSTGRESQL_HOSTNAME: guacamole-db
+      POSTGRESQL_DATABASE: guacamole_db
+      POSTGRESQL_USER: guacamole_user
+      POSTGRESQL_PASSWORD: ${GUAC_DB_PASSWORD:-ChangeThisStrongPassword}
+    ports:
+      - "8080:8080"
+    networks:
+      - guac-net
+
+volumes:
+  guacamole-db-data:
+    driver: local
+
+networks:
+  guac-net:
+    driver: bridge

@@ -1,0 +1,40 @@
+{
+  "$schema": "MCP Servers Configuration — register MCP server endpoints here",
+  "servers": [
+    {
+      "id": "portal-builtin",
+      "name": "Portal Built-in Tools",
+      "url": "local://builtin",
+      "enabled": true,
+      "description": "Built-in portal tools: create tiles, trigger n8n, fetch Shopify metrics"
+    },
+    {
+      "id": "n8n-mcp",
+      "name": "n8n MCP Server",
+      "url": "http://n8n.lepoder.com:5678/mcp",
+      "enabled": false,
+      "description": "n8n workflow automation tools (scaffold — enable when n8n MCP server is deployed)"
+    },
+    {
+      "id": "shopify-mcp",
+      "name": "Shopify MCP Tool",
+      "url": "local://shopify",
+      "enabled": false,
+      "description": "Shopify store management tools (scaffold — enable when configured)"
+    },
+    {
+      "id": "onenote-mcp",
+      "name": "OneNote MCP Tool",
+      "url": "local://onenote",
+      "enabled": false,
+      "description": "OneNote note management via Microsoft Graph (scaffold)"
+    },
+    {
+      "id": "synology-mcp",
+      "name": "Synology Files MCP Tool",
+      "url": "local://synology",
+      "enabled": false,
+      "description": "Synology File Station browsing and search (scaffold)"
+    }
+  ]
+}
