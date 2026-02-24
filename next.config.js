@@ -21,7 +21,7 @@ const nextConfig = {
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: blob: https:",
               "font-src 'self' data:",
-              "connect-src 'self' https://api.openai.com https://api.anthropic.com https://*.nabu.casa wss: ws:",
+              "connect-src 'self' https://api.openai.com https://api.anthropic.com https://*.nabu.casa https://api.open-meteo.com https://geocoding-api.open-meteo.com https://openweathermap.org https://api.openweathermap.org wss: ws:",
               "frame-src 'self' https://chat.openai.com https://chatgpt.com https://claude.ai https://*.nabu.casa *",
               "frame-ancestors 'self'",
             ].join('; '),
