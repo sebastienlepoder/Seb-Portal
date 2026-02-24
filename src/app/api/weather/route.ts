@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import https from 'node:https';
 import { requireApiAuth } from '@/lib/auth';
 import type { WeatherData } from '@/types';
 
@@ -48,6 +49,32 @@ export async function GET() {
   }
 }
 
+// ── Native HTTPS helper (bypasses undici/fetch) ───────────────────────────────
+
+function httpsGet(url: string, timeoutMs = 8000): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const req = https.get(url, { family: 4, headers: { Accept: 'application/json', 'User-Agent': 'lepoder-portal/1.0' } }, (res) => {
+      if (res.statusCode && res.statusCode >= 400) {
+        res.resume();
+        reject(new Error(`HTTP ${res.statusCode}`));
+        return;
+      }
+      let raw = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => { raw += chunk; });
+      res.on('end', () => {
+        try { resolve(JSON.parse(raw)); }
+        catch { reject(new Error('Invalid JSON')); }
+      });
+    });
+    req.setTimeout(timeoutMs, () => {
+      req.destroy();
+      reject(new Error(`Request timed out after ${timeoutMs}ms`));
+    });
+    req.on('error', reject);
+  });
+}
+
 // ── Open-Meteo (free, no API key needed) ─────────────────────────────────────
 
 async function fetchOpenMeteo(): Promise<WeatherData | null> {
@@ -75,24 +102,19 @@ async function fetchOpenMeteo(): Promise<WeatherData | null> {
     `&wind_speed_unit=kmh` +
     `&timezone=auto`;
 
-  let res: Response;
+  let d: Record<string, unknown>;
   try {
-    res = await fetch(url, { signal: AbortSignal.timeout(6000) });
+    d = await httpsGet(url) as Record<string, unknown>;
   } catch (err) {
-    console.error('[weather] open-meteo fetch error:', err);
-    return null;
-  }
-  if (!res.ok) {
-    console.error('[weather] open-meteo HTTP error:', res.status, await res.text().catch(() => ''));
+    console.error('[weather] open-meteo fetch error:', (err as Error).message);
     return null;
   }
 
-  const d = await res.json();
   if (!d.current) {
     console.error('[weather] open-meteo missing current field:', JSON.stringify(d));
     return null;
   }
-  const c = d.current;
+  const c = d.current as Record<string, number>;
   const { condition, icon } = wmoToCondition(c.weather_code ?? 0);
 
   return {
@@ -111,9 +133,7 @@ async function fetchOpenMeteo(): Promise<WeatherData | null> {
 async function geocodeCity(name: string): Promise<{ lat: number; lon: number } | null> {
   try {
     const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=1&language=en&format=json`;
-    const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
-    if (!res.ok) return null;
-    const d = await res.json();
+    const d = await httpsGet(url, 5000) as { results?: { latitude: number; longitude: number }[] };
     const result = d.results?.[0];
     if (!result) return null;
     return { lat: result.latitude, lon: result.longitude };
@@ -150,18 +170,26 @@ async function fetchOpenWeatherMap(): Promise<WeatherData | null> {
   const location = process.env.WEATHER_LOCATION || 'New York,US';
   const url = `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(location)}&appid=${apiKey}&units=imperial`;
 
-  const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
-  if (!res.ok) return null;
+  let d: Record<string, unknown>;
+  try {
+    d = await httpsGet(url) as Record<string, unknown>;
+  } catch (err) {
+    console.error('[weather] openweathermap fetch error:', (err as Error).message);
+    return null;
+  }
 
-  const d = await res.json();
+  const main = d.main as Record<string, number>;
+  const wind = d.wind as Record<string, number>;
+  const weather = (d.weather as Record<string, unknown>[])?.[0] as Record<string, string> | undefined;
+
   return {
-    location: d.name,
-    temperature: Math.round(d.main.temp),
+    location: d.name as string,
+    temperature: Math.round(main.temp),
     unit: 'F',
-    condition: d.weather[0]?.description || 'Unknown',
-    icon: `https://openweathermap.org/img/wn/${d.weather[0]?.icon}@2x.png`,
-    humidity: d.main.humidity,
-    wind: Math.round(d.wind.speed),
+    condition: weather?.description || 'Unknown',
+    icon: weather?.icon ? `https://openweathermap.org/img/wn/${weather.icon}@2x.png` : '',
+    humidity: main.humidity,
+    wind: Math.round(wind.speed),
     updatedAt: new Date().toISOString(),
   };
 }
@@ -175,21 +203,43 @@ async function fetchHomeAssistant(): Promise<WeatherData | null> {
 
   if (!haUrl || !haToken) return null;
 
-  const res = await fetch(`${haUrl}/api/states/${entity}`, {
-    headers: { Authorization: `Bearer ${haToken}` },
-    signal: AbortSignal.timeout(5000),
-  });
-  if (!res.ok) return null;
+  // Home Assistant may be on HTTP or local network — use node https (or http for local)
+  const useHttps = haUrl.startsWith('https');
+  const mod = useHttps ? https : await import('node:http');
+  const fullUrl = `${haUrl}/api/states/${entity}`;
 
-  const d = await res.json();
+  const d = await new Promise<Record<string, unknown>>((resolve, reject) => {
+    const req = (mod as typeof https).get(
+      fullUrl,
+      { headers: { Authorization: `Bearer ${haToken}`, Accept: 'application/json' } },
+      (res) => {
+        let raw = '';
+        res.setEncoding('utf8');
+        res.on('data', (chunk) => { raw += chunk; });
+        res.on('end', () => {
+          try { resolve(JSON.parse(raw)); }
+          catch { reject(new Error('Invalid JSON')); }
+        });
+      }
+    );
+    req.setTimeout(5000, () => { req.destroy(); reject(new Error('timeout')); });
+    req.on('error', reject);
+  }).catch((err) => {
+    console.error('[weather] homeassistant fetch error:', (err as Error).message);
+    return null;
+  });
+
+  if (!d) return null;
+
+  const attrs = d.attributes as Record<string, unknown>;
   return {
-    location: d.attributes.friendly_name || 'Home',
-    temperature: Math.round(d.attributes.temperature),
-    unit: d.attributes.temperature_unit === '°C' ? 'C' : 'F',
-    condition: d.state,
+    location: (attrs.friendly_name as string) || 'Home',
+    temperature: Math.round(attrs.temperature as number),
+    unit: attrs.temperature_unit === '°C' ? 'C' : 'F',
+    condition: d.state as string,
     icon: '',
-    humidity: d.attributes.humidity,
-    wind: Math.round(d.attributes.wind_speed),
+    humidity: attrs.humidity as number,
+    wind: Math.round(attrs.wind_speed as number),
     updatedAt: new Date().toISOString(),
   };
 }
