@@ -21,10 +21,11 @@ export function WeatherWidget() {
   if (error) {
     return (
       <div className="bg-portal-card border border-portal-border rounded-xl p-4">
-        <div className="flex items-center gap-2 text-portal-muted text-sm">
+        <div className="flex items-center gap-2 text-portal-muted text-sm mb-1">
           <Cloud className="h-4 w-4" />
           <span>Weather unavailable</span>
         </div>
+        <p className="text-[10px] text-portal-muted/60 font-mono break-all">{error}</p>
       </div>
     );
   }
@@ -48,8 +49,11 @@ export function WeatherWidget() {
           <div className="text-sm text-portal-text-dim capitalize">{weather.condition}</div>
           <div className="text-xs text-portal-muted mt-1">{weather.location}</div>
         </div>
-        {weather.icon ? (
+        {weather.icon.startsWith('http') ? (
           <img src={weather.icon} alt={weather.condition} className="w-14 h-14 -mt-2" />
+        ) : weather.icon ? (
+          // Open-Meteo returns emoji icons
+          <span className="text-5xl leading-none -mt-2 select-none">{weather.icon}</span>
         ) : (
           <Thermometer className="h-10 w-10 text-portal-accent" />
         )}
@@ -61,7 +65,7 @@ export function WeatherWidget() {
         </div>
         <div className="flex items-center gap-1 text-xs text-portal-muted">
           <Wind className="h-3 w-3" />
-          {weather.wind} mph
+          {weather.wind} {weather.unit === 'C' ? 'km/h' : 'mph'}
         </div>
       </div>
     </div>

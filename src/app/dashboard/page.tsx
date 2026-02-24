@@ -28,6 +28,18 @@ import {
   Save,
   ChevronLeft,
   ChevronRight,
+  LayoutGrid,
+  Brain,
+  Calculator,
+  TrendingUp,
+  Briefcase,
+  Terminal,
+  Home,
+  Heart,
+  Globe,
+  Layers,
+  Database,
+  Activity,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -164,74 +176,97 @@ export default function DashboardPage() {
           </button>
         </div>
 
-        {/* Navigation — hidden when collapsed */}
-        {!sidebarCollapsed && (
-          <nav className="flex-1 overflow-y-auto py-2">
-            <SidebarButton
-              active={activeSection === 'all'}
-              onClick={() => { setActiveSection('all'); setSidebarOpen(false); }}
-              label="All Services"
-            />
-            <SidebarButton
-              active={activeSection === 'favorites'}
-              onClick={() => { setActiveSection('favorites'); setSidebarOpen(false); }}
-              label="Favorites"
-              icon={<Star className="h-3.5 w-3.5" />}
-              badge={favorites.length || undefined}
-            />
+        {/* Navigation — icons always visible, labels/badges hidden when collapsed */}
+        <nav className="flex-1 overflow-y-auto py-2">
+          <SidebarButton
+            collapsed={sidebarCollapsed}
+            active={activeSection === 'all'}
+            onClick={() => { setActiveSection('all'); setSidebarOpen(false); }}
+            label="All Services"
+            icon={<LayoutGrid className="h-3.5 w-3.5" />}
+          />
+          <SidebarButton
+            collapsed={sidebarCollapsed}
+            active={activeSection === 'favorites'}
+            onClick={() => { setActiveSection('favorites'); setSidebarOpen(false); }}
+            label="Favorites"
+            icon={<Star className="h-3.5 w-3.5" />}
+            badge={!sidebarCollapsed ? (favorites.length || undefined) : undefined}
+          />
 
+          {!sidebarCollapsed && (
             <div className="px-3 pt-4 pb-1">
               <div className="text-[10px] font-semibold text-portal-muted uppercase tracking-wider">
                 Sections
               </div>
             </div>
-            {sections.map((section) => (
-              <SidebarButton
-                key={section}
-                active={activeSection === section}
-                onClick={() => { setActiveSection(section); setSidebarOpen(false); }}
-                label={section}
-                badge={services.filter((s) => s.section === section).length}
-              />
-            ))}
-          </nav>
-        )}
+          )}
+          {sidebarCollapsed && <div className="h-1 border-t border-portal-border mx-2 mt-2 mb-1" />}
+          {sections.map((section) => (
+            <SidebarButton
+              key={section}
+              collapsed={sidebarCollapsed}
+              active={activeSection === section}
+              onClick={() => { setActiveSection(section); setSidebarOpen(false); }}
+              label={section}
+              icon={getSectionIcon(section)}
+              badge={!sidebarCollapsed ? services.filter((s) => s.section === section).length : undefined}
+            />
+          ))}
+        </nav>
 
-        {/* Bottom actions — hidden when collapsed */}
-        {!sidebarCollapsed && (
-          <div className="border-t border-portal-border p-3 space-y-1">
-            {user.role === 'admin' && (
-              <a
-                href="/admin/services"
-                className="flex items-center gap-2 px-3 py-2 text-xs font-medium text-portal-accent bg-portal-accent/10 hover:bg-portal-accent/20 rounded-lg transition-colors border border-portal-accent/20"
-              >
-                <Settings className="h-3.5 w-3.5" />
-                Gérer les services
-              </a>
+        {/* Bottom actions — icons always visible, labels hidden when collapsed */}
+        <div className={cn(
+          'border-t border-portal-border space-y-1',
+          sidebarCollapsed ? 'p-2 flex flex-col items-center' : 'p-3'
+        )}>
+          {user.role === 'admin' && (
+            <a
+              href="/admin/services"
+              title={sidebarCollapsed ? 'Gérer les services' : undefined}
+              className={cn(
+                'flex items-center rounded-lg transition-colors border border-portal-accent/20 text-portal-accent bg-portal-accent/10 hover:bg-portal-accent/20',
+                sidebarCollapsed ? 'p-2 justify-center' : 'gap-2 px-3 py-2 text-xs font-medium'
+              )}
+            >
+              <Settings className="h-3.5 w-3.5 shrink-0" />
+              {!sidebarCollapsed && 'Gérer les services'}
+            </a>
+          )}
+          <a
+            href="/settings"
+            title={sidebarCollapsed ? 'Settings' : undefined}
+            className={cn(
+              'flex items-center rounded-lg transition-colors text-portal-text-dim hover:text-portal-text hover:bg-portal-card-hover',
+              sidebarCollapsed ? 'p-2 justify-center' : 'gap-2 px-3 py-2 text-xs'
             )}
-            <a
-              href="/settings"
-              className="flex items-center gap-2 px-3 py-2 text-xs text-portal-text-dim hover:text-portal-text hover:bg-portal-card-hover rounded-lg transition-colors"
-            >
-              <Settings className="h-3.5 w-3.5" />
-              Settings
-            </a>
-            <a
-              href="/admin/reports"
-              className="flex items-center gap-2 px-3 py-2 text-xs text-portal-text-dim hover:text-portal-text hover:bg-portal-card-hover rounded-lg transition-colors"
-            >
-              <BarChart3 className="h-3.5 w-3.5" />
-              Reports
-            </a>
-            <button
-              onClick={logout}
-              className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
-            >
-              <LogOut className="h-3.5 w-3.5" />
-              Sign Out
-            </button>
-          </div>
-        )}
+          >
+            <Settings className="h-3.5 w-3.5 shrink-0" />
+            {!sidebarCollapsed && 'Settings'}
+          </a>
+          <a
+            href="/admin/reports"
+            title={sidebarCollapsed ? 'Reports' : undefined}
+            className={cn(
+              'flex items-center rounded-lg transition-colors text-portal-text-dim hover:text-portal-text hover:bg-portal-card-hover',
+              sidebarCollapsed ? 'p-2 justify-center' : 'gap-2 px-3 py-2 text-xs'
+            )}
+          >
+            <BarChart3 className="h-3.5 w-3.5 shrink-0" />
+            {!sidebarCollapsed && 'Reports'}
+          </a>
+          <button
+            onClick={logout}
+            title={sidebarCollapsed ? 'Sign Out' : undefined}
+            className={cn(
+              'flex items-center rounded-lg transition-colors text-red-400 hover:bg-red-500/10',
+              sidebarCollapsed ? 'p-2 justify-center' : 'w-full gap-2 px-3 py-2 text-xs'
+            )}
+          >
+            <LogOut className="h-3.5 w-3.5 shrink-0" />
+            {!sidebarCollapsed && 'Sign Out'}
+          </button>
+        </div>
       </aside>
 
       {/* Sidebar overlay */}
@@ -449,13 +484,32 @@ function SidebarButton({
   label,
   icon,
   badge,
+  collapsed,
 }: {
   active: boolean;
   onClick: () => void;
   label: string;
   icon?: React.ReactNode;
   badge?: number;
+  collapsed?: boolean;
 }) {
+  if (collapsed) {
+    return (
+      <button
+        onClick={onClick}
+        title={label}
+        className={cn(
+          'w-full flex items-center justify-center p-2 rounded-lg transition-colors',
+          active
+            ? 'bg-portal-accent/10 text-portal-accent'
+            : 'text-portal-muted hover:text-portal-text hover:bg-portal-card-hover'
+        )}
+      >
+        {icon ?? <Layers className="h-3.5 w-3.5" />}
+      </button>
+    );
+  }
+
   return (
     <button
       onClick={onClick}
@@ -473,6 +527,23 @@ function SidebarButton({
       )}
     </button>
   );
+}
+
+/** Maps section names (case-insensitive keywords) to a Lucide icon. */
+function getSectionIcon(section: string): React.ReactNode {
+  const s = section.toLowerCase();
+  if (/\bai\b|ml\b|intelligence|gpt|llm/.test(s)) return <Brain className="h-3.5 w-3.5" />;
+  if (/account|compt|finance|fiscal|budget/.test(s)) return <Calculator className="h-3.5 w-3.5" />;
+  if (/bank|market|invest|trading|bourse/.test(s)) return <TrendingUp className="h-3.5 w-3.5" />;
+  if (/business|work|projet|company/.test(s)) return <Briefcase className="h-3.5 w-3.5" />;
+  if (/dev|infra|code|tech|git|server/.test(s)) return <Terminal className="h-3.5 w-3.5" />;
+  if (/email|mail|message/.test(s)) return <Mail className="h-3.5 w-3.5" />;
+  if (/home|maison|domotique|automat/.test(s)) return <Home className="h-3.5 w-3.5" />;
+  if (/loisir|personal|perso|media|music|sport/.test(s)) return <Heart className="h-3.5 w-3.5" />;
+  if (/remote|access|vpn|network|tunnel/.test(s)) return <Globe className="h-3.5 w-3.5" />;
+  if (/storage|backup|nas|data/.test(s)) return <Database className="h-3.5 w-3.5" />;
+  if (/monitor|status|alert|uptime/.test(s)) return <Activity className="h-3.5 w-3.5" />;
+  return <Layers className="h-3.5 w-3.5" />;
 }
 
 function EmailDropdown({ services }: { services: ServiceData[] }) {

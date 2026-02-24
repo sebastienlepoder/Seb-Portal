@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/usePortal';
-import { ArrowLeft, Shield, Key, Lock, QrCode, Check, X, Loader2 } from 'lucide-react';
+import { Shield, Key, QrCode, Check, X, Loader2 } from 'lucide-react';
 import { UpdatePanel } from '@/components/admin/UpdatePanel';
+import { PortalShell } from '@/components/layout/PortalShell';
 
 export default function SettingsPage() {
   const { user, loading } = useAuth();
@@ -64,14 +65,10 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-portal-bg p-6">
+    <PortalShell activeItem="settings">
+    <div className="p-6">
       <div className="max-w-2xl mx-auto">
-        <div className="flex items-center gap-3 mb-6">
-          <a href="/dashboard" className="p-2 text-portal-muted hover:text-portal-text hover:bg-portal-card rounded-lg transition-colors">
-            <ArrowLeft className="h-4 w-4" />
-          </a>
-          <h1 className="text-xl font-bold text-portal-text">Settings</h1>
-        </div>
+        <h1 className="text-xl font-bold text-portal-text mb-6">Settings</h1>
 
         {/* Profile */}
         <section className="bg-portal-card border border-portal-border rounded-xl p-6 mb-4">
@@ -183,6 +180,7 @@ export default function SettingsPage() {
         </section>
       </div>
     </div>
+    </PortalShell>
   );
 }
 
