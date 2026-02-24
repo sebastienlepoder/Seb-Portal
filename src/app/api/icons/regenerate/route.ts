@@ -19,25 +19,32 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: 'Service not found' }, { status: 404 });
     }
 
-    // Try cloud API first
-    let iconUrl: string | null = null;
-    const domain = new URL(service.url).hostname;
+    // Extract domain (safe parse — some services may have invalid URLs)
+    let domain: string | undefined;
+    try { domain = new URL(service.url).hostname; } catch { /* keep undefined */ }
 
-    const cloudResult = await generateIconViaApi({
+    // Try brand icon first (Clearbit → Google Favicon → custom API)
+    const brandResult = await generateIconViaApi({
       name: service.name,
+      slug: service.slug,
       description: service.description || undefined,
       domain,
     });
 
-    if (cloudResult.success && cloudResult.url) {
-      iconUrl = cloudResult.url;
+    let iconUrl: string | null;
+    let provider: string;
+
+    if (brandResult.success && brandResult.url) {
+      iconUrl = brandResult.url;
+      provider = brandResult.provider || 'brand';
     } else {
-      // Fallback to local SVG
+      // Final fallback: deterministic SVG with initials
       iconUrl = await generateAndSaveFallback(
         service.slug,
         service.name,
         service.description || undefined
       );
+      provider = 'fallback';
     }
 
     await prisma.service.update({
@@ -48,7 +55,7 @@ export async function POST(request: Request) {
     await auditLog({
       userId: user.id,
       action: 'icon_regenerate',
-      details: { serviceId, provider: cloudResult.success ? 'cloud_api' : 'fallback' },
+      details: { serviceId, provider, domain },
       ipAddress: getClientIp(request),
     });
 

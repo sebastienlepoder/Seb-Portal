@@ -63,17 +63,20 @@ export function useServices() {
   const [services, setServices] = useState<ServiceData[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetch('/api/services')
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.ok) setServices(data.data);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+  const fetchServices = useCallback(async () => {
+    try {
+      const res = await fetch('/api/services');
+      const data = await res.json();
+      if (data.ok) setServices(data.data);
+    } catch {}
+    setLoading(false);
   }, []);
 
-  return { services, loading, setServices };
+  useEffect(() => {
+    fetchServices();
+  }, [fetchServices]);
+
+  return { services, loading, setServices, refetch: fetchServices };
 }
 
 // ─── Favorites Hook ──────────────────────────────────────────

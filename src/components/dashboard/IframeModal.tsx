@@ -2,19 +2,27 @@
 
 import { useState, useEffect } from 'react';
 import { X, ExternalLink, AlertTriangle } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 interface IframeModalProps {
   url: string;
   title: string;
   onClose: () => void;
+  /** When true, fills its parent container instead of covering the full screen */
+  inline?: boolean;
 }
 
-export function IframeModal({ url, title, onClose }: IframeModalProps) {
+export function IframeModal({ url, title, onClose, inline = false }: IframeModalProps) {
   const [blocked, setBlocked] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Timeout: if iframe doesn't load in 5s, likely blocked
+    // Reset state when URL changes
+    setBlocked(false);
+    setLoading(true);
+  }, [url]);
+
+  useEffect(() => {
     const timer = setTimeout(() => {
       if (loading) {
         setBlocked(true);
@@ -24,18 +32,15 @@ export function IframeModal({ url, title, onClose }: IframeModalProps) {
     return () => clearTimeout(timer);
   }, [loading]);
 
-  const handleLoad = () => {
-    setLoading(false);
-  };
-
-  const handleError = () => {
-    setBlocked(true);
-    setLoading(false);
-  };
+  const handleLoad = () => setLoading(false);
+  const handleError = () => { setBlocked(true); setLoading(false); };
 
   if (blocked) {
     return (
-      <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-fade-in">
+      <div className={cn(
+        'flex flex-col items-center justify-center p-6',
+        inline ? 'flex-1' : 'fixed inset-0 bg-black/60 z-50 animate-fade-in'
+      )}>
         <div className="bg-portal-card border border-portal-border rounded-xl p-6 max-w-md w-full">
           <div className="flex items-center gap-3 mb-4">
             <AlertTriangle className="h-6 w-6 text-amber-400" />
@@ -43,7 +48,6 @@ export function IframeModal({ url, title, onClose }: IframeModalProps) {
           </div>
           <p className="text-sm text-portal-text-dim mb-4">
             <strong>{title}</strong> blocks iframe embedding (X-Frame-Options or CSP).
-            Opening in a new tab instead.
           </p>
           <div className="flex gap-2">
             <a
@@ -68,26 +72,33 @@ export function IframeModal({ url, title, onClose }: IframeModalProps) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-50 flex flex-col animate-fade-in">
-      <div className="flex items-center justify-between p-3 bg-portal-card border-b border-portal-border">
-        <span className="text-sm font-medium text-portal-text">{title}</span>
-        <div className="flex items-center gap-2">
+    <div className={cn(
+      'flex flex-col',
+      inline ? 'flex-1 overflow-hidden' : 'fixed inset-0 bg-black/60 z-50 animate-fade-in'
+    )}>
+      {/* Title bar */}
+      <div className="shrink-0 flex items-center justify-between px-4 py-2.5 bg-portal-card border-b border-portal-border">
+        <span className="text-sm font-medium text-portal-text truncate">{title}</span>
+        <div className="flex items-center gap-1 shrink-0">
           <a
             href={url}
             target="_blank"
             rel="noopener noreferrer"
-            className="p-1.5 text-portal-muted hover:text-portal-text transition-colors"
+            className="p-1.5 text-portal-muted hover:text-portal-text hover:bg-portal-card-hover rounded-md transition-colors"
+            title="Open in new tab"
           >
             <ExternalLink className="h-4 w-4" />
           </a>
           <button
             onClick={onClose}
-            className="p-1.5 text-portal-muted hover:text-portal-text transition-colors"
+            className="p-1.5 text-portal-muted hover:text-portal-text hover:bg-portal-card-hover rounded-md transition-colors"
+            title="Close"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
       </div>
+      {/* Iframe */}
       <div className="flex-1 relative">
         {loading && (
           <div className="absolute inset-0 flex items-center justify-center bg-portal-bg">
@@ -99,7 +110,7 @@ export function IframeModal({ url, title, onClose }: IframeModalProps) {
           className="w-full h-full border-0"
           onLoad={handleLoad}
           onError={handleError}
-          sandbox="allow-same-origin allow-scripts allow-forms allow-popups"
+          sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox"
           title={title}
         />
       </div>

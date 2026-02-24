@@ -324,7 +324,16 @@ function ServiceEditorModal({
             />
           </div>
           <Field label="Status Check URL" value={form.statusCheckUrl} onChange={(v) => setForm({ ...form, statusCheckUrl: v })} placeholder="https://..." />
-          <div className="flex gap-4">
+          <div className="flex flex-wrap gap-4">
+            <label className="flex items-center gap-2 text-xs text-portal-text">
+              <input
+                type="checkbox"
+                checked={form.openMode === 'iframe' || form.openMode === 'modal'}
+                onChange={(e) => setForm({ ...form, openMode: e.target.checked ? 'iframe' : 'new_tab' })}
+                className="rounded"
+              />
+              Ouvrir dans une iframe
+            </label>
             <label className="flex items-center gap-2 text-xs text-portal-text">
               <input type="checkbox" checked={form.requiresVPN} onChange={(e) => setForm({ ...form, requiresVPN: e.target.checked })} className="rounded" />
               Requires VPN

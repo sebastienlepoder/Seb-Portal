@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
-import { useAuth, useServices, useFavorites, useStatuses } from '@/hooks/usePortal';
+import { useAuth, useServices, useFavorites, useStatuses, useApiCall } from '@/hooks/usePortal';
 import { ServiceTile } from '@/components/dashboard/ServiceTile';
 import { SearchBar } from '@/components/ui/SearchBar';
 import { VpnBadge, VpnBanner } from '@/components/ui/VpnBadge';
@@ -25,18 +25,24 @@ import {
   Mail,
   Wrench,
   Plus,
+  Save,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export default function DashboardPage() {
   const { user, loading: authLoading, logout } = useAuth();
-  const { services, loading: svcLoading } = useServices();
+  const { services, loading: svcLoading, refetch: refetchServices } = useServices();
   const { favoriteIds, toggleFavorite } = useFavorites(user?.csrfToken);
   const { statuses, vpnStatus } = useStatuses();
+  const apiCall = useApiCall(user?.csrfToken);
   const [activeSection, setActiveSection] = useState<string>('all');
+  const [editingService, setEditingService] = useState<ServiceData | null>(null);
   const [showAiPanel, setShowAiPanel] = useState(false);
   const [iframeModal, setIframeModal] = useState<{ url: string; title: string } | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showMcpPanel, setShowMcpPanel] = useState(false);
 
   // Redirect to login
@@ -89,6 +95,28 @@ export default function DashboardPage() {
     }
   };
 
+  const handleDelete = async (svcId: string) => {
+    if (!confirm('Supprimer ce service ?')) return;
+    await apiCall(`/api/services/${svcId}`, { method: 'DELETE' });
+    refetchServices();
+  };
+
+  const handleRegenerateIcon = async (svcId: string) => {
+    await apiCall('/api/icons/regenerate', {
+      method: 'POST',
+      body: JSON.stringify({ serviceId: svcId }),
+    });
+    refetchServices();
+  };
+
+  const handleAiSuggest = async (url: string) => {
+    const data = await apiCall('/api/ai/suggest', {
+      method: 'POST',
+      body: JSON.stringify({ url }),
+    });
+    return data.ok ? data.data : null;
+  };
+
   if (authLoading || svcLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-portal-bg">
@@ -104,83 +132,106 @@ export default function DashboardPage() {
       {/* Sidebar */}
       <aside
         className={cn(
-          'fixed lg:static inset-y-0 left-0 z-40 w-64 bg-portal-card border-r border-portal-border flex flex-col transition-transform lg:translate-x-0',
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+          'fixed lg:static inset-y-0 left-0 z-40 bg-portal-card border-r border-portal-border flex flex-col transition-all duration-200 lg:translate-x-0',
+          sidebarOpen ? 'translate-x-0' : '-translate-x-full',
+          sidebarCollapsed ? 'w-64 lg:w-12' : 'w-64'
         )}
       >
-        {/* Brand */}
-        <div className="p-4 border-b border-portal-border">
-          <div className="flex items-center gap-2">
-            <Shield className="h-6 w-6 text-portal-accent" />
-            <span className="text-lg font-bold text-portal-text">LEPODER</span>
-          </div>
-          <div className="text-xs text-portal-muted mt-0.5">Personal Portal</div>
-        </div>
-
-        {/* Navigation */}
-        <nav className="flex-1 overflow-y-auto py-2">
-          <SidebarButton
-            active={activeSection === 'all'}
-            onClick={() => { setActiveSection('all'); setSidebarOpen(false); }}
-            label="All Services"
-          />
-          <SidebarButton
-            active={activeSection === 'favorites'}
-            onClick={() => { setActiveSection('favorites'); setSidebarOpen(false); }}
-            label="Favorites"
-            icon={<Star className="h-3.5 w-3.5" />}
-            badge={favorites.length || undefined}
-          />
-
-          <div className="px-3 pt-4 pb-1">
-            <div className="text-[10px] font-semibold text-portal-muted uppercase tracking-wider">
-              Sections
+        {/* Brand + collapse toggle */}
+        <div className={cn(
+          'border-b border-portal-border flex items-center gap-2',
+          sidebarCollapsed ? 'p-2 justify-center flex-col' : 'p-4'
+        )}>
+          {!sidebarCollapsed && (
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <Shield className="h-6 w-6 text-portal-accent" />
+                <span className="text-lg font-bold text-portal-text">LEPODER</span>
+              </div>
+              <div className="text-xs text-portal-muted mt-0.5">Personal Portal</div>
             </div>
-          </div>
-          {sections.map((section) => (
-            <SidebarButton
-              key={section}
-              active={activeSection === section}
-              onClick={() => { setActiveSection(section); setSidebarOpen(false); }}
-              label={section}
-              badge={services.filter((s) => s.section === section).length}
-            />
-          ))}
-        </nav>
-
-        {/* Bottom actions */}
-        <div className="border-t border-portal-border p-3 space-y-1">
-          {user.role === 'admin' && (
-            <a
-              href="/admin/services"
-              className="flex items-center gap-2 px-3 py-2 text-xs font-medium text-portal-accent bg-portal-accent/10 hover:bg-portal-accent/20 rounded-lg transition-colors border border-portal-accent/20"
-            >
-              <Settings className="h-3.5 w-3.5" />
-              Gérer les services
-            </a>
           )}
-          <a
-            href="/settings"
-            className="flex items-center gap-2 px-3 py-2 text-xs text-portal-text-dim hover:text-portal-text hover:bg-portal-card-hover rounded-lg transition-colors"
-          >
-            <Settings className="h-3.5 w-3.5" />
-            Settings
-          </a>
-          <a
-            href="/admin/reports"
-            className="flex items-center gap-2 px-3 py-2 text-xs text-portal-text-dim hover:text-portal-text hover:bg-portal-card-hover rounded-lg transition-colors"
-          >
-            <BarChart3 className="h-3.5 w-3.5" />
-            Reports
-          </a>
+          {sidebarCollapsed && <Shield className="h-5 w-5 text-portal-accent" />}
           <button
-            onClick={logout}
-            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+            className="hidden lg:flex p-1 text-portal-muted hover:text-portal-text hover:bg-portal-card-hover rounded-md transition-colors shrink-0"
+            title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           >
-            <LogOut className="h-3.5 w-3.5" />
-            Sign Out
+            {sidebarCollapsed
+              ? <ChevronRight className="h-3.5 w-3.5" />
+              : <ChevronLeft className="h-3.5 w-3.5" />
+            }
           </button>
         </div>
+
+        {/* Navigation — hidden when collapsed */}
+        {!sidebarCollapsed && (
+          <nav className="flex-1 overflow-y-auto py-2">
+            <SidebarButton
+              active={activeSection === 'all'}
+              onClick={() => { setActiveSection('all'); setSidebarOpen(false); }}
+              label="All Services"
+            />
+            <SidebarButton
+              active={activeSection === 'favorites'}
+              onClick={() => { setActiveSection('favorites'); setSidebarOpen(false); }}
+              label="Favorites"
+              icon={<Star className="h-3.5 w-3.5" />}
+              badge={favorites.length || undefined}
+            />
+
+            <div className="px-3 pt-4 pb-1">
+              <div className="text-[10px] font-semibold text-portal-muted uppercase tracking-wider">
+                Sections
+              </div>
+            </div>
+            {sections.map((section) => (
+              <SidebarButton
+                key={section}
+                active={activeSection === section}
+                onClick={() => { setActiveSection(section); setSidebarOpen(false); }}
+                label={section}
+                badge={services.filter((s) => s.section === section).length}
+              />
+            ))}
+          </nav>
+        )}
+
+        {/* Bottom actions — hidden when collapsed */}
+        {!sidebarCollapsed && (
+          <div className="border-t border-portal-border p-3 space-y-1">
+            {user.role === 'admin' && (
+              <a
+                href="/admin/services"
+                className="flex items-center gap-2 px-3 py-2 text-xs font-medium text-portal-accent bg-portal-accent/10 hover:bg-portal-accent/20 rounded-lg transition-colors border border-portal-accent/20"
+              >
+                <Settings className="h-3.5 w-3.5" />
+                Gérer les services
+              </a>
+            )}
+            <a
+              href="/settings"
+              className="flex items-center gap-2 px-3 py-2 text-xs text-portal-text-dim hover:text-portal-text hover:bg-portal-card-hover rounded-lg transition-colors"
+            >
+              <Settings className="h-3.5 w-3.5" />
+              Settings
+            </a>
+            <a
+              href="/admin/reports"
+              className="flex items-center gap-2 px-3 py-2 text-xs text-portal-text-dim hover:text-portal-text hover:bg-portal-card-hover rounded-lg transition-colors"
+            >
+              <BarChart3 className="h-3.5 w-3.5" />
+              Reports
+            </a>
+            <button
+              onClick={logout}
+              className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+            >
+              <LogOut className="h-3.5 w-3.5" />
+              Sign Out
+            </button>
+          </div>
+        )}
       </aside>
 
       {/* Sidebar overlay */}
@@ -243,8 +294,18 @@ export default function DashboardPage() {
         </header>
 
         <div className="flex flex-1 min-h-0">
-          {/* Dashboard content */}
-          <div className="flex-1 overflow-y-auto p-4 lg:p-6">
+          {/* Inline iframe — replaces the grid when active, sidebar stays visible */}
+          {iframeModal && (
+            <IframeModal
+              url={iframeModal.url}
+              title={iframeModal.title}
+              onClose={() => setIframeModal(null)}
+              inline
+            />
+          )}
+
+          {/* Dashboard content — hidden while iframe is open */}
+          <div className={cn('flex-1 overflow-y-auto p-4 lg:p-6', iframeModal && 'hidden')}>
             <VpnBanner status={vpnStatus} />
 
             {/* Widgets Row */}
@@ -273,6 +334,9 @@ export default function DashboardPage() {
                       csrfToken={user.csrfToken}
                       onToggleFavorite={() => toggleFavorite(svc.id)}
                       onOpenService={() => openService(svc)}
+                      onEdit={() => setEditingService(svc)}
+                      onDelete={() => handleDelete(svc.id)}
+                      onRegenerateIcon={() => handleRegenerateIcon(svc.id)}
                     />
                   ))}
                 </div>
@@ -308,6 +372,9 @@ export default function DashboardPage() {
                       csrfToken={user.csrfToken}
                       onToggleFavorite={() => toggleFavorite(svc.id)}
                       onOpenService={() => openService(svc)}
+                      onEdit={() => setEditingService(svc)}
+                      onDelete={() => handleDelete(svc.id)}
+                      onRegenerateIcon={() => handleRegenerateIcon(svc.id)}
                     />
                   ))}
                 </div>
@@ -331,7 +398,7 @@ export default function DashboardPage() {
           </div>
 
           {/* Floating admin button */}
-          {user.role === 'admin' && !showAiPanel && !showMcpPanel && (
+          {user.role === 'admin' && !showAiPanel && !showMcpPanel && !iframeModal && (
             <a
               href="/admin/services"
               className="fixed bottom-6 right-6 flex items-center gap-2 px-4 py-3 bg-portal-accent hover:bg-portal-accent-dark text-white rounded-full shadow-lg shadow-portal-accent/20 transition-all hover:shadow-portal-accent/40 z-30"
@@ -343,14 +410,14 @@ export default function DashboardPage() {
           )}
 
           {/* AI Side Panel */}
-          {showAiPanel && (
+          {showAiPanel && !iframeModal && (
             <div className="w-80 xl:w-96 flex-shrink-0 animate-fade-in">
               <AiChatPanel csrfToken={user.csrfToken} onClose={() => setShowAiPanel(false)} />
             </div>
           )}
 
           {/* MCP Tools Panel */}
-          {showMcpPanel && (
+          {showMcpPanel && !iframeModal && (
             <McpToolsPanel
               csrfToken={user.csrfToken}
               isAdmin={user.role === 'admin'}
@@ -360,12 +427,14 @@ export default function DashboardPage() {
         </div>
       </main>
 
-      {/* Iframe Modal */}
-      {iframeModal && (
-        <IframeModal
-          url={iframeModal.url}
-          title={iframeModal.title}
-          onClose={() => setIframeModal(null)}
+      {/* Service Editor Modal */}
+      {editingService && (
+        <ServiceEditorModal
+          service={editingService}
+          csrfToken={user.csrfToken}
+          onClose={() => setEditingService(null)}
+          onSaved={() => { setEditingService(null); refetchServices(); }}
+          onAiSuggest={handleAiSuggest}
         />
       )}
     </div>
@@ -437,6 +506,181 @@ function EmailDropdown({ services }: { services: ServiceData[] }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function ServiceEditorModal({
+  service,
+  csrfToken,
+  onClose,
+  onSaved,
+  onAiSuggest,
+}: {
+  service: ServiceData;
+  csrfToken?: string;
+  onClose: () => void;
+  onSaved: () => void;
+  onAiSuggest: (url: string) => Promise<Record<string, unknown> | null>;
+}) {
+  const [form, setForm] = useState({
+    slug: service.slug || '',
+    name: service.name || '',
+    url: service.url || '',
+    type: service.type || 'external',
+    description: service.description || '',
+    tags: service.tags?.join(', ') || '',
+    section: service.section || 'General',
+    category: service.category || 'Uncategorized',
+    openMode: service.openMode || 'new_tab',
+    requiresVPN: service.requiresVPN || false,
+    statusCheckUrl: service.statusCheckUrl || '',
+    favoriteDefault: service.favoriteDefault || false,
+    credentialsHint: service.credentialsHint || '',
+    sortOrder: service.sortOrder || 0,
+  });
+  const [saving, setSaving] = useState(false);
+  const [suggesting, setSuggesting] = useState(false);
+
+  const handleAiSuggestClick = async () => {
+    if (!form.url) return;
+    setSuggesting(true);
+    const suggestion = await onAiSuggest(form.url);
+    if (suggestion) {
+      setForm((prev) => ({
+        ...prev,
+        name: (suggestion.name as string) || prev.name,
+        description: (suggestion.description as string) || prev.description,
+        tags: Array.isArray(suggestion.tags) ? suggestion.tags.join(', ') : prev.tags,
+        section: (suggestion.section as string) || prev.section,
+        category: (suggestion.category as string) || prev.category,
+        statusCheckUrl: (suggestion.statusCheckUrl as string) || prev.statusCheckUrl,
+      }));
+    }
+    setSuggesting(false);
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    const tags = form.tags.split(',').map((t) => t.trim()).filter(Boolean);
+    const body = { ...form, tags };
+    const res = await fetch(`/api/services/${service.id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
+      },
+      body: JSON.stringify(body),
+    });
+    if (res.ok) onSaved();
+    setSaving(false);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-fade-in">
+      <div className="bg-portal-card border border-portal-border rounded-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between p-4 border-b border-portal-border">
+          <h3 className="text-sm font-semibold text-portal-text">Edit Service</h3>
+          <button onClick={onClose} className="p-1 text-portal-muted hover:text-portal-text">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="p-4 space-y-3">
+          <EditorField label="URL" value={form.url} onChange={(v) => setForm({ ...form, url: v })} placeholder="https://..." />
+          <button
+            onClick={handleAiSuggestClick}
+            disabled={suggesting || !form.url}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-portal-accent/10 text-portal-accent rounded-lg hover:bg-portal-accent/20 transition-colors disabled:opacity-50"
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            {suggesting ? 'AI analyse...' : 'AI Suggest Fields'}
+          </button>
+          <div className="grid grid-cols-2 gap-3">
+            <EditorField label="Slug" value={form.slug} onChange={(v) => setForm({ ...form, slug: v })} />
+            <EditorField label="Name" value={form.name} onChange={(v) => setForm({ ...form, name: v })} />
+          </div>
+          <EditorField label="Description" value={form.description} onChange={(v) => setForm({ ...form, description: v })} />
+          <EditorField label="Tags (comma-separated)" value={form.tags} onChange={(v) => setForm({ ...form, tags: v })} />
+          <div className="grid grid-cols-2 gap-3">
+            <EditorField label="Section" value={form.section} onChange={(v) => setForm({ ...form, section: v })} />
+            <EditorField label="Category" value={form.category} onChange={(v) => setForm({ ...form, category: v })} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <EditorSelect label="Type" value={form.type} options={['internal', 'external', 'github', 'email', 'remote', 'bookmark', 'tool', 'ai']} onChange={(v) => setForm({ ...form, type: v })} />
+            <EditorSelect label="Open Mode" value={form.openMode} options={['new_tab', 'iframe', 'modal', 'sidepanel']} onChange={(v) => setForm({ ...form, openMode: v })} />
+          </div>
+          <EditorField label="Status Check URL" value={form.statusCheckUrl} onChange={(v) => setForm({ ...form, statusCheckUrl: v })} placeholder="https://..." />
+          <div className="flex flex-wrap gap-4">
+            <label className="flex items-center gap-2 text-xs text-portal-text">
+              <input
+                type="checkbox"
+                checked={form.openMode === 'iframe' || form.openMode === 'modal'}
+                onChange={(e) => setForm({ ...form, openMode: e.target.checked ? 'iframe' : 'new_tab' })}
+                className="rounded"
+              />
+              Ouvrir dans une iframe
+            </label>
+            <label className="flex items-center gap-2 text-xs text-portal-text">
+              <input type="checkbox" checked={form.requiresVPN} onChange={(e) => setForm({ ...form, requiresVPN: e.target.checked })} className="rounded" />
+              Requires VPN
+            </label>
+            <label className="flex items-center gap-2 text-xs text-portal-text">
+              <input type="checkbox" checked={form.favoriteDefault} onChange={(e) => setForm({ ...form, favoriteDefault: e.target.checked })} className="rounded" />
+              Default Favorite
+            </label>
+          </div>
+          {form.credentialsHint !== undefined && (
+            <EditorField label="Credentials Hint (admin-only)" value={form.credentialsHint} onChange={(v) => setForm({ ...form, credentialsHint: v })} />
+          )}
+          {form.credentialsHint && (
+            <div className="text-[10px] text-amber-400 flex items-center gap-1">
+              <Shield className="h-3 w-3" />
+              Warning: Do NOT store real passwords or secrets here.
+            </div>
+          )}
+        </div>
+        <div className="flex justify-end gap-2 p-4 border-t border-portal-border">
+          <button onClick={onClose} className="px-4 py-2 text-xs text-portal-text bg-portal-card border border-portal-border rounded-lg hover:bg-portal-card-hover">
+            Cancel
+          </button>
+          <button onClick={handleSave} disabled={saving} className="flex items-center gap-1.5 px-4 py-2 text-xs bg-portal-accent text-white rounded-lg hover:bg-portal-accent-dark disabled:opacity-50">
+            <Save className="h-3.5 w-3.5" />
+            {saving ? 'Saving...' : 'Save'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EditorField({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string }) {
+  return (
+    <div>
+      <label className="block text-[10px] font-medium text-portal-muted mb-1">{label}</label>
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="w-full bg-portal-bg border border-portal-border rounded-lg px-3 py-2 text-xs text-portal-text focus:outline-none focus:border-portal-accent/50"
+      />
+    </div>
+  );
+}
+
+function EditorSelect({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (v: string) => void }) {
+  return (
+    <div>
+      <label className="block text-[10px] font-medium text-portal-muted mb-1">{label}</label>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full bg-portal-bg border border-portal-border rounded-lg px-3 py-2 text-xs text-portal-text focus:outline-none focus:border-portal-accent/50"
+      >
+        {options.map((o) => (
+          <option key={o} value={o}>{o}</option>
+        ))}
+      </select>
     </div>
   );
 }
