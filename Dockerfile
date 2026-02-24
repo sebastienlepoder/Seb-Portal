@@ -3,7 +3,10 @@ FROM node:20-alpine AS deps
 RUN apk add --no-cache python3 make g++ linux-headers
 WORKDIR /app
 COPY package.json package-lock.json* ./
+# Force install all deps including devDependencies (needed for build)
+ENV NODE_ENV=development
 RUN npm ci --ignore-scripts
+ENV NODE_ENV=production
 # argon2 needs native build
 RUN npm rebuild argon2
 
