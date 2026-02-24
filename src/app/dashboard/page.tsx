@@ -24,6 +24,7 @@ import {
   ChevronDown,
   Mail,
   Wrench,
+  Plus,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -99,7 +100,7 @@ export default function DashboardPage() {
   if (!user) return null;
 
   return (
-    <div className="min-h-screen bg-portal-bg flex">
+    <div className="h-screen bg-portal-bg flex overflow-hidden">
       {/* Sidebar */}
       <aside
         className={cn(
@@ -152,10 +153,10 @@ export default function DashboardPage() {
           {user.role === 'admin' && (
             <a
               href="/admin/services"
-              className="flex items-center gap-2 px-3 py-2 text-xs text-portal-text-dim hover:text-portal-text hover:bg-portal-card-hover rounded-lg transition-colors"
+              className="flex items-center gap-2 px-3 py-2 text-xs font-medium text-portal-accent bg-portal-accent/10 hover:bg-portal-accent/20 rounded-lg transition-colors border border-portal-accent/20"
             >
               <Settings className="h-3.5 w-3.5" />
-              Admin
+              Gérer les services
             </a>
           )}
           <a
@@ -191,9 +192,9 @@ export default function DashboardPage() {
       )}
 
       {/* Main content */}
-      <main className="flex-1 min-w-0 flex flex-col">
+      <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
         {/* Header */}
-        <header className="sticky top-0 z-20 bg-portal-bg/80 backdrop-blur-lg border-b border-portal-border">
+        <header className="shrink-0 z-20 bg-portal-bg/80 backdrop-blur-lg border-b border-portal-border">
           <div className="flex items-center gap-3 px-4 py-3">
             <button
               onClick={() => setSidebarOpen(true)}
@@ -281,9 +282,20 @@ export default function DashboardPage() {
             {/* Services Grid */}
             {Array.from(groupedBySection.entries()).map(([section, svcs]) => (
               <div key={section} className="mb-6">
-                <h2 className="text-xs font-semibold text-portal-muted uppercase tracking-wider mb-3">
-                  {section}
-                </h2>
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="text-xs font-semibold text-portal-muted uppercase tracking-wider">
+                    {section}
+                  </h2>
+                  {user.role === 'admin' && (
+                    <a
+                      href="/admin/services"
+                      className="flex items-center gap-1 px-2 py-1 text-[10px] text-portal-accent hover:bg-portal-accent/10 rounded-md transition-colors border border-portal-accent/20"
+                    >
+                      <Plus className="h-3 w-3" />
+                      Ajouter
+                    </a>
+                  )}
+                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
                   {svcs.map((svc) => (
                     <ServiceTile
@@ -304,11 +316,31 @@ export default function DashboardPage() {
 
             {filtered.length === 0 && (
               <div className="text-center py-12 text-portal-muted">
-                <p className="text-lg">No services found</p>
-                <p className="text-sm mt-1">Try a different section or search</p>
+                <p className="text-lg">Aucun service trouvé</p>
+                {user.role === 'admin' && (
+                  <a
+                    href="/admin/services"
+                    className="inline-flex items-center gap-2 mt-4 px-4 py-2 bg-portal-accent hover:bg-portal-accent-dark text-white rounded-lg text-sm transition-colors"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Ajouter un service
+                  </a>
+                )}
               </div>
             )}
           </div>
+
+          {/* Floating admin button */}
+          {user.role === 'admin' && !showAiPanel && !showMcpPanel && (
+            <a
+              href="/admin/services"
+              className="fixed bottom-6 right-6 flex items-center gap-2 px-4 py-3 bg-portal-accent hover:bg-portal-accent-dark text-white rounded-full shadow-lg shadow-portal-accent/20 transition-all hover:shadow-portal-accent/40 z-30"
+              title="Gérer les services"
+            >
+              <Plus className="h-5 w-5" />
+              <span className="text-sm font-medium">Nouveau service</span>
+            </a>
+          )}
 
           {/* AI Side Panel */}
           {showAiPanel && (
