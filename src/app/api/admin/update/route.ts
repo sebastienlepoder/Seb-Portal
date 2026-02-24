@@ -42,7 +42,13 @@ export async function GET(req: NextRequest) {
       const versionFile = path.join(process.cwd(), '.version');
       currentVersion = (await fs.readFile(versionFile, 'utf-8')).trim();
     } catch {
-      console.log('No .version file found');
+      // Fallback: try git directly (works in dev)
+      try {
+        const { stdout } = await execAsync('git rev-parse --short HEAD');
+        currentVersion = stdout.trim();
+      } catch {
+        console.log('No .version file and git not available');
+      }
     }
 
     // Get latest version from GitHub API
