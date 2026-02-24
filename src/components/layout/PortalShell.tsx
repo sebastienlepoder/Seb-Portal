@@ -10,13 +10,14 @@ import {
   ChevronLeft,
   ChevronRight,
   Menu,
+  FolderGit2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface PortalShellProps {
   children: React.ReactNode;
   /** Highlights the matching nav item */
-  activeItem?: 'dashboard' | 'settings' | 'reports' | 'admin';
+  activeItem?: 'dashboard' | 'projects' | 'settings' | 'reports' | 'admin';
 }
 
 /**
@@ -89,6 +90,12 @@ export function PortalShell({ children, activeItem }: PortalShellProps) {
                 accent
               />
             )}
+            <NavLink
+              href="/projects"
+              active={activeItem === 'projects'}
+              label="Projets"
+              icon={<FolderGit2 className="h-3.5 w-3.5" />}
+            />
             <NavLink
               href="/settings"
               active={activeItem === 'settings'}
