@@ -160,7 +160,7 @@ export default function SettingsPage() {
         </section>
 
         {/* Update Panel - Admin only */}
-        {user.role === 'admin' && (
+        {user.role?.toLowerCase() === 'admin' && (
           <div className="mb-4">
             <UpdatePanel csrfToken={user.csrfToken} />
           </div>
