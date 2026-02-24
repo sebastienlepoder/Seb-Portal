@@ -15,6 +15,7 @@ import {
   Save,
   X,
   Shield,
+  HelpCircle,
 } from 'lucide-react';
 
 interface Service {
@@ -290,7 +291,14 @@ function ServiceEditorModal({
           </button>
         </div>
         <div className="p-4 space-y-3">
-          <Field label="URL" value={form.url} onChange={(v) => setForm({ ...form, url: v })} placeholder="https://..." />
+          <Field
+            label="URL"
+            value={form.url}
+            onChange={(v) => setForm({ ...form, url: v })}
+            placeholder="https://..."
+            required
+            tooltip="L'adresse web du service. C'est le lien principal utilisé pour accéder au service."
+          />
           <button
             onClick={handleAiSuggest}
             disabled={suggesting || !form.url}
@@ -300,14 +308,47 @@ function ServiceEditorModal({
             {suggesting ? 'AI analyzing...' : 'AI Suggest Fields'}
           </button>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Slug" value={form.slug} onChange={(v) => setForm({ ...form, slug: v })} placeholder="my-service" />
-            <Field label="Name" value={form.name} onChange={(v) => setForm({ ...form, name: v })} />
+            <Field
+              label="Slug"
+              value={form.slug}
+              onChange={(v) => setForm({ ...form, slug: v })}
+              placeholder="my-service"
+              tooltip="Identifiant unique du service pour les URLs (ex: mon-service). Généré automatiquement si vide."
+            />
+            <Field
+              label="Name"
+              value={form.name}
+              onChange={(v) => setForm({ ...form, name: v })}
+              required
+              tooltip="Le nom d'affichage du service tel qu'il apparaîtra dans le portail."
+            />
           </div>
-          <Field label="Description" value={form.description} onChange={(v) => setForm({ ...form, description: v })} />
-          <Field label="Tags (comma-separated)" value={form.tags} onChange={(v) => setForm({ ...form, tags: v })} />
+          <Field
+            label="Description"
+            value={form.description}
+            onChange={(v) => setForm({ ...form, description: v })}
+            tooltip="Une courte description du service. Affichée au survol de la tuile."
+          />
+          <Field
+            label="Tags (comma-separated)"
+            value={form.tags}
+            onChange={(v) => setForm({ ...form, tags: v })}
+            tooltip="Mots-clés pour faciliter la recherche (ex: monitoring, devops, infra). Séparez par des virgules."
+          />
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Section" value={form.section} onChange={(v) => setForm({ ...form, section: v })} />
-            <Field label="Category" value={form.category} onChange={(v) => setForm({ ...form, category: v })} />
+            <Field
+              label="Section"
+              value={form.section}
+              onChange={(v) => setForm({ ...form, section: v })}
+              required
+              tooltip="Groupe principal pour organiser le service dans le dashboard (ex: Infrastructure, DevOps)."
+            />
+            <Field
+              label="Category"
+              value={form.category}
+              onChange={(v) => setForm({ ...form, category: v })}
+              tooltip="Sous-catégorie pour un tri plus fin au sein de la section."
+            />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <SelectField
@@ -315,15 +356,24 @@ function ServiceEditorModal({
               value={form.type}
               options={['internal', 'external', 'github', 'email', 'remote', 'bookmark', 'tool', 'ai']}
               onChange={(v) => setForm({ ...form, type: v })}
+              required
+              tooltip="Type de service: internal (hébergé), external (tiers), github (repo), email, remote (SSH), bookmark, tool, ai."
             />
             <SelectField
               label="Open Mode"
               value={form.openMode}
               options={['new_tab', 'iframe', 'modal', 'sidepanel']}
               onChange={(v) => setForm({ ...form, openMode: v })}
+              tooltip="Comment ouvrir le service: new_tab (nouvel onglet), iframe (intégré), modal (popup), sidepanel (panneau latéral)."
             />
           </div>
-          <Field label="Status Check URL" value={form.statusCheckUrl} onChange={(v) => setForm({ ...form, statusCheckUrl: v })} placeholder="https://..." />
+          <Field
+            label="Status Check URL"
+            value={form.statusCheckUrl}
+            onChange={(v) => setForm({ ...form, statusCheckUrl: v })}
+            placeholder="https://..."
+            tooltip="URL pour vérifier si le service est en ligne. Laissez vide pour utiliser l'URL principale."
+          />
           <div className="flex flex-wrap gap-4">
             <label className="flex items-center gap-2 text-xs text-portal-text">
               <input
@@ -344,9 +394,10 @@ function ServiceEditorModal({
             </label>
           </div>
           <Field
-            label="Credentials Hint (admin-only, NEVER store real secrets)"
+            label="Credentials Hint"
             value={form.credentialsHint}
             onChange={(v) => setForm({ ...form, credentialsHint: v })}
+            tooltip="Indice pour les identifiants (visible par les admins uniquement). Ne JAMAIS stocker de vrais mots de passe ici."
           />
           {form.credentialsHint && (
             <div className="text-[10px] text-amber-400 flex items-center gap-1">
@@ -369,10 +420,21 @@ function ServiceEditorModal({
   );
 }
 
-function Field({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string }) {
+function Field({ label, value, onChange, placeholder, required, tooltip }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; required?: boolean; tooltip?: string }) {
   return (
     <div>
-      <label className="block text-[10px] font-medium text-portal-muted mb-1">{label}</label>
+      <label className="flex items-center gap-1.5 text-[10px] font-medium text-portal-muted mb-1">
+        {label}
+        {required && <span className="text-red-500">*</span>}
+        {tooltip && (
+          <span className="group relative">
+            <HelpCircle className="h-3 w-3 text-portal-muted hover:text-portal-accent cursor-help" />
+            <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1 hidden group-hover:block w-48 p-2 text-[10px] text-portal-text bg-portal-card border border-portal-border rounded-lg shadow-lg z-10">
+              {tooltip}
+            </span>
+          </span>
+        )}
+      </label>
       <input
         type="text"
         value={value}
@@ -384,10 +446,21 @@ function Field({ label, value, onChange, placeholder }: { label: string; value: 
   );
 }
 
-function SelectField({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (v: string) => void }) {
+function SelectField({ label, value, options, onChange, required, tooltip }: { label: string; value: string; options: string[]; onChange: (v: string) => void; required?: boolean; tooltip?: string }) {
   return (
     <div>
-      <label className="block text-[10px] font-medium text-portal-muted mb-1">{label}</label>
+      <label className="flex items-center gap-1.5 text-[10px] font-medium text-portal-muted mb-1">
+        {label}
+        {required && <span className="text-red-500">*</span>}
+        {tooltip && (
+          <span className="group relative">
+            <HelpCircle className="h-3 w-3 text-portal-muted hover:text-portal-accent cursor-help" />
+            <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1 hidden group-hover:block w-48 p-2 text-[10px] text-portal-text bg-portal-card border border-portal-border rounded-lg shadow-lg z-10">
+              {tooltip}
+            </span>
+          </span>
+        )}
+      </label>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
