@@ -9,10 +9,12 @@ RUN npm rebuild argon2
 
 # ── Stage 2: Build ────────────────────────────────────────────
 FROM node:20-alpine AS builder
-RUN apk add --no-cache python3 make g++ linux-headers
+RUN apk add --no-cache python3 make g++ linux-headers git
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# Store git version for runtime
+RUN git rev-parse --short HEAD > .version 2>/dev/null || echo "unknown" > .version
 # Generate Prisma client
 RUN npx prisma generate
 # Build Next.js
@@ -35,6 +37,7 @@ COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/config ./config
 COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/.version ./.version
 
 # ✅ Stable fix: include full node_modules so Prisma CLI works (c12/empathic/etc.)
 COPY --from=builder /app/node_modules ./node_modules

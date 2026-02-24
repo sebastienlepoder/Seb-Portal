@@ -27,7 +27,7 @@ interface UpdateStatus {
 export async function GET(req: NextRequest) {
   try {
     const user = await getSessionUser();
-    if (!user || user.role !== 'admin') {
+    if (!user || user.role?.toLowerCase() !== 'admin') {
       return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -37,30 +37,47 @@ export async function GET(req: NextRequest) {
     let updateAvailable = false;
     let changelog: string[] = [];
 
+    // Read current version from .version file (created at build time)
     try {
-      // Get current commit
-      const { stdout: currentCommit } = await execAsync('git rev-parse --short HEAD');
-      currentVersion = currentCommit.trim();
+      const versionFile = path.join(process.cwd(), '.version');
+      currentVersion = (await fs.readFile(versionFile, 'utf-8')).trim();
+    } catch {
+      console.log('No .version file found');
+    }
 
-      // Fetch latest from remote
-      await execAsync('git fetch origin main --quiet');
+    // Get latest version from GitHub API
+    const GITHUB_REPO = process.env.GITHUB_REPO || 'sebastienlepoder/lepoder-portal';
+    try {
+      const response = await fetch(
+        `https://api.github.com/repos/${GITHUB_REPO}/commits/main`,
+        { headers: { 'Accept': 'application/vnd.github.v3+json' }, next: { revalidate: 60 } }
+      );
+      if (response.ok) {
+        const data = await response.json();
+        latestVersion = data.sha?.substring(0, 7) || 'unknown';
+        
+        // Check if update available
+        updateAvailable = currentVersion !== 'unknown' && 
+                          latestVersion !== 'unknown' && 
+                          currentVersion !== latestVersion;
 
-      // Get remote commit
-      const { stdout: remoteCommit } = await execAsync('git rev-parse --short origin/main');
-      latestVersion = remoteCommit.trim();
-
-      updateAvailable = currentVersion !== latestVersion;
-
-      // Get changelog if update available
-      if (updateAvailable) {
-        const { stdout: log } = await execAsync(
-          `git log --oneline ${currentVersion}..origin/main --pretty=format:"%s" | head -10`
-        );
-        changelog = log.trim().split('\n').filter(Boolean);
+        // Get recent commits for changelog if update available
+        if (updateAvailable) {
+          const commitsRes = await fetch(
+            `https://api.github.com/repos/${GITHUB_REPO}/commits?per_page=10`,
+            { headers: { 'Accept': 'application/vnd.github.v3+json' } }
+          );
+          if (commitsRes.ok) {
+            const commits = await commitsRes.json();
+            changelog = commits
+              .map((c: any) => c.commit?.message?.split('\n')[0])
+              .filter(Boolean)
+              .slice(0, 10);
+          }
+        }
       }
-    } catch (gitError) {
-      console.error('Git error:', gitError);
-      // Git not available or not a git repo - check status file instead
+    } catch (githubError) {
+      console.error('GitHub API error:', githubError);
     }
 
     // Check for status from update script
@@ -96,7 +113,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const user = await getSessionUser();
-    if (!user || user.role !== 'admin') {
+    if (!user || user.role?.toLowerCase() !== 'admin') {
       return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
     }
 
