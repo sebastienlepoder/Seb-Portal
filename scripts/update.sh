@@ -46,7 +46,11 @@ if echo "$CHANGED_FILES" | grep -q "package.json\|pnpm-lock.yaml\|package-lock.j
     NEEDS_REBUILD=true
 fi
 
-# 4. Build and restart
+# 4. Create .version file for build (since .git is in .dockerignore)
+log "Creating .version file..."
+git rev-parse --short HEAD > .version
+
+# 5. Build and restart
 if [ "$NEEDS_REBUILD" = true ]; then
     log "Building Docker image (no cache)..."
     docker compose build --no-cache
@@ -58,13 +62,13 @@ fi
 log "Restarting containers..."
 docker compose up -d
 
-# 5. Run migrations if needed
+# 6. Run migrations if needed
 if echo "$CHANGED_FILES" | grep -q "prisma/"; then
     log "Database schema changed - running migrations..."
     docker compose run --rm portal npx prisma db push
 fi
 
-# 6. Cleanup
+# 7. Cleanup
 log "Cleaning up old images..."
 docker image prune -f
 

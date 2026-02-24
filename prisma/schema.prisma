@@ -211,3 +211,34 @@ model AppSetting {
   key   String @id
   value String
 }
+
+// ─── Projects ────────────────────────────────────────────────
+
+model Project {
+  id          String   @id @default(uuid())
+  slug        String   @unique
+  name        String
+  description String?
+  repoUrl     String?  // GitHub repo URL
+  status      String   @default("active") // active|paused|completed|archived
+  icon        String?  // emoji or icon path
+  color       String?  // accent color
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  sessions    ProjectSession[]
+}
+
+model ProjectSession {
+  id        String   @id @default(uuid())
+  projectId String
+  title     String
+  summary   String   // markdown content
+  date      DateTime @default(now())
+  tags      String?  // JSON array
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, date])
+}
