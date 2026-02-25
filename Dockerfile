@@ -40,14 +40,15 @@ COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/config ./config
 COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/projects ./projects
 COPY --from=builder /app/.version ./.version
 
 # ✅ Stable fix: include full node_modules so Prisma CLI works (c12/empathic/etc.)
 COPY --from=builder /app/node_modules ./node_modules
 
-# Create data directory for SQLite
-RUN mkdir -p /app/data /app/public/icons/generated \
-  && chown -R nextjs:nodejs /app/data /app/public/icons /app/node_modules /app/.next
+# Create data directory for SQLite and ensure projects is writable
+RUN mkdir -p /app/data /app/public/icons/generated /app/projects \
+  && chown -R nextjs:nodejs /app/data /app/public/icons /app/node_modules /app/.next /app/projects
 
 USER nextjs
 
