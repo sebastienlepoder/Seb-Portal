@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/usePortal';
+import PortalSidebar from '@/components/layout/PortalSidebar';
 import { 
-  ArrowLeft, 
   FolderGit2, 
   Plus, 
   ExternalLink,
@@ -58,6 +58,12 @@ export default function ProjectsPage() {
     }
   }, [user]);
 
+  const handleLogout = () => {
+    fetch('/api/auth/logout', { method: 'POST' }).then(() => {
+      window.location.href = '/login';
+    });
+  };
+
   if (loading || !user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-portal-bg">
@@ -67,17 +73,13 @@ export default function ProjectsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-portal-bg p-6">
-      <div className="max-w-6xl mx-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center gap-3">
-            <Link 
-              href="/dashboard" 
-              className="p-2 text-portal-muted hover:text-portal-text hover:bg-portal-card rounded-lg transition-colors"
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </Link>
+    <div className="h-screen bg-portal-bg flex overflow-hidden">
+      <PortalSidebar user={user} onLogout={handleLogout} />
+      
+      <div className="flex-1 overflow-y-auto p-6">
+        <div className="max-w-6xl mx-auto">
+          {/* Header */}
+          <div className="flex items-center justify-between mb-8">
             <div>
               <h1 className="text-2xl font-bold text-portal-text flex items-center gap-2">
                 <FolderGit2 className="h-6 w-6 text-portal-accent" />
@@ -85,18 +87,17 @@ export default function ProjectsPage() {
               </h1>
               <p className="text-sm text-portal-muted">Documentation et suivi des projets</p>
             </div>
+            
+            {user.role?.toLowerCase() === 'admin' && (
+              <Link
+                href="/projects/new"
+                className="flex items-center gap-2 px-4 py-2 bg-portal-accent hover:bg-portal-accent-dark text-white rounded-lg transition-colors text-sm"
+              >
+                <Plus className="h-4 w-4" />
+                Nouveau projet
+              </Link>
+            )}
           </div>
-          
-          {user.role?.toLowerCase() === 'admin' && (
-            <Link
-              href="/projects/new"
-              className="flex items-center gap-2 px-4 py-2 bg-portal-accent hover:bg-portal-accent-dark text-white rounded-lg transition-colors text-sm"
-            >
-              <Plus className="h-4 w-4" />
-              Nouveau projet
-            </Link>
-          )}
-        </div>
 
         {/* Projects Grid */}
         {loadingProjects ? (
@@ -177,6 +178,7 @@ export default function ProjectsPage() {
             })}
           </div>
         )}
+        </div>
       </div>
     </div>
   );
