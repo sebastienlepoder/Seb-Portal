@@ -67,7 +67,24 @@ export default function OneNoteWidget() {
       </div>
 
       {error && (
-        <p className="text-xs text-red-400 mb-2">{error}</p>
+        <div className="mb-2">
+          {error.includes('ONENOTE_LIMIT') ? (
+            <div className="text-xs text-amber-400 bg-amber-500/10 rounded-lg p-2">
+              <p className="font-medium">OneNote API unavailable</p>
+              <p className="text-[10px] mt-1 opacity-80">
+                {error.includes('5K') 
+                  ? 'Too many OneNote items (>5,000 notebooks/sections).' 
+                  : 'Too many files in OneDrive (>20,000 items).'}
+              </p>
+              <div className="flex gap-2 mt-1.5">
+                <a href="https://onenote.com" target="_blank" rel="noopener noreferrer" className="text-[10px] underline hover:no-underline">Open OneNote →</a>
+                <a href="https://github.com/OneNoteDev/OneNoteAPIDiagnostics/tree/master/Tool" target="_blank" rel="noopener noreferrer" className="text-[10px] underline hover:no-underline">Diagnostic tool</a>
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs text-red-400">{error}</p>
+          )}
+        </div>
       )}
 
       <div className="space-y-2">

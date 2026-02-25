@@ -132,8 +132,23 @@ export async function graphApi<T>(
   });
 
   if (!res.ok) {
-    const error = await res.text();
-    throw new Error(`Graph API error (${res.status}): ${error}`);
+    const errorText = await res.text();
+    
+    // Handle OneNote/SharePoint item limitations
+    // 10008: >5,000 OneNote items (notebooks, sections, section groups)
+    // 10013: >20,000 total items in document library
+    if (res.status === 403 && errorText.includes('10008')) {
+      const err = new Error('ONENOTE_LIMIT_5K: Your OneDrive has >5,000 OneNote items. Use the Microsoft diagnostic tool to reduce items.');
+      (err as Error & { code: string }).code = 'ONENOTE_TOO_MANY_ITEMS';
+      throw err;
+    }
+    if (res.status === 403 && errorText.includes('10013')) {
+      const err = new Error('ONENOTE_LIMIT_20K: Your OneDrive has >20,000 total items and cannot be indexed. Reduce files/folders or use the diagnostic tool.');
+      (err as Error & { code: string }).code = 'ONENOTE_TOO_MANY_ITEMS';
+      throw err;
+    }
+    
+    throw new Error(`Graph API error (${res.status}): ${errorText}`);
   }
 
   // Handle 204 No Content

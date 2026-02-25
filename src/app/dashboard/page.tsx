@@ -42,6 +42,7 @@ import {
   Layers,
   Database,
   Activity,
+  FolderGit2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -194,6 +195,28 @@ export default function DashboardPage() {
             label="Favorites"
             icon={<Star className="h-3.5 w-3.5" />}
             badge={!sidebarCollapsed ? (favorites.length || undefined) : undefined}
+          />
+
+          {/* Quick Access Links */}
+          {!sidebarCollapsed && (
+            <div className="px-3 pt-4 pb-1">
+              <div className="text-[10px] font-semibold text-portal-muted uppercase tracking-wider">
+                Quick Access
+              </div>
+            </div>
+          )}
+          {sidebarCollapsed && <div className="h-1 border-t border-portal-border mx-2 mt-2 mb-1" />}
+          <SidebarLink
+            collapsed={sidebarCollapsed}
+            href="/mail"
+            label="Mail"
+            icon={<Mail className="h-3.5 w-3.5" />}
+          />
+          <SidebarLink
+            collapsed={sidebarCollapsed}
+            href="/projects"
+            label="Projects"
+            icon={<FolderGit2 className="h-3.5 w-3.5" />}
           />
 
           {!sidebarCollapsed && (
@@ -530,6 +553,40 @@ function SidebarButton({
         <span className="text-[10px] bg-portal-border px-1.5 py-0.5 rounded">{badge}</span>
       )}
     </button>
+  );
+}
+
+function SidebarLink({
+  href,
+  label,
+  icon,
+  collapsed,
+}: {
+  href: string;
+  label: string;
+  icon?: React.ReactNode;
+  collapsed?: boolean;
+}) {
+  if (collapsed) {
+    return (
+      <a
+        href={href}
+        title={label}
+        className="w-full flex items-center justify-center p-2 rounded-lg transition-colors text-portal-muted hover:text-portal-text hover:bg-portal-card-hover"
+      >
+        {icon ?? <Layers className="h-3.5 w-3.5" />}
+      </a>
+    );
+  }
+
+  return (
+    <a
+      href={href}
+      className="flex items-center gap-2 px-3 py-2 mx-2 rounded-lg text-xs transition-colors text-portal-text-dim hover:text-portal-text hover:bg-portal-card-hover"
+    >
+      {icon}
+      <span className="flex-1 text-left truncate">{label}</span>
+    </a>
   );
 }
 

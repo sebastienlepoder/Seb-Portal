@@ -146,7 +146,7 @@ export default function MailPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-portal-bg flex">
+    <div className="h-screen bg-portal-bg flex overflow-hidden">
       {/* Portal Sidebar */}
       <PortalSidebar user={user} onLogout={logout} />
 

@@ -5,7 +5,6 @@ import { usePathname } from 'next/navigation';
 import {
   LayoutGrid,
   Mail,
-  BookOpen,
   FolderGit2,
   Settings,
   LogOut,
@@ -26,7 +25,6 @@ interface PortalSidebarProps {
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutGrid },
   { href: '/mail', label: 'Mail', icon: Mail },
-  { href: '/onenote', label: 'OneNote', icon: BookOpen },
   { href: '/projects', label: 'Projects', icon: FolderGit2 },
 ];
 
@@ -39,7 +37,7 @@ export default function PortalSidebar({ user, onLogout }: PortalSidebarProps) {
   const pathname = usePathname();
 
   return (
-    <div className="w-16 lg:w-56 bg-portal-card border-r border-portal-border flex flex-col flex-shrink-0">
+    <div className="w-16 lg:w-56 h-full bg-portal-card border-r border-portal-border flex flex-col flex-shrink-0 overflow-y-auto">
       {/* Logo */}
       <div className="p-4 border-b border-portal-border">
         <Link href="/dashboard" className="flex items-center gap-2">
