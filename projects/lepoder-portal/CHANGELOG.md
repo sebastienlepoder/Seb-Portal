@@ -1,5 +1,24 @@
 # 📝 Changelog - LEPODER Portal
 
+## [2026-02-25]
+
+### Added
+- 🔗 Unified sidebar navigation across all pages
+- 📧 Full Mail page with compose, folders, search
+- 📁 Projects page with consistent navigation
+- 📋 README.md for project documentation
+
+### Fixed
+- 🐛 Navbar scrolling on mail/projects pages
+- 🐛 SQLite concurrent write timeouts (batch inserts)
+- 🐛 OneNote 5K/20K API limit handling with friendly errors
+
+### Changed
+- 🎨 MainSidebar component used everywhere
+- 🔧 OneNote removed from nav (API limitation)
+
+---
+
 ## [2026-02-24]
 
 ### Added
