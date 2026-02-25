@@ -8,6 +8,8 @@ import { VpnBadge, VpnBanner } from '@/components/ui/VpnBadge';
 import { WeatherWidget } from '@/components/widgets/WeatherWidget';
 import { MarketsWidget } from '@/components/widgets/MarketsWidget';
 import { UrgentInboxWidget } from '@/components/widgets/UrgentInboxWidget';
+import OneNoteWidget from '@/components/widgets/OneNoteWidget';
+import OutlookWidget from '@/components/widgets/OutlookWidget';
 import { AiChatPanel } from '@/components/ai/AiChatPanel';
 import { IframeModal } from '@/components/dashboard/IframeModal';
 import type { ServiceData } from '@/hooks/usePortal';
@@ -348,6 +350,8 @@ export default function DashboardPage() {
               <WeatherWidget />
               <MarketsWidget />
               <UrgentInboxWidget csrfToken={user.csrfToken} />
+              <OutlookWidget />
+              <OneNoteWidget />
             </div>
 
             {/* Favorites Bar */}
