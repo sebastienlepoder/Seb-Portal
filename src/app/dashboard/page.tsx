@@ -6,6 +6,7 @@ import { ServiceTile } from '@/components/dashboard/ServiceTile';
 import { SearchBar } from '@/components/ui/SearchBar';
 import { VpnBadge, VpnBanner } from '@/components/ui/VpnBadge';
 import { WeatherWidget } from '@/components/widgets/WeatherWidget';
+import { TailscaleWidget } from '@/components/widgets/TailscaleWidget';
 import { MarketsWidget } from '@/components/widgets/MarketsWidget';
 import { UrgentInboxWidget } from '@/components/widgets/UrgentInboxWidget';
 import OneNoteWidget from '@/components/widgets/OneNoteWidget';
@@ -213,6 +214,7 @@ export default function DashboardPage() {
               <UrgentInboxWidget csrfToken={user.csrfToken} />
               <OutlookWidget />
               <OneNoteWidget />
+              <TailscaleWidget />
             </div>
 
             {/* Favorites Bar */}

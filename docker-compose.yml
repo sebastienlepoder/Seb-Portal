@@ -25,6 +25,8 @@ services:
       - ./projects:/app/projects
       # Update trigger/status files (for self-update feature)
       - ./data:/data
+      # Tailscale socket for native integration (optional)
+      - /var/run/tailscale/tailscaled.sock:/var/run/tailscale/tailscaled.sock:ro
     env_file:
       - .env
     environment:

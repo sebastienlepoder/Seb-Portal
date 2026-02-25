@@ -16,6 +16,7 @@ import {
   Star,
   Menu,
   X,
+  Wifi,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -49,6 +50,7 @@ export default function MainSidebar({
   const isDashboard = pathname === '/dashboard' || pathname === '/';
   const isMail = pathname === '/mail';
   const isProjects = pathname?.startsWith('/projects');
+  const isTailscale = pathname === '/tailscale';
 
   return (
     <>
@@ -162,6 +164,13 @@ export default function MainSidebar({
             active={isProjects}
             label="Projects"
             icon={<FolderGit2 className="h-3.5 w-3.5" />}
+          />
+          <SidebarLink
+            collapsed={collapsed}
+            href="/tailscale"
+            active={isTailscale}
+            label="Tailscale"
+            icon={<Wifi className="h-3.5 w-3.5" />}
           />
 
           {/* Dashboard sections (only on dashboard) */}
