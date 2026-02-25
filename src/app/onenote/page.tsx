@@ -13,6 +13,7 @@ import {
   RefreshCw,
   Link2,
   X,
+  ArrowLeft,
 } from 'lucide-react';
 
 export default function OneNotePage() {
@@ -32,6 +33,9 @@ export default function OneNotePage() {
 
   const [selectedNotebook, setSelectedNotebook] = useState<{ id: string; name: string; url: string } | null>(null);
   const [selectedSection, setSelectedSection] = useState<{ id: string; name: string } | null>(null);
+  const [selectedPage, setSelectedPage] = useState<{ id: string; title: string; url: string } | null>(null);
+  const [pageContent, setPageContent] = useState<string | null>(null);
+  const [loadingContent, setLoadingContent] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newPageTitle, setNewPageTitle] = useState('');
   const [newPageContent, setNewPageContent] = useState('');
@@ -52,12 +56,31 @@ export default function OneNotePage() {
   const handleNotebookSelect = (notebook: { id: string; displayName: string; links: { oneNoteWebUrl: { href: string } } }) => {
     setSelectedNotebook({ id: notebook.id, name: notebook.displayName, url: notebook.links.oneNoteWebUrl.href });
     setSelectedSection(null);
+    setSelectedPage(null);
+    setPageContent(null);
     fetchSections(notebook.id);
   };
 
   const handleSectionSelect = (section: { id: string; displayName: string }) => {
     setSelectedSection({ id: section.id, name: section.displayName });
+    setSelectedPage(null);
+    setPageContent(null);
     fetchPages(section.id);
+  };
+
+  const handlePageSelect = async (page: { id: string; title: string; links: { oneNoteWebUrl: { href: string } } }) => {
+    setSelectedPage({ id: page.id, title: page.title, url: page.links.oneNoteWebUrl.href });
+    setLoadingContent(true);
+    try {
+      const res = await fetch(`/api/microsoft/onenote?type=content&pageId=${page.id}`);
+      const data = await res.json();
+      if (data.ok) {
+        setPageContent(data.data.content);
+      }
+    } catch (e) {
+      console.error('Failed to load page content:', e);
+    }
+    setLoadingContent(false);
   };
 
   const handleCreatePage = async () => {
@@ -109,8 +132,8 @@ export default function OneNotePage() {
           </div>
         ) : (
           <>
-            {/* Notebooks Sidebar */}
-            <div className="w-56 bg-portal-card border-r border-portal-border flex-shrink-0 flex flex-col">
+            {/* Notebooks/Sections/Pages Sidebar */}
+            <div className="w-64 bg-portal-card border-r border-portal-border flex-shrink-0 flex flex-col">
               <div className="p-3 border-b border-portal-border">
                 <div className="flex items-center justify-between">
                   <h2 className="text-xs font-semibold text-portal-muted uppercase tracking-wider">Notebooks</h2>
@@ -125,55 +148,77 @@ export default function OneNotePage() {
 
               <nav className="flex-1 overflow-y-auto p-2 space-y-1">
                 {notebooks.map((notebook) => (
-                  <div key={notebook.id} className="space-y-1">
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => handleNotebookSelect(notebook)}
-                        className={`flex-1 flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs transition-colors text-left ${
-                          selectedNotebook?.id === notebook.id
-                            ? 'bg-purple-500/10 text-purple-400'
-                            : 'text-portal-muted hover:bg-portal-bg hover:text-portal-text'
-                        }`}
-                      >
-                        <BookOpen className="h-3.5 w-3.5 flex-shrink-0" />
-                        <span className="truncate">{notebook.displayName}</span>
-                      </button>
-                      <a
-                        href={notebook.links.oneNoteWebUrl.href}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="p-1 text-portal-muted hover:text-purple-400 transition-colors"
-                        title="Open in OneNote"
-                      >
-                        <ExternalLink className="h-3 w-3" />
-                      </a>
-                    </div>
+                  <div key={notebook.id} className="space-y-0.5">
+                    <button
+                      onClick={() => handleNotebookSelect(notebook)}
+                      className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs transition-colors text-left ${
+                        selectedNotebook?.id === notebook.id
+                          ? 'bg-purple-500/10 text-purple-400'
+                          : 'text-portal-muted hover:bg-portal-bg hover:text-portal-text'
+                      }`}
+                    >
+                      <BookOpen className="h-3.5 w-3.5 flex-shrink-0" />
+                      <span className="truncate">{notebook.displayName}</span>
+                    </button>
 
                     {/* Sections under selected notebook */}
                     {selectedNotebook?.id === notebook.id && sections.length > 0 && (
-                      <div className="ml-4 space-y-0.5">
+                      <div className="ml-3 pl-2 border-l border-portal-border space-y-0.5">
                         {sections.map((section) => (
-                          <button
-                            key={section.id}
-                            onClick={() => handleSectionSelect(section)}
-                            className={`w-full flex items-center gap-2 px-2 py-1 rounded text-xs transition-colors text-left ${
-                              selectedSection?.id === section.id
-                                ? 'bg-purple-500/10 text-purple-400'
-                                : 'text-portal-muted hover:bg-portal-bg hover:text-portal-text'
-                            }`}
-                          >
-                            <Folder className="h-3 w-3 flex-shrink-0" />
-                            <span className="truncate">{section.displayName}</span>
-                          </button>
+                          <div key={section.id}>
+                            <button
+                              onClick={() => handleSectionSelect(section)}
+                              className={`w-full flex items-center gap-2 px-2 py-1 rounded text-xs transition-colors text-left ${
+                                selectedSection?.id === section.id
+                                  ? 'bg-purple-500/10 text-purple-400'
+                                  : 'text-portal-muted hover:bg-portal-bg hover:text-portal-text'
+                              }`}
+                            >
+                              <Folder className="h-3 w-3 flex-shrink-0" />
+                              <span className="truncate">{section.displayName}</span>
+                            </button>
+
+                            {/* Pages under selected section */}
+                            {selectedSection?.id === section.id && pages.length > 0 && (
+                              <div className="ml-3 pl-2 border-l border-portal-border space-y-0.5 mt-0.5">
+                                {pages.map((page) => (
+                                  <button
+                                    key={page.id}
+                                    onClick={() => handlePageSelect(page)}
+                                    className={`w-full flex items-center gap-2 px-2 py-1 rounded text-[11px] transition-colors text-left ${
+                                      selectedPage?.id === page.id
+                                        ? 'bg-purple-500/10 text-purple-400'
+                                        : 'text-portal-muted hover:bg-portal-bg hover:text-portal-text'
+                                    }`}
+                                  >
+                                    <FileText className="h-2.5 w-2.5 flex-shrink-0" />
+                                    <span className="truncate">{page.title}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
                         ))}
                       </div>
                     )}
                   </div>
                 ))}
               </nav>
+
+              {selectedSection && (
+                <div className="p-2 border-t border-portal-border">
+                  <button
+                    onClick={() => setShowCreateModal(true)}
+                    className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-colors"
+                  >
+                    <Plus className="h-3 w-3" />
+                    New Page
+                  </button>
+                </div>
+              )}
             </div>
 
-            {/* Pages Content */}
+            {/* Content Area */}
             <div className="flex-1 flex flex-col">
               {/* Header */}
               <div className="border-b border-portal-border bg-portal-card px-4 py-3">
@@ -182,86 +227,90 @@ export default function OneNotePage() {
                     <BookOpen className="h-5 w-5 text-purple-400" />
                     <div>
                       <h1 className="text-lg font-bold text-portal-text">
-                        {selectedSection?.name || selectedNotebook?.name || 'OneNote'}
+                        {selectedPage?.title || selectedSection?.name || selectedNotebook?.name || 'OneNote'}
                       </h1>
-                      {selectedNotebook && !selectedSection && (
-                        <p className="text-xs text-portal-muted">Select a section to view pages</p>
+                      {selectedNotebook && !selectedPage && (
+                        <p className="text-xs text-portal-muted">
+                          {selectedSection ? `${pages.length} pages` : `${sections.length} sections`}
+                        </p>
                       )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {selectedNotebook && (
+                  {selectedPage && (
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => { setSelectedPage(null); setPageContent(null); }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-portal-muted hover:text-portal-text hover:bg-portal-bg rounded-lg transition-colors"
+                      >
+                        <ArrowLeft className="h-3 w-3" />
+                        Back to list
+                      </button>
                       <a
-                        href={selectedNotebook.url}
+                        href={selectedPage.url}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-purple-400 hover:bg-purple-500/10 rounded-lg transition-colors"
                       >
                         <ExternalLink className="h-3 w-3" />
-                        Open in OneNote
+                        Edit in OneNote
                       </a>
-                    )}
-                    {selectedSection && (
-                      <button
-                        onClick={() => setShowCreateModal(true)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-colors"
-                      >
-                        <Plus className="h-3 w-3" />
-                        New Page
-                      </button>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {/* Pages List */}
-              <div className="flex-1 overflow-y-auto p-4">
+              {/* Content */}
+              <div className="flex-1 overflow-y-auto">
                 {error && (
-                  <div className="bg-red-500/10 border border-red-500/20 text-red-400 rounded-lg p-3 mb-4 text-sm">
+                  <div className="m-4 bg-red-500/10 border border-red-500/20 text-red-400 rounded-lg p-3 text-sm">
                     {error}
                   </div>
                 )}
 
-                {!selectedNotebook && (
-                  <div className="text-center py-12">
-                    <BookOpen className="h-12 w-12 text-portal-muted mx-auto mb-3" />
-                    <p className="text-sm text-portal-muted">Select a notebook to get started</p>
-                  </div>
+                {/* Page Content View */}
+                {selectedPage && (
+                  loadingContent ? (
+                    <div className="flex items-center justify-center py-12">
+                      <div className="animate-spin h-6 w-6 border-2 border-purple-500 border-t-transparent rounded-full" />
+                    </div>
+                  ) : pageContent ? (
+                    <div className="p-6">
+                      <div
+                        className="prose prose-sm prose-invert max-w-none onenote-content"
+                        dangerouslySetInnerHTML={{ __html: pageContent }}
+                      />
+                    </div>
+                  ) : (
+                    <div className="text-center py-12">
+                      <p className="text-sm text-portal-muted">Failed to load page content</p>
+                    </div>
+                  )
                 )}
 
-                {selectedNotebook && !selectedSection && sections.length === 0 && !loading && (
-                  <div className="text-center py-12">
-                    <Folder className="h-12 w-12 text-portal-muted mx-auto mb-3" />
-                    <p className="text-sm text-portal-muted">No sections in this notebook</p>
-                  </div>
-                )}
-
-                {selectedSection && (
-                  <div className="grid gap-3">
-                    {pages.map((page) => (
-                      <a
-                        key={page.id}
-                        href={page.links.oneNoteWebUrl.href}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center justify-between p-4 bg-portal-card border border-portal-border rounded-xl hover:border-purple-500/50 transition-colors group"
-                      >
-                        <div className="flex items-center gap-3 min-w-0">
-                          <FileText className="h-4 w-4 text-purple-400 flex-shrink-0" />
-                          <div className="min-w-0">
-                            <h3 className="text-sm font-medium text-portal-text truncate">
-                              {page.title}
-                            </h3>
-                            <p className="text-xs text-portal-muted">
-                              Modified {new Date(page.lastModifiedDateTime).toLocaleDateString()}
-                            </p>
-                          </div>
-                        </div>
-                        <ExternalLink className="h-4 w-4 text-portal-muted opacity-0 group-hover:opacity-100 transition-opacity" />
-                      </a>
-                    ))}
-
-                    {pages.length === 0 && !loading && (
+                {/* Pages List (when section selected but no page) */}
+                {selectedSection && !selectedPage && (
+                  <div className="p-4">
+                    {pages.length > 0 ? (
+                      <div className="grid gap-2">
+                        {pages.map((page) => (
+                          <button
+                            key={page.id}
+                            onClick={() => handlePageSelect(page)}
+                            className="flex items-center gap-3 p-4 bg-portal-card border border-portal-border rounded-xl hover:border-purple-500/50 transition-colors text-left group"
+                          >
+                            <FileText className="h-5 w-5 text-purple-400 flex-shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <h3 className="text-sm font-medium text-portal-text truncate">
+                                {page.title}
+                              </h3>
+                              <p className="text-xs text-portal-muted">
+                                Modified {new Date(page.lastModifiedDateTime).toLocaleDateString()}
+                              </p>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    ) : !loading ? (
                       <div className="text-center py-12">
                         <FileText className="h-12 w-12 text-portal-muted mx-auto mb-3" />
                         <p className="text-sm text-portal-muted">No pages in this section</p>
@@ -273,11 +322,44 @@ export default function OneNotePage() {
                           Create First Page
                         </button>
                       </div>
-                    )}
+                    ) : null}
                   </div>
                 )}
 
-                {loading && (
+                {/* Sections List (when notebook selected but no section) */}
+                {selectedNotebook && !selectedSection && (
+                  <div className="p-4">
+                    {sections.length > 0 ? (
+                      <div className="grid gap-2">
+                        {sections.map((section) => (
+                          <button
+                            key={section.id}
+                            onClick={() => handleSectionSelect(section)}
+                            className="flex items-center gap-3 p-4 bg-portal-card border border-portal-border rounded-xl hover:border-purple-500/50 transition-colors text-left"
+                          >
+                            <Folder className="h-5 w-5 text-purple-400 flex-shrink-0" />
+                            <span className="text-sm font-medium text-portal-text">{section.displayName}</span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : !loading ? (
+                      <div className="text-center py-12">
+                        <Folder className="h-12 w-12 text-portal-muted mx-auto mb-3" />
+                        <p className="text-sm text-portal-muted">No sections in this notebook</p>
+                      </div>
+                    ) : null}
+                  </div>
+                )}
+
+                {/* Welcome state */}
+                {!selectedNotebook && !loading && (
+                  <div className="text-center py-12">
+                    <BookOpen className="h-12 w-12 text-portal-muted mx-auto mb-3" />
+                    <p className="text-sm text-portal-muted">Select a notebook to get started</p>
+                  </div>
+                )}
+
+                {loading && !selectedPage && (
                   <div className="flex items-center justify-center py-12">
                     <div className="animate-spin h-6 w-6 border-2 border-purple-500 border-t-transparent rounded-full" />
                   </div>
@@ -341,6 +423,21 @@ export default function OneNotePage() {
           </div>
         </div>
       )}
+
+      <style jsx global>{`
+        .onenote-content img {
+          max-width: 100%;
+          height: auto;
+        }
+        .onenote-content table {
+          border-collapse: collapse;
+          width: 100%;
+        }
+        .onenote-content td, .onenote-content th {
+          border: 1px solid #374151;
+          padding: 8px;
+        }
+      `}</style>
     </div>
   );
 }

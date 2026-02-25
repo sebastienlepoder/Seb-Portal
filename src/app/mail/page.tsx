@@ -17,7 +17,23 @@ import {
   Link2,
   Search,
   FileText,
+  ArrowLeft,
+  Reply,
+  ReplyAll,
+  Forward,
 } from 'lucide-react';
+
+interface FullMessage {
+  id: string;
+  subject: string;
+  body: { contentType: string; content: string };
+  from: { emailAddress: { name: string; address: string } };
+  toRecipients: { emailAddress: { name: string; address: string } }[];
+  receivedDateTime: string;
+  isRead: boolean;
+  hasAttachments: boolean;
+  webLink: string;
+}
 
 function formatDate(dateString: string): string {
   const date = new Date(dateString);
@@ -33,12 +49,18 @@ function formatDate(dateString: string): string {
   return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
 
+function formatFullDate(dateString: string): string {
+  return new Date(dateString).toLocaleString();
+}
+
 export default function MailPage() {
   const { user, loading: authLoading, logout } = useAuth();
   const { status, loading: statusLoading, connect } = useMicrosoftStatus();
   const { messages, loading, error, unreadCount, fetchMessages, sendMail } = useOutlookMail();
 
   const [folder, setFolder] = useState('inbox');
+  const [selectedMessage, setSelectedMessage] = useState<FullMessage | null>(null);
+  const [loadingMessage, setLoadingMessage] = useState(false);
   const [showCompose, setShowCompose] = useState(false);
   const [composeTo, setComposeTo] = useState('');
   const [composeSubject, setComposeSubject] = useState('');
@@ -58,6 +80,20 @@ export default function MailPage() {
     }
   }, [status?.connected, folder, fetchMessages]);
 
+  const handleSelectMessage = async (messageId: string) => {
+    setLoadingMessage(true);
+    try {
+      const res = await fetch(`/api/microsoft/mail?messageId=${messageId}`);
+      const data = await res.json();
+      if (data.ok) {
+        setSelectedMessage(data.data);
+      }
+    } catch (e) {
+      console.error('Failed to load message:', e);
+    }
+    setLoadingMessage(false);
+  };
+
   const handleSend = async () => {
     if (!composeTo.trim() || !composeSubject.trim()) return;
     setSending(true);
@@ -71,8 +107,17 @@ export default function MailPage() {
       setComposeTo('');
       setComposeSubject('');
       setComposeBody('');
+      fetchMessages(folder, 50);
     }
     setSending(false);
+  };
+
+  const handleReply = () => {
+    if (!selectedMessage) return;
+    setComposeTo(selectedMessage.from.emailAddress.address);
+    setComposeSubject(`Re: ${selectedMessage.subject}`);
+    setComposeBody(`\n\n---\nOn ${formatFullDate(selectedMessage.receivedDateTime)}, ${selectedMessage.from.emailAddress.name} wrote:\n> ${selectedMessage.body.content.replace(/<[^>]*>/g, '').substring(0, 500)}...`);
+    setShowCompose(true);
   };
 
   const filteredMessages = searchQuery
@@ -107,7 +152,6 @@ export default function MailPage() {
 
       {/* Main Content */}
       <div className="flex-1 flex">
-        {/* Not connected state */}
         {statusLoading ? (
           <div className="flex-1 flex items-center justify-center">
             <div className="animate-spin h-8 w-8 border-2 border-blue-500 border-t-transparent rounded-full" />
@@ -130,7 +174,7 @@ export default function MailPage() {
         ) : (
           <>
             {/* Mail Folders Sidebar */}
-            <div className="w-48 bg-portal-card border-r border-portal-border flex-shrink-0">
+            <div className="w-48 bg-portal-card border-r border-portal-border flex-shrink-0 flex flex-col">
               <div className="p-3">
                 <button
                   onClick={() => setShowCompose(true)}
@@ -141,11 +185,11 @@ export default function MailPage() {
                 </button>
               </div>
 
-              <nav className="px-2">
+              <nav className="px-2 flex-1">
                 {folders.map((f) => (
                   <button
                     key={f.id}
-                    onClick={() => setFolder(f.id)}
+                    onClick={() => { setFolder(f.id); setSelectedMessage(null); }}
                     className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors ${
                       folder === f.id
                         ? 'bg-blue-500/10 text-blue-400'
@@ -165,13 +209,13 @@ export default function MailPage() {
                 ))}
               </nav>
 
-              <div className="p-3 mt-auto border-t border-portal-border">
+              <div className="p-3 border-t border-portal-border">
                 <p className="text-[10px] text-portal-muted truncate">{status.email}</p>
               </div>
             </div>
 
             {/* Messages List */}
-            <div className="flex-1 flex flex-col">
+            <div className={`${selectedMessage ? 'w-80' : 'flex-1'} flex flex-col border-r border-portal-border`}>
               {/* Header */}
               <div className="border-b border-portal-border bg-portal-card px-4 py-3">
                 <div className="flex items-center justify-between mb-3">
@@ -187,14 +231,13 @@ export default function MailPage() {
                   </button>
                 </div>
 
-                {/* Search */}
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-portal-muted" />
                   <input
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search mail..."
+                    placeholder="Search..."
                     className="w-full bg-portal-bg border border-portal-border rounded-lg pl-9 pr-3 py-2 text-sm text-portal-text focus:outline-none focus:border-blue-500/50"
                   />
                 </div>
@@ -209,13 +252,11 @@ export default function MailPage() {
                 )}
 
                 {filteredMessages.map((msg) => (
-                  <a
+                  <button
                     key={msg.id}
-                    href={msg.webLink}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={`flex items-start gap-3 px-4 py-3 border-b border-portal-border hover:bg-portal-card transition-colors ${
-                      !msg.isRead ? 'bg-blue-500/5' : ''
+                    onClick={() => handleSelectMessage(msg.id)}
+                    className={`w-full flex items-start gap-3 px-4 py-3 border-b border-portal-border hover:bg-portal-card transition-colors text-left ${
+                      selectedMessage?.id === msg.id ? 'bg-blue-500/10' : !msg.isRead ? 'bg-blue-500/5' : ''
                     }`}
                   >
                     <div className="flex-shrink-0 mt-1 w-2">
@@ -226,20 +267,21 @@ export default function MailPage() {
                         <span className={`text-sm truncate ${!msg.isRead ? 'font-semibold text-portal-text' : 'text-portal-muted'}`}>
                           {msg.from.emailAddress.name || msg.from.emailAddress.address}
                         </span>
-                        <div className="flex items-center gap-2 flex-shrink-0">
+                        <div className="flex items-center gap-1 flex-shrink-0">
                           {msg.hasAttachments && <Paperclip className="h-3 w-3 text-portal-muted" />}
-                          <span className="text-xs text-portal-muted">{formatDate(msg.receivedDateTime)}</span>
-                          <ExternalLink className="h-3 w-3 text-portal-muted" />
+                          <span className="text-[10px] text-portal-muted">{formatDate(msg.receivedDateTime)}</span>
                         </div>
                       </div>
-                      <p className={`text-sm truncate ${!msg.isRead ? 'text-portal-text' : 'text-portal-muted'}`}>
+                      <p className={`text-xs truncate ${!msg.isRead ? 'text-portal-text' : 'text-portal-muted'}`}>
                         {msg.subject || '(no subject)'}
                       </p>
-                      <p className="text-xs text-portal-muted truncate mt-0.5">
-                        {msg.bodyPreview}
-                      </p>
+                      {!selectedMessage && (
+                        <p className="text-[11px] text-portal-muted truncate mt-0.5">
+                          {msg.bodyPreview}
+                        </p>
+                      )}
                     </div>
-                  </a>
+                  </button>
                 ))}
 
                 {filteredMessages.length === 0 && !loading && (
@@ -255,6 +297,78 @@ export default function MailPage() {
                 )}
               </div>
             </div>
+
+            {/* Message Reading Pane */}
+            {selectedMessage && (
+              <div className="flex-1 flex flex-col bg-portal-bg">
+                {loadingMessage ? (
+                  <div className="flex-1 flex items-center justify-center">
+                    <div className="animate-spin h-6 w-6 border-2 border-blue-500 border-t-transparent rounded-full" />
+                  </div>
+                ) : (
+                  <>
+                    {/* Message Header */}
+                    <div className="border-b border-portal-border bg-portal-card p-4">
+                      <div className="flex items-start justify-between gap-4 mb-3">
+                        <div className="flex-1 min-w-0">
+                          <h2 className="text-lg font-semibold text-portal-text mb-1">
+                            {selectedMessage.subject || '(no subject)'}
+                          </h2>
+                          <div className="flex items-center gap-2 text-sm">
+                            <span className="font-medium text-portal-text">
+                              {selectedMessage.from.emailAddress.name || selectedMessage.from.emailAddress.address}
+                            </span>
+                            <span className="text-portal-muted">
+                              &lt;{selectedMessage.from.emailAddress.address}&gt;
+                            </span>
+                          </div>
+                          <p className="text-xs text-portal-muted mt-1">
+                            To: {selectedMessage.toRecipients.map(r => r.emailAddress.address).join(', ')}
+                          </p>
+                          <p className="text-xs text-portal-muted">
+                            {formatFullDate(selectedMessage.receivedDateTime)}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => setSelectedMessage(null)}
+                          className="p-1.5 text-portal-muted hover:text-portal-text hover:bg-portal-bg rounded-lg"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+
+                      {/* Actions */}
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={handleReply}
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-portal-text bg-portal-bg border border-portal-border rounded-lg hover:bg-portal-border transition-colors"
+                        >
+                          <Reply className="h-3 w-3" />
+                          Reply
+                        </button>
+                        <a
+                          href={selectedMessage.webLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-portal-muted hover:text-portal-text hover:bg-portal-bg rounded-lg transition-colors"
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                          Open in Outlook
+                        </a>
+                      </div>
+                    </div>
+
+                    {/* Message Body */}
+                    <div className="flex-1 overflow-y-auto p-4">
+                      <div
+                        className="prose prose-sm prose-invert max-w-none"
+                        dangerouslySetInnerHTML={{ __html: selectedMessage.body.content }}
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
           </>
         )}
       </div>
@@ -279,7 +393,7 @@ export default function MailPage() {
                   type="text"
                   value={composeTo}
                   onChange={(e) => setComposeTo(e.target.value)}
-                  placeholder="email@example.com (comma-separated for multiple)"
+                  placeholder="email@example.com"
                   className="w-full bg-portal-bg border border-portal-border rounded-lg px-3 py-2 text-sm text-portal-text focus:outline-none focus:border-blue-500/50"
                 />
               </div>
