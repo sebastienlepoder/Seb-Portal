@@ -427,7 +427,9 @@ function Field({ label, value, onChange, placeholder, required, tooltip }: { lab
         {label}
         {required && <span className="text-red-500">*</span>}
         {tooltip && (
-          <HelpCircle className="h-3 w-3 text-portal-muted hover:text-portal-accent cursor-help" title={tooltip} />
+          <span title={tooltip}>
+            <HelpCircle className="h-3 w-3 text-portal-muted hover:text-portal-accent cursor-help" />
+          </span>
         )}
       </label>
       <input
@@ -448,7 +450,9 @@ function SelectField({ label, value, options, onChange, required, tooltip }: { l
         {label}
         {required && <span className="text-red-500">*</span>}
         {tooltip && (
-          <HelpCircle className="h-3 w-3 text-portal-muted hover:text-portal-accent cursor-help" title={tooltip} />
+          <span title={tooltip}>
+            <HelpCircle className="h-3 w-3 text-portal-muted hover:text-portal-accent cursor-help" />
+          </span>
         )}
       </label>
       <select
