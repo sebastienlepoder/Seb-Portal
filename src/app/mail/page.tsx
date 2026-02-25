@@ -1,21 +1,22 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useAuth } from '@/hooks/usePortal';
 import { useMicrosoftStatus, useOutlookMail } from '@/hooks/useMicrosoft';
+import PortalSidebar from '@/components/layout/PortalSidebar';
 import {
   Mail,
   Send,
   Inbox,
   Archive,
   Trash2,
-  Star,
-  ArrowLeft,
   RefreshCw,
   Paperclip,
   ExternalLink,
   X,
   Link2,
   Search,
+  FileText,
 } from 'lucide-react';
 
 function formatDate(dateString: string): string {
@@ -33,8 +34,9 @@ function formatDate(dateString: string): string {
 }
 
 export default function MailPage() {
+  const { user, loading: authLoading, logout } = useAuth();
   const { status, loading: statusLoading, connect } = useMicrosoftStatus();
-  const { messages, loading, error, unreadCount, fetchMessages, sendMail, markAsRead } = useOutlookMail();
+  const { messages, loading, error, unreadCount, fetchMessages, sendMail } = useOutlookMail();
 
   const [folder, setFolder] = useState('inbox');
   const [showCompose, setShowCompose] = useState(false);
@@ -43,6 +45,12 @@ export default function MailPage() {
   const [composeBody, setComposeBody] = useState('');
   const [sending, setSending] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+
+  useEffect(() => {
+    if (!authLoading && !user) {
+      window.location.href = '/login';
+    }
+  }, [authLoading, user]);
 
   useEffect(() => {
     if (status?.connected) {
@@ -67,11 +75,6 @@ export default function MailPage() {
     setSending(false);
   };
 
-  const handleMarkRead = async (messageId: string, isRead: boolean) => {
-    await markAsRead(messageId, isRead);
-    fetchMessages(folder, 50);
-  };
-
   const filteredMessages = searchQuery
     ? messages.filter(
         (m) =>
@@ -81,7 +84,7 @@ export default function MailPage() {
       )
     : messages;
 
-  if (statusLoading) {
+  if (authLoading || !user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-portal-bg">
         <div className="animate-spin h-8 w-8 border-2 border-blue-500 border-t-transparent rounded-full" />
@@ -89,170 +92,171 @@ export default function MailPage() {
     );
   }
 
-  if (!status?.connected) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-portal-bg">
-        <div className="text-center">
-          <Mail className="h-12 w-12 text-blue-400 mx-auto mb-4" />
-          <h1 className="text-xl font-bold text-portal-text mb-2">Outlook Mail</h1>
-          <p className="text-sm text-portal-muted mb-4">Connect your Microsoft account to access email</p>
-          <button
-            onClick={connect}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors mx-auto"
-          >
-            <Link2 className="h-4 w-4" />
-            Connect Microsoft Account
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   const folders = [
     { id: 'inbox', label: 'Inbox', icon: Inbox, count: unreadCount },
     { id: 'sentitems', label: 'Sent', icon: Send },
-    { id: 'drafts', label: 'Drafts', icon: Mail },
+    { id: 'drafts', label: 'Drafts', icon: FileText },
     { id: 'archive', label: 'Archive', icon: Archive },
     { id: 'deleteditems', label: 'Trash', icon: Trash2 },
   ];
 
   return (
     <div className="min-h-screen bg-portal-bg flex">
-      {/* Sidebar */}
-      <div className="w-56 bg-portal-card border-r border-portal-border flex-shrink-0">
-        <div className="p-4">
-          <a
-            href="/dashboard"
-            className="flex items-center gap-2 text-sm text-portal-muted hover:text-portal-text mb-4"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Dashboard
-          </a>
-          
-          <button
-            onClick={() => setShowCompose(true)}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm font-medium"
-          >
-            <Send className="h-4 w-4" />
-            Compose
-          </button>
-        </div>
-
-        <nav className="px-2">
-          {folders.map((f) => (
-            <button
-              key={f.id}
-              onClick={() => setFolder(f.id)}
-              className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors ${
-                folder === f.id
-                  ? 'bg-blue-500/10 text-blue-400'
-                  : 'text-portal-muted hover:bg-portal-bg hover:text-portal-text'
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <f.icon className="h-4 w-4" />
-                {f.label}
-              </div>
-              {f.count && f.count > 0 && (
-                <span className="px-1.5 py-0.5 text-[10px] font-medium bg-blue-500 text-white rounded-full">
-                  {f.count}
-                </span>
-              )}
-            </button>
-          ))}
-        </nav>
-
-        <div className="p-4 mt-auto border-t border-portal-border">
-          <p className="text-[10px] text-portal-muted truncate">{status.email}</p>
-        </div>
-      </div>
+      {/* Portal Sidebar */}
+      <PortalSidebar user={user} onLogout={logout} />
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col">
-        {/* Header */}
-        <div className="border-b border-portal-border bg-portal-card px-4 py-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Mail className="h-5 w-5 text-blue-400" />
-              <h1 className="text-lg font-bold text-portal-text capitalize">{folder.replace('items', '')}</h1>
-            </div>
-            <button
-              onClick={() => fetchMessages(folder, 50)}
-              className="p-2 text-portal-muted hover:text-portal-text hover:bg-portal-bg rounded-lg transition-colors"
-            >
-              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            </button>
+      <div className="flex-1 flex">
+        {/* Not connected state */}
+        {statusLoading ? (
+          <div className="flex-1 flex items-center justify-center">
+            <div className="animate-spin h-8 w-8 border-2 border-blue-500 border-t-transparent rounded-full" />
           </div>
-
-          {/* Search */}
-          <div className="relative mt-3">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-portal-muted" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search mail..."
-              className="w-full bg-portal-bg border border-portal-border rounded-lg pl-9 pr-3 py-2 text-sm text-portal-text focus:outline-none focus:border-blue-500/50"
-            />
-          </div>
-        </div>
-
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto">
-          {error && (
-            <div className="m-4 bg-red-500/10 border border-red-500/20 text-red-400 rounded-lg p-3 text-sm">
-              {error}
+        ) : !status?.connected ? (
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center">
+              <Mail className="h-12 w-12 text-blue-400 mx-auto mb-4" />
+              <h1 className="text-xl font-bold text-portal-text mb-2">Outlook Mail</h1>
+              <p className="text-sm text-portal-muted mb-4">Connect your Microsoft account to access email</p>
+              <button
+                onClick={connect}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors mx-auto"
+              >
+                <Link2 className="h-4 w-4" />
+                Connect Microsoft Account
+              </button>
             </div>
-          )}
+          </div>
+        ) : (
+          <>
+            {/* Mail Folders Sidebar */}
+            <div className="w-48 bg-portal-card border-r border-portal-border flex-shrink-0">
+              <div className="p-3">
+                <button
+                  onClick={() => setShowCompose(true)}
+                  className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm font-medium"
+                >
+                  <Send className="h-4 w-4" />
+                  Compose
+                </button>
+              </div>
 
-          {filteredMessages.map((msg) => (
-            <a
-              key={msg.id}
-              href={msg.webLink}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={`flex items-start gap-3 px-4 py-3 border-b border-portal-border hover:bg-portal-card transition-colors ${
-                !msg.isRead ? 'bg-blue-500/5' : ''
-              }`}
-            >
-              <div className="flex-shrink-0 mt-1">
-                {!msg.isRead && (
-                  <div className="w-2 h-2 bg-blue-500 rounded-full" />
+              <nav className="px-2">
+                {folders.map((f) => (
+                  <button
+                    key={f.id}
+                    onClick={() => setFolder(f.id)}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors ${
+                      folder === f.id
+                        ? 'bg-blue-500/10 text-blue-400'
+                        : 'text-portal-muted hover:bg-portal-bg hover:text-portal-text'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <f.icon className="h-4 w-4" />
+                      {f.label}
+                    </div>
+                    {f.count && f.count > 0 && (
+                      <span className="px-1.5 py-0.5 text-[10px] font-medium bg-blue-500 text-white rounded-full">
+                        {f.count}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </nav>
+
+              <div className="p-3 mt-auto border-t border-portal-border">
+                <p className="text-[10px] text-portal-muted truncate">{status.email}</p>
+              </div>
+            </div>
+
+            {/* Messages List */}
+            <div className="flex-1 flex flex-col">
+              {/* Header */}
+              <div className="border-b border-portal-border bg-portal-card px-4 py-3">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <Mail className="h-5 w-5 text-blue-400" />
+                    <h1 className="text-lg font-bold text-portal-text capitalize">{folder.replace('items', '')}</h1>
+                  </div>
+                  <button
+                    onClick={() => fetchMessages(folder, 50)}
+                    className="p-2 text-portal-muted hover:text-portal-text hover:bg-portal-bg rounded-lg transition-colors"
+                  >
+                    <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                  </button>
+                </div>
+
+                {/* Search */}
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-portal-muted" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search mail..."
+                    className="w-full bg-portal-bg border border-portal-border rounded-lg pl-9 pr-3 py-2 text-sm text-portal-text focus:outline-none focus:border-blue-500/50"
+                  />
+                </div>
+              </div>
+
+              {/* Messages */}
+              <div className="flex-1 overflow-y-auto">
+                {error && (
+                  <div className="m-4 bg-red-500/10 border border-red-500/20 text-red-400 rounded-lg p-3 text-sm">
+                    {error}
+                  </div>
+                )}
+
+                {filteredMessages.map((msg) => (
+                  <a
+                    key={msg.id}
+                    href={msg.webLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={`flex items-start gap-3 px-4 py-3 border-b border-portal-border hover:bg-portal-card transition-colors ${
+                      !msg.isRead ? 'bg-blue-500/5' : ''
+                    }`}
+                  >
+                    <div className="flex-shrink-0 mt-1 w-2">
+                      {!msg.isRead && <div className="w-2 h-2 bg-blue-500 rounded-full" />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <span className={`text-sm truncate ${!msg.isRead ? 'font-semibold text-portal-text' : 'text-portal-muted'}`}>
+                          {msg.from.emailAddress.name || msg.from.emailAddress.address}
+                        </span>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          {msg.hasAttachments && <Paperclip className="h-3 w-3 text-portal-muted" />}
+                          <span className="text-xs text-portal-muted">{formatDate(msg.receivedDateTime)}</span>
+                          <ExternalLink className="h-3 w-3 text-portal-muted" />
+                        </div>
+                      </div>
+                      <p className={`text-sm truncate ${!msg.isRead ? 'text-portal-text' : 'text-portal-muted'}`}>
+                        {msg.subject || '(no subject)'}
+                      </p>
+                      <p className="text-xs text-portal-muted truncate mt-0.5">
+                        {msg.bodyPreview}
+                      </p>
+                    </div>
+                  </a>
+                ))}
+
+                {filteredMessages.length === 0 && !loading && (
+                  <p className="text-sm text-portal-muted text-center py-12">
+                    {searchQuery ? 'No matching messages' : 'No messages'}
+                  </p>
+                )}
+
+                {loading && (
+                  <div className="flex items-center justify-center py-12">
+                    <div className="animate-spin h-6 w-6 border-2 border-blue-500 border-t-transparent rounded-full" />
+                  </div>
                 )}
               </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between gap-2 mb-1">
-                  <span className={`text-sm truncate ${!msg.isRead ? 'font-semibold text-portal-text' : 'text-portal-muted'}`}>
-                    {msg.from.emailAddress.name || msg.from.emailAddress.address}
-                  </span>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    {msg.hasAttachments && <Paperclip className="h-3 w-3 text-portal-muted" />}
-                    <span className="text-xs text-portal-muted">{formatDate(msg.receivedDateTime)}</span>
-                    <ExternalLink className="h-3 w-3 text-portal-muted" />
-                  </div>
-                </div>
-                <p className={`text-sm truncate ${!msg.isRead ? 'text-portal-text' : 'text-portal-muted'}`}>
-                  {msg.subject || '(no subject)'}
-                </p>
-                <p className="text-xs text-portal-muted truncate mt-0.5">
-                  {msg.bodyPreview}
-                </p>
-              </div>
-            </a>
-          ))}
-
-          {filteredMessages.length === 0 && !loading && (
-            <p className="text-sm text-portal-muted text-center py-12">
-              {searchQuery ? 'No matching messages' : 'No messages'}
-            </p>
-          )}
-
-          {loading && (
-            <div className="flex items-center justify-center py-12">
-              <div className="animate-spin h-6 w-6 border-2 border-blue-500 border-t-transparent rounded-full" />
             </div>
-          )}
-        </div>
+          </>
+        )}
       </div>
 
       {/* Compose Modal */}
