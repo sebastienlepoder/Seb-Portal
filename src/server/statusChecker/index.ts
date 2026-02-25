@@ -21,7 +21,7 @@ const TIMEOUT_MS = 3000;
 export async function checkServiceStatus(
   serviceId: string,
   url: string,
-  opts?: { vpnConnected?: boolean; requiresVPN?: boolean; ttlMs?: number }
+  opts?: { vpnConnected?: boolean; requiresVPN?: boolean; ttlMs?: number; skipLog?: boolean }
 ): Promise<{ status: StatusColor; latencyMs: number; message?: string }> {
   const ttl = opts?.ttlMs ?? DEFAULT_TTL_MS;
 
@@ -71,10 +71,12 @@ export async function checkServiceStatus(
     const result = { status, latencyMs, message: `HTTP ${response.status}` };
     statusCache.set(serviceId, { ...result, checkedAt: Date.now() });
 
-    // Persist to DB
-    await prisma.statusLog.create({
-      data: { serviceId, status, latencyMs, message: result.message },
-    }).catch(() => {}); // non-critical
+    // Persist to DB (skip if called from batch operation)
+    if (!opts?.skipLog) {
+      await prisma.statusLog.create({
+        data: { serviceId, status, latencyMs, message: result.message },
+      }).catch(() => {}); // non-critical
+    }
 
     return result;
   } catch (e) {
@@ -82,12 +84,23 @@ export async function checkServiceStatus(
     const result = { status: 'red' as StatusColor, latencyMs: TIMEOUT_MS, message };
     statusCache.set(serviceId, { ...result, checkedAt: Date.now() });
 
-    await prisma.statusLog.create({
-      data: { serviceId, status: 'red', latencyMs: TIMEOUT_MS, message },
-    }).catch(() => {});
+    if (!opts?.skipLog) {
+      await prisma.statusLog.create({
+        data: { serviceId, status: 'red', latencyMs: TIMEOUT_MS, message },
+      }).catch(() => {});
+    }
 
     return result;
   }
+}
+
+/** Same as checkServiceStatus but skips DB logging (for batch operations) */
+async function checkServiceStatusNoLog(
+  serviceId: string,
+  url: string,
+  opts?: { vpnConnected?: boolean; requiresVPN?: boolean; ttlMs?: number }
+): Promise<{ status: StatusColor; latencyMs: number; message?: string }> {
+  return checkServiceStatus(serviceId, url, { ...opts, skipLog: true });
 }
 
 export async function checkAllStatuses(vpnConnected: boolean) {
@@ -96,17 +109,31 @@ export async function checkAllStatuses(vpnConnected: boolean) {
   });
 
   const results: Record<string, { status: StatusColor; latencyMs: number }> = {};
+  const logsToCreate: { serviceId: string; status: string; latencyMs: number; message?: string }[] = [];
 
   await Promise.allSettled(
     services.map(async (svc) => {
       const url = svc.statusCheckUrl || svc.url;
-      const result = await checkServiceStatus(svc.id, url, {
+      const result = await checkServiceStatusNoLog(svc.id, url, {
         vpnConnected,
         requiresVPN: svc.requiresVPN,
       });
       results[svc.id] = result;
+      logsToCreate.push({
+        serviceId: svc.id,
+        status: result.status,
+        latencyMs: result.latencyMs,
+        message: result.message,
+      });
     })
   );
+
+  // Batch insert all logs at once to avoid SQLite concurrent write issues
+  if (logsToCreate.length > 0) {
+    await prisma.statusLog.createMany({ data: logsToCreate }).catch((e) => {
+      console.error('prisma:warn Failed to batch insert status logs:', e.message);
+    });
+  }
 
   return results;
 }
