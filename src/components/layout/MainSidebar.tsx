@@ -14,6 +14,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Star,
+  Menu,
+  X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -50,6 +52,18 @@ export default function MainSidebar({
 
   return (
     <>
+      {/* Mobile menu button - fixed at top left */}
+      <button
+        onClick={() => setMobileOpen(true)}
+        className={cn(
+          'fixed top-3 left-3 z-50 lg:hidden p-2 bg-portal-card border border-portal-border rounded-lg text-portal-muted hover:text-portal-text shadow-lg',
+          mobileOpen && 'hidden'
+        )}
+        aria-label="Open menu"
+      >
+        <Menu className="h-5 w-5" />
+      </button>
+
       <aside
         className={cn(
           'fixed lg:static inset-y-0 left-0 z-40 bg-portal-card border-r border-portal-border flex flex-col transition-all duration-200 lg:translate-x-0',
@@ -63,7 +77,7 @@ export default function MainSidebar({
           collapsed ? 'p-2 justify-center flex-col' : 'p-4'
         )}>
           {!collapsed && (
-            <Link href="/dashboard" className="flex-1 min-w-0">
+            <Link href="/dashboard" className="flex-1 min-w-0" onClick={() => setMobileOpen(false)}>
               <div className="flex items-center gap-2">
                 <Shield className="h-6 w-6 text-portal-accent" />
                 <span className="text-lg font-bold text-portal-text">LEPODER</span>
@@ -72,10 +86,19 @@ export default function MainSidebar({
             </Link>
           )}
           {collapsed && (
-            <Link href="/dashboard">
+            <Link href="/dashboard" onClick={() => setMobileOpen(false)}>
               <Shield className="h-5 w-5 text-portal-accent" />
             </Link>
           )}
+          {/* Close button for mobile */}
+          <button
+            onClick={() => setMobileOpen(false)}
+            className="lg:hidden p-1 text-portal-muted hover:text-portal-text hover:bg-portal-card-hover rounded-md transition-colors shrink-0"
+            aria-label="Close menu"
+          >
+            <X className="h-4 w-4" />
+          </button>
+          {/* Collapse button for desktop */}
           <button
             onClick={() => setCollapsed(!collapsed)}
             className="hidden lg:flex p-1 text-portal-muted hover:text-portal-text hover:bg-portal-card-hover rounded-md transition-colors shrink-0"
