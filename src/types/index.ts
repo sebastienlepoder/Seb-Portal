@@ -53,6 +53,9 @@ export interface SessionData {
   user?: SessionUser;
   csrfToken?: string;
 
+  // Microsoft Graph OAuth state (CSRF protection)
+  microsoftState?: string;
+
   // Microsoft Graph (delegated OAuth tokens stored in session)
   msftAccessToken?: string;
   msftRefreshToken?: string;
