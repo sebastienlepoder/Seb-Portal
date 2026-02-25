@@ -297,7 +297,7 @@ function ServiceEditorModal({
             onChange={(v) => setForm({ ...form, url: v })}
             placeholder="https://..."
             required
-            tooltip="L'adresse web du service. C'est le lien principal utilisé pour accéder au service."
+            tooltip="The service URL. This is the main link used to access the service."
           />
           <button
             onClick={handleAiSuggest}
@@ -313,27 +313,27 @@ function ServiceEditorModal({
               value={form.slug}
               onChange={(v) => setForm({ ...form, slug: v })}
               placeholder="my-service"
-              tooltip="Identifiant unique du service pour les URLs (ex: mon-service). Généré automatiquement si vide."
+              tooltip="Unique identifier for URLs (e.g. my-service). Auto-generated if left empty."
             />
             <Field
               label="Name"
               value={form.name}
               onChange={(v) => setForm({ ...form, name: v })}
               required
-              tooltip="Le nom d'affichage du service tel qu'il apparaîtra dans le portail."
+              tooltip="Display name as it will appear in the portal."
             />
           </div>
           <Field
             label="Description"
             value={form.description}
             onChange={(v) => setForm({ ...form, description: v })}
-            tooltip="Une courte description du service. Affichée au survol de la tuile."
+            tooltip="Short description shown on tile hover."
           />
           <Field
             label="Tags (comma-separated)"
             value={form.tags}
             onChange={(v) => setForm({ ...form, tags: v })}
-            tooltip="Mots-clés pour faciliter la recherche (ex: monitoring, devops, infra). Séparez par des virgules."
+            tooltip="Keywords for search (e.g. monitoring, devops, infra). Separate with commas."
           />
           <div className="grid grid-cols-2 gap-3">
             <Field
@@ -341,13 +341,13 @@ function ServiceEditorModal({
               value={form.section}
               onChange={(v) => setForm({ ...form, section: v })}
               required
-              tooltip="Groupe principal pour organiser le service dans le dashboard (ex: Infrastructure, DevOps)."
+              tooltip="Main group for organizing in the dashboard (e.g. Infrastructure, DevOps)."
             />
             <Field
               label="Category"
               value={form.category}
               onChange={(v) => setForm({ ...form, category: v })}
-              tooltip="Sous-catégorie pour un tri plus fin au sein de la section."
+              tooltip="Sub-category for finer sorting within the section."
             />
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -357,14 +357,14 @@ function ServiceEditorModal({
               options={['internal', 'external', 'github', 'email', 'remote', 'bookmark', 'tool', 'ai']}
               onChange={(v) => setForm({ ...form, type: v })}
               required
-              tooltip="Type de service: internal (hébergé), external (tiers), github (repo), email, remote (SSH), bookmark, tool, ai."
+              tooltip="Service type: internal (self-hosted), external (third-party), github, email, remote (SSH), bookmark, tool, ai."
             />
             <SelectField
               label="Open Mode"
               value={form.openMode}
               options={['new_tab', 'iframe', 'modal', 'sidepanel']}
               onChange={(v) => setForm({ ...form, openMode: v })}
-              tooltip="Comment ouvrir le service: new_tab (nouvel onglet), iframe (intégré), modal (popup), sidepanel (panneau latéral)."
+              tooltip="How to open: new_tab, iframe (embedded), modal (popup), sidepanel."
             />
           </div>
           <Field
@@ -372,7 +372,7 @@ function ServiceEditorModal({
             value={form.statusCheckUrl}
             onChange={(v) => setForm({ ...form, statusCheckUrl: v })}
             placeholder="https://..."
-            tooltip="URL pour vérifier si le service est en ligne. Laissez vide pour utiliser l'URL principale."
+            tooltip="URL to check if service is online. Leave empty to use main URL."
           />
           <div className="flex flex-wrap gap-4">
             <label className="flex items-center gap-2 text-xs text-portal-text">
@@ -397,7 +397,7 @@ function ServiceEditorModal({
             label="Credentials Hint"
             value={form.credentialsHint}
             onChange={(v) => setForm({ ...form, credentialsHint: v })}
-            tooltip="Indice pour les identifiants (visible par les admins uniquement). Ne JAMAIS stocker de vrais mots de passe ici."
+            tooltip="Credential hints (admin-only). NEVER store real passwords here."
           />
           {form.credentialsHint && (
             <div className="text-[10px] text-amber-400 flex items-center gap-1">
@@ -427,12 +427,7 @@ function Field({ label, value, onChange, placeholder, required, tooltip }: { lab
         {label}
         {required && <span className="text-red-500">*</span>}
         {tooltip && (
-          <span className="group relative">
-            <HelpCircle className="h-3 w-3 text-portal-muted hover:text-portal-accent cursor-help" />
-            <span className="absolute left-full ml-2 top-1/2 -translate-y-1/2 hidden group-hover:block w-48 p-2 text-[10px] text-portal-text bg-portal-card border border-portal-border rounded-lg shadow-lg z-[100]">
-              {tooltip}
-            </span>
-          </span>
+          <HelpCircle className="h-3 w-3 text-portal-muted hover:text-portal-accent cursor-help" title={tooltip} />
         )}
       </label>
       <input
@@ -453,12 +448,7 @@ function SelectField({ label, value, options, onChange, required, tooltip }: { l
         {label}
         {required && <span className="text-red-500">*</span>}
         {tooltip && (
-          <span className="group relative">
-            <HelpCircle className="h-3 w-3 text-portal-muted hover:text-portal-accent cursor-help" />
-            <span className="absolute left-full ml-2 top-1/2 -translate-y-1/2 hidden group-hover:block w-48 p-2 text-[10px] text-portal-text bg-portal-card border border-portal-border rounded-lg shadow-lg z-[100]">
-              {tooltip}
-            </span>
-          </span>
+          <HelpCircle className="h-3 w-3 text-portal-muted hover:text-portal-accent cursor-help" title={tooltip} />
         )}
       </label>
       <select
