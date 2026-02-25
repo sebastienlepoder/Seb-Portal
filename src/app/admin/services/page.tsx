@@ -422,13 +422,16 @@ function ServiceEditorModal({
 
 function Field({ label, value, onChange, placeholder, required, tooltip }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; required?: boolean; tooltip?: string }) {
   return (
-    <div>
+    <div className="relative">
       <label className="flex items-center gap-1.5 text-[10px] font-medium text-portal-muted mb-1">
         {label}
         {required && <span className="text-red-500">*</span>}
         {tooltip && (
-          <span title={tooltip}>
+          <span className="group relative">
             <HelpCircle className="h-3 w-3 text-portal-muted hover:text-portal-accent cursor-help" />
+            <span className="absolute left-0 top-full mt-1 hidden group-hover:block w-48 p-2 text-[10px] text-portal-text bg-portal-card border border-portal-border rounded-lg shadow-lg z-[9999] whitespace-normal">
+              {tooltip}
+            </span>
           </span>
         )}
       </label>
@@ -445,13 +448,16 @@ function Field({ label, value, onChange, placeholder, required, tooltip }: { lab
 
 function SelectField({ label, value, options, onChange, required, tooltip }: { label: string; value: string; options: string[]; onChange: (v: string) => void; required?: boolean; tooltip?: string }) {
   return (
-    <div>
+    <div className="relative">
       <label className="flex items-center gap-1.5 text-[10px] font-medium text-portal-muted mb-1">
         {label}
         {required && <span className="text-red-500">*</span>}
         {tooltip && (
-          <span title={tooltip}>
+          <span className="group relative">
             <HelpCircle className="h-3 w-3 text-portal-muted hover:text-portal-accent cursor-help" />
+            <span className="absolute left-0 top-full mt-1 hidden group-hover:block w-48 p-2 text-[10px] text-portal-text bg-portal-card border border-portal-border rounded-lg shadow-lg z-[9999] whitespace-normal">
+              {tooltip}
+            </span>
           </span>
         )}
       </label>
