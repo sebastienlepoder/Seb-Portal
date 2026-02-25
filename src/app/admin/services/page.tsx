@@ -429,7 +429,7 @@ function Field({ label, value, onChange, placeholder, required, tooltip }: { lab
         {tooltip && (
           <span className="group relative">
             <HelpCircle className="h-3 w-3 text-portal-muted hover:text-portal-accent cursor-help" />
-            <span className="absolute left-1/2 -translate-x-1/2 top-full mt-1 hidden group-hover:block w-48 p-2 text-[10px] text-portal-text bg-portal-card border border-portal-border rounded-lg shadow-lg z-[9999] whitespace-normal">
+            <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1 hidden group-hover:block w-48 p-2 text-[10px] text-portal-text bg-portal-card border border-portal-border rounded-lg shadow-lg z-[9999] whitespace-normal">
               {tooltip}
             </span>
           </span>
@@ -455,7 +455,7 @@ function SelectField({ label, value, options, onChange, required, tooltip }: { l
         {tooltip && (
           <span className="group relative">
             <HelpCircle className="h-3 w-3 text-portal-muted hover:text-portal-accent cursor-help" />
-            <span className="absolute left-1/2 -translate-x-1/2 top-full mt-1 hidden group-hover:block w-48 p-2 text-[10px] text-portal-text bg-portal-card border border-portal-border rounded-lg shadow-lg z-[9999] whitespace-normal">
+            <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1 hidden group-hover:block w-48 p-2 text-[10px] text-portal-text bg-portal-card border border-portal-border rounded-lg shadow-lg z-[9999] whitespace-normal">
               {tooltip}
             </span>
           </span>
