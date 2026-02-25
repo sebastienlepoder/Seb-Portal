@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/usePortal';
 import { useMicrosoftStatus, useOutlookMail } from '@/hooks/useMicrosoft';
-import PortalSidebar from '@/components/layout/PortalSidebar';
+import MainSidebar from '@/components/layout/MainSidebar';
 import {
   Mail,
   Send,
@@ -148,7 +148,7 @@ export default function MailPage() {
   return (
     <div className="h-screen bg-portal-bg flex overflow-hidden">
       {/* Portal Sidebar */}
-      <PortalSidebar user={user} onLogout={logout} />
+      <MainSidebar user={user} onLogout={logout} />
 
       {/* Main Content */}
       <div className="flex-1 flex">

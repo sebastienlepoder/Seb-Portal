@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/usePortal';
-import PortalSidebar from '@/components/layout/PortalSidebar';
+import MainSidebar from '@/components/layout/MainSidebar';
 import { 
   FolderGit2, 
   Plus, 
@@ -74,7 +74,7 @@ export default function ProjectsPage() {
 
   return (
     <div className="h-screen bg-portal-bg flex overflow-hidden">
-      <PortalSidebar user={user} onLogout={handleLogout} />
+      <MainSidebar user={user} onLogout={handleLogout} />
       
       <div className="flex-1 overflow-y-auto p-6">
         <div className="max-w-6xl mx-auto">

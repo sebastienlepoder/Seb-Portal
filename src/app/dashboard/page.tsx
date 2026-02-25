@@ -12,10 +12,10 @@ import OneNoteWidget from '@/components/widgets/OneNoteWidget';
 import OutlookWidget from '@/components/widgets/OutlookWidget';
 import { AiChatPanel } from '@/components/ai/AiChatPanel';
 import { IframeModal } from '@/components/dashboard/IframeModal';
+import MainSidebar from '@/components/layout/MainSidebar';
 import type { ServiceData } from '@/hooks/usePortal';
 import type { StatusColor } from '@/types';
 import {
-  LogOut,
   Settings,
   BarChart3,
   Sparkles,
@@ -28,9 +28,6 @@ import {
   Wrench,
   Plus,
   Save,
-  ChevronLeft,
-  ChevronRight,
-  LayoutGrid,
   Brain,
   Calculator,
   TrendingUp,
@@ -42,7 +39,6 @@ import {
   Layers,
   Database,
   Activity,
-  FolderGit2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -56,8 +52,6 @@ export default function DashboardPage() {
   const [editingService, setEditingService] = useState<ServiceData | null>(null);
   const [showAiPanel, setShowAiPanel] = useState(false);
   const [iframeModal, setIframeModal] = useState<{ url: string; title: string } | null>(null);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showMcpPanel, setShowMcpPanel] = useState(false);
 
   // Redirect to login
@@ -144,176 +138,20 @@ export default function DashboardPage() {
 
   return (
     <div className="h-screen bg-portal-bg flex overflow-hidden">
-      {/* Sidebar */}
-      <aside
-        className={cn(
-          'fixed lg:static inset-y-0 left-0 z-40 bg-portal-card border-r border-portal-border flex flex-col transition-all duration-200 lg:translate-x-0',
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full',
-          sidebarCollapsed ? 'w-64 lg:w-12' : 'w-64'
-        )}
-      >
-        {/* Brand + collapse toggle */}
-        <div className={cn(
-          'border-b border-portal-border flex items-center gap-2',
-          sidebarCollapsed ? 'p-2 justify-center flex-col' : 'p-4'
-        )}>
-          {!sidebarCollapsed && (
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <Shield className="h-6 w-6 text-portal-accent" />
-                <span className="text-lg font-bold text-portal-text">LEPODER</span>
-              </div>
-              <div className="text-xs text-portal-muted mt-0.5">Personal Portal</div>
-            </div>
-          )}
-          {sidebarCollapsed && <Shield className="h-5 w-5 text-portal-accent" />}
-          <button
-            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-            className="hidden lg:flex p-1 text-portal-muted hover:text-portal-text hover:bg-portal-card-hover rounded-md transition-colors shrink-0"
-            title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          >
-            {sidebarCollapsed
-              ? <ChevronRight className="h-3.5 w-3.5" />
-              : <ChevronLeft className="h-3.5 w-3.5" />
-            }
-          </button>
-        </div>
-
-        {/* Navigation — icons always visible, labels/badges hidden when collapsed */}
-        <nav className="flex-1 overflow-y-auto py-2">
-          <SidebarButton
-            collapsed={sidebarCollapsed}
-            active={activeSection === 'all'}
-            onClick={() => { setActiveSection('all'); setSidebarOpen(false); }}
-            label="All Services"
-            icon={<LayoutGrid className="h-3.5 w-3.5" />}
-          />
-          <SidebarButton
-            collapsed={sidebarCollapsed}
-            active={activeSection === 'favorites'}
-            onClick={() => { setActiveSection('favorites'); setSidebarOpen(false); }}
-            label="Favorites"
-            icon={<Star className="h-3.5 w-3.5" />}
-            badge={!sidebarCollapsed ? (favorites.length || undefined) : undefined}
-          />
-
-          {/* Quick Access Links */}
-          {!sidebarCollapsed && (
-            <div className="px-3 pt-4 pb-1">
-              <div className="text-[10px] font-semibold text-portal-muted uppercase tracking-wider">
-                Quick Access
-              </div>
-            </div>
-          )}
-          {sidebarCollapsed && <div className="h-1 border-t border-portal-border mx-2 mt-2 mb-1" />}
-          <SidebarLink
-            collapsed={sidebarCollapsed}
-            href="/mail"
-            label="Mail"
-            icon={<Mail className="h-3.5 w-3.5" />}
-          />
-          <SidebarLink
-            collapsed={sidebarCollapsed}
-            href="/projects"
-            label="Projects"
-            icon={<FolderGit2 className="h-3.5 w-3.5" />}
-          />
-
-          {!sidebarCollapsed && (
-            <div className="px-3 pt-4 pb-1">
-              <div className="text-[10px] font-semibold text-portal-muted uppercase tracking-wider">
-                Sections
-              </div>
-            </div>
-          )}
-          {sidebarCollapsed && <div className="h-1 border-t border-portal-border mx-2 mt-2 mb-1" />}
-          {sections.map((section) => (
-            <SidebarButton
-              key={section}
-              collapsed={sidebarCollapsed}
-              active={activeSection === section}
-              onClick={() => { setActiveSection(section); setSidebarOpen(false); }}
-              label={section}
-              icon={getSectionIcon(section)}
-              badge={!sidebarCollapsed ? services.filter((s) => s.section === section).length : undefined}
-            />
-          ))}
-        </nav>
-
-        {/* Bottom actions — icons always visible, labels hidden when collapsed */}
-        <div className={cn(
-          'border-t border-portal-border space-y-1',
-          sidebarCollapsed ? 'p-2 flex flex-col items-center' : 'p-3'
-        )}>
-          {user.role === 'admin' && (
-            <a
-              href="/admin/services"
-              title={sidebarCollapsed ? 'Gérer les services' : undefined}
-              className={cn(
-                'flex items-center rounded-lg transition-colors border border-portal-accent/20 text-portal-accent bg-portal-accent/10 hover:bg-portal-accent/20',
-                sidebarCollapsed ? 'p-2 justify-center' : 'gap-2 px-3 py-2 text-xs font-medium'
-              )}
-            >
-              <Settings className="h-3.5 w-3.5 shrink-0" />
-              {!sidebarCollapsed && 'Gérer les services'}
-            </a>
-          )}
-          <a
-            href="/settings"
-            title={sidebarCollapsed ? 'Settings' : undefined}
-            className={cn(
-              'flex items-center rounded-lg transition-colors text-portal-text-dim hover:text-portal-text hover:bg-portal-card-hover',
-              sidebarCollapsed ? 'p-2 justify-center' : 'gap-2 px-3 py-2 text-xs'
-            )}
-          >
-            <Settings className="h-3.5 w-3.5 shrink-0" />
-            {!sidebarCollapsed && 'Settings'}
-          </a>
-          <a
-            href="/admin/reports"
-            title={sidebarCollapsed ? 'Reports' : undefined}
-            className={cn(
-              'flex items-center rounded-lg transition-colors text-portal-text-dim hover:text-portal-text hover:bg-portal-card-hover',
-              sidebarCollapsed ? 'p-2 justify-center' : 'gap-2 px-3 py-2 text-xs'
-            )}
-          >
-            <BarChart3 className="h-3.5 w-3.5 shrink-0" />
-            {!sidebarCollapsed && 'Reports'}
-          </a>
-          <button
-            onClick={logout}
-            title={sidebarCollapsed ? 'Sign Out' : undefined}
-            className={cn(
-              'flex items-center rounded-lg transition-colors text-red-400 hover:bg-red-500/10',
-              sidebarCollapsed ? 'p-2 justify-center' : 'w-full gap-2 px-3 py-2 text-xs'
-            )}
-          >
-            <LogOut className="h-3.5 w-3.5 shrink-0" />
-            {!sidebarCollapsed && 'Sign Out'}
-          </button>
-        </div>
-      </aside>
-
-      {/* Sidebar overlay */}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 z-30 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
+      <MainSidebar
+        user={user}
+        onLogout={logout}
+        activeSection={activeSection}
+        onSectionChange={setActiveSection}
+        sections={sections}
+        favoritesCount={favorites.length}
+      />
 
       {/* Main content */}
       <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
         {/* Header */}
         <header className="shrink-0 z-20 bg-portal-bg/80 backdrop-blur-lg border-b border-portal-border">
           <div className="flex items-center gap-3 px-4 py-3">
-            <button
-              onClick={() => setSidebarOpen(true)}
-              className="lg:hidden p-1.5 text-portal-muted hover:text-portal-text"
-            >
-              <Menu className="h-5 w-5" />
-            </button>
-
             <SearchBar services={services} onSelect={openService} />
 
             <div className="flex items-center gap-2 ml-auto">
@@ -504,91 +342,6 @@ export default function DashboardPage() {
 }
 
 // ─── Sub-components ──────────────────────────────────────────
-
-function SidebarButton({
-  active,
-  onClick,
-  label,
-  icon,
-  badge,
-  collapsed,
-}: {
-  active: boolean;
-  onClick: () => void;
-  label: string;
-  icon?: React.ReactNode;
-  badge?: number;
-  collapsed?: boolean;
-}) {
-  if (collapsed) {
-    return (
-      <button
-        onClick={onClick}
-        title={label}
-        className={cn(
-          'w-full flex items-center justify-center p-2 rounded-lg transition-colors',
-          active
-            ? 'bg-portal-accent/10 text-portal-accent'
-            : 'text-portal-muted hover:text-portal-text hover:bg-portal-card-hover'
-        )}
-      >
-        {icon ?? <Layers className="h-3.5 w-3.5" />}
-      </button>
-    );
-  }
-
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        'w-full flex items-center gap-2 px-3 py-2 mx-2 rounded-lg text-xs transition-colors',
-        active
-          ? 'bg-portal-accent/10 text-portal-accent font-medium'
-          : 'text-portal-text-dim hover:text-portal-text hover:bg-portal-card-hover'
-      )}
-    >
-      {icon}
-      <span className="flex-1 text-left truncate">{label}</span>
-      {badge !== undefined && (
-        <span className="text-[10px] bg-portal-border px-1.5 py-0.5 rounded">{badge}</span>
-      )}
-    </button>
-  );
-}
-
-function SidebarLink({
-  href,
-  label,
-  icon,
-  collapsed,
-}: {
-  href: string;
-  label: string;
-  icon?: React.ReactNode;
-  collapsed?: boolean;
-}) {
-  if (collapsed) {
-    return (
-      <a
-        href={href}
-        title={label}
-        className="w-full flex items-center justify-center p-2 rounded-lg transition-colors text-portal-muted hover:text-portal-text hover:bg-portal-card-hover"
-      >
-        {icon ?? <Layers className="h-3.5 w-3.5" />}
-      </a>
-    );
-  }
-
-  return (
-    <a
-      href={href}
-      className="flex items-center gap-2 px-3 py-2 mx-2 rounded-lg text-xs transition-colors text-portal-text-dim hover:text-portal-text hover:bg-portal-card-hover"
-    >
-      {icon}
-      <span className="flex-1 text-left truncate">{label}</span>
-    </a>
-  );
-}
 
 /** Maps section names (case-insensitive keywords) to a Lucide icon. */
 function getSectionIcon(section: string): React.ReactNode {
