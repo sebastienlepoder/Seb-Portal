@@ -152,14 +152,14 @@ export function getConnectionMode(): string {
 // Control Plane API request
 async function controlPlaneRequest<T>(method: string, endpoint: string, body?: unknown): Promise<T> {
   return new Promise((resolve, reject) => {
-    const url = new URL(\`https://api.tailscale.com/api/v2/tailnet/\${TAILSCALE_TAILNET}\${endpoint}\`);
+    const url = new URL(`https://api.tailscale.com/api/v2/tailnet/${TAILSCALE_TAILNET}${endpoint}`);
     
     const options: https.RequestOptions = {
       method,
       hostname: url.hostname,
       path: url.pathname + url.search,
       headers: {
-        'Authorization': \`Bearer \${TAILSCALE_API_KEY}\`,
+        'Authorization': `Bearer ${TAILSCALE_API_KEY}`,
         'Content-Type': 'application/json',
       },
     };
@@ -175,12 +175,12 @@ async function controlPlaneRequest<T>(method: string, endpoint: string, body?: u
             resolve(data as unknown as T);
           }
         } else {
-          reject(new Error(\`Tailscale Control API error: \${res.statusCode} \${data}\`));
+          reject(new Error(`Tailscale Control API error: ${res.statusCode} ${data}`));
         }
       });
     });
 
-    req.on('error', (err) => reject(new Error(\`Tailscale Control API failed: \${err.message}\`)));
+    req.on('error', (err) => reject(new Error(`Tailscale Control API failed: ${err.message}`)));
     req.setTimeout(10000, () => { req.destroy(); reject(new Error('Tailscale Control API timeout')); });
     if (body) req.write(JSON.stringify(body));
     req.end();
@@ -215,12 +215,12 @@ async function localApiRequest<T>(method: string, path: string, body?: unknown):
           try { resolve(data ? JSON.parse(data) : ({} as T)); }
           catch { resolve(data as unknown as T); }
         } else {
-          reject(new Error(\`Tailscale API error: \${res.statusCode} \${data}\`));
+          reject(new Error(`Tailscale API error: ${res.statusCode} ${data}`));
         }
       });
     });
 
-    req.on('error', (err) => reject(new Error(\`Tailscale connection failed: \${err.message}\`)));
+    req.on('error', (err) => reject(new Error(`Tailscale connection failed: ${err.message}`)));
     req.setTimeout(5000, () => { req.destroy(); reject(new Error('Tailscale connection timeout')); });
     if (body) req.write(JSON.stringify(body));
     req.end();
@@ -233,7 +233,7 @@ function adaptWebAPIToLocalAPI(webData: WebAPIData): TailscaleStatus {
     ID: webData.ID,
     PublicKey: '',
     HostName: webData.DeviceName,
-    DNSName: \`\${webData.DeviceName}.\${webData.TailnetName}.\`,
+    DNSName: `${webData.DeviceName}.${webData.TailnetName}.`,
     OS: webData.OS,
     UserID: 0,
     TailscaleIPs: [webData.IPv4, webData.IPv6].filter(Boolean),
