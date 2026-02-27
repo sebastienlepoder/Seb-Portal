@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSessionUser } from '@/lib/auth';
 import {
   isTailscaleAvailable,
+  getConnectionMode,
   getStatus,
   getDevices,
   setExitNode,
@@ -17,13 +18,16 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const connectionMode = getConnectionMode();
+
     // Check if Tailscale is available
     if (!isTailscaleAvailable()) {
       return NextResponse.json({
         ok: true,
         data: {
           available: false,
-          message: 'Tailscale socket not found. Mount /var/run/tailscale/tailscaled.sock into the container.',
+          connectionMode,
+          message: 'Tailscale not configured. Set TAILSCALE_API_KEY + TAILSCALE_TAILNET for remote access, or mount the Tailscale socket for local access.',
         },
       });
     }
@@ -38,6 +42,7 @@ export async function GET(req: NextRequest) {
           ok: true,
           data: {
             available: true,
+            connectionMode,
             connected: status.BackendState === 'Running',
             state: status.BackendState,
             version: status.Version,
@@ -59,7 +64,7 @@ export async function GET(req: NextRequest) {
         const devices = await getDevices();
         return NextResponse.json({
           ok: true,
-          data: devices,
+          data: { ...devices, connectionMode },
         });
       }
 
@@ -73,6 +78,7 @@ export async function GET(req: NextRequest) {
           ok: true,
           data: {
             available: true,
+            connectionMode,
             connected: status.BackendState === 'Running',
             state: status.BackendState,
             version: status.Version,
@@ -89,8 +95,20 @@ export async function GET(req: NextRequest) {
     }
   } catch (error) {
     console.error('Tailscale API error:', error);
+    const message = (error as Error).message;
+    
+    // Provide helpful error messages
+    let helpText = message;
+    if (message.includes('ENOTFOUND') || message.includes('getaddrinfo')) {
+      helpText = 'Cannot reach Tailscale API. If using Web API mode, ensure the Tailscale service is running and accessible.';
+    } else if (message.includes('timeout')) {
+      helpText = 'Tailscale API request timed out. Check network connectivity.';
+    } else if (message.includes('ECONNREFUSED')) {
+      helpText = 'Connection refused. Tailscale service may not be running.';
+    }
+    
     return NextResponse.json(
-      { ok: false, error: (error as Error).message },
+      { ok: false, error: helpText },
       { status: 500 }
     );
   }

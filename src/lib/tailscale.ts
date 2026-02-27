@@ -1,16 +1,37 @@
 /**
  * Tailscale API Client
- * Connects to tailscaled via Unix socket (Local API) or HTTP (Web API)
+ * Supports multiple connection methods:
+ * 1. Control Plane API (api.tailscale.com) - Works from anywhere with API key
+ * 2. Local API via Unix socket - For containers with mounted socket
+ * 3. Web API (tailscale web) - For local HTTP access
  * 
- * Docs: https://tailscale.com/kb/1242/tailscale-local-api
+ * Docs: 
+ * - https://tailscale.com/kb/1242/tailscale-local-api
+ * - https://tailscale.com/api
  */
 
 import fs from 'fs';
 import http from 'http';
+import https from 'https';
 
+// Configuration
 const TAILSCALE_SOCKET = process.env.TAILSCALE_SOCKET || '/var/run/tailscale/tailscaled.sock';
-const TAILSCALE_API_URL = process.env.TAILSCALE_API_URL; // Optional: use HTTP instead of socket
-const IS_WEB_API = TAILSCALE_API_URL && !TAILSCALE_API_URL.includes('localapi');
+const TAILSCALE_API_URL = process.env.TAILSCALE_API_URL; // Web API (local HTTP)
+const TAILSCALE_API_KEY = process.env.TAILSCALE_API_KEY; // Control Plane API key
+const TAILSCALE_TAILNET = process.env.TAILSCALE_TAILNET; // Required for Control Plane API
+
+// Determine which API mode to use
+type ApiMode = 'control' | 'web' | 'socket' | 'none';
+function getApiMode(): ApiMode {
+  if (TAILSCALE_API_KEY && TAILSCALE_TAILNET) return 'control';
+  if (TAILSCALE_API_URL) return 'web';
+  try {
+    if (fs.existsSync(TAILSCALE_SOCKET)) return 'socket';
+  } catch {}
+  return 'none';
+}
+
+const API_MODE = getApiMode();
 
 export interface TailscaleStatus {
   Version: string;
@@ -63,7 +84,34 @@ export interface TailscalePrefs {
   ShieldsUp: boolean;
 }
 
-// Web API interfaces (tailscale web)
+// Control Plane API device interface
+interface ControlPlaneDevice {
+  id: string;
+  nodeId: string;
+  name: string;
+  hostname: string;
+  addresses: string[];
+  os: string;
+  clientVersion: string;
+  user: string;
+  created: string;
+  lastSeen: string;
+  keyExpiryDisabled: boolean;
+  expires: string;
+  authorized: boolean;
+  isExternal: boolean;
+  updateAvailable: boolean;
+  blocksIncomingConnections: boolean;
+  enabledRoutes: string[];
+  advertisedRoutes: string[];
+  tags?: string[];
+}
+
+interface ControlPlaneDevicesResponse {
+  devices: ControlPlaneDevice[];
+}
+
+// Web API interfaces
 export interface WebAPIData {
   ID: string;
   Status: string;
@@ -89,31 +137,110 @@ export interface WebAPIData {
   AdvertisingExitNode: boolean;
   AdvertisingExitNodeApproved: boolean;
   AdvertisedRoutes: any;
-  Features?: {
-    [key: string]: boolean;
-  };
 }
 
-// Adapter: Convert Web API data to Local API format
+// Check if Tailscale is available
+export function isTailscaleAvailable(): boolean {
+  return API_MODE !== 'none';
+}
+
+// Get the current API mode for debugging
+export function getConnectionMode(): string {
+  return API_MODE;
+}
+
+// Control Plane API request
+async function controlPlaneRequest<T>(method: string, endpoint: string, body?: unknown): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const url = new URL(\`https://api.tailscale.com/api/v2/tailnet/\${TAILSCALE_TAILNET}\${endpoint}\`);
+    
+    const options: https.RequestOptions = {
+      method,
+      hostname: url.hostname,
+      path: url.pathname + url.search,
+      headers: {
+        'Authorization': \`Bearer \${TAILSCALE_API_KEY}\`,
+        'Content-Type': 'application/json',
+      },
+    };
+
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', (chunk) => (data += chunk));
+      res.on('end', () => {
+        if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+          try {
+            resolve(data ? JSON.parse(data) : ({} as T));
+          } catch {
+            resolve(data as unknown as T);
+          }
+        } else {
+          reject(new Error(\`Tailscale Control API error: \${res.statusCode} \${data}\`));
+        }
+      });
+    });
+
+    req.on('error', (err) => reject(new Error(\`Tailscale Control API failed: \${err.message}\`)));
+    req.setTimeout(10000, () => { req.destroy(); reject(new Error('Tailscale Control API timeout')); });
+    if (body) req.write(JSON.stringify(body));
+    req.end();
+  });
+}
+
+// Web/Socket API request
+async function localApiRequest<T>(method: string, path: string, body?: unknown): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const options: http.RequestOptions = {
+      method,
+      path,
+      headers: { 'Content-Type': 'application/json' },
+    };
+
+    if (API_MODE === 'web' && TAILSCALE_API_URL) {
+      let requestPath = path;
+      if (path === '/localapi/v0/status') requestPath = '/api/data';
+      const url = new URL(requestPath, TAILSCALE_API_URL);
+      options.hostname = url.hostname;
+      options.port = url.port || 80;
+      options.path = url.pathname;
+    } else {
+      options.socketPath = TAILSCALE_SOCKET;
+    }
+
+    const req = http.request(options, (res) => {
+      let data = '';
+      res.on('data', (chunk) => (data += chunk));
+      res.on('end', () => {
+        if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+          try { resolve(data ? JSON.parse(data) : ({} as T)); }
+          catch { resolve(data as unknown as T); }
+        } else {
+          reject(new Error(\`Tailscale API error: \${res.statusCode} \${data}\`));
+        }
+      });
+    });
+
+    req.on('error', (err) => reject(new Error(\`Tailscale connection failed: \${err.message}\`)));
+    req.setTimeout(5000, () => { req.destroy(); reject(new Error('Tailscale connection timeout')); });
+    if (body) req.write(JSON.stringify(body));
+    req.end();
+  });
+}
+
+// Adapter: Web API to Local API format
 function adaptWebAPIToLocalAPI(webData: WebAPIData): TailscaleStatus {
   const self: TailscaleDevice = {
     ID: webData.ID,
-    PublicKey: '', // Not available in Web API
+    PublicKey: '',
     HostName: webData.DeviceName,
-    DNSName: `${webData.DeviceName}.${webData.TailnetName}.`,
+    DNSName: \`\${webData.DeviceName}.\${webData.TailnetName}.\`,
     OS: webData.OS,
     UserID: 0,
     TailscaleIPs: [webData.IPv4, webData.IPv6].filter(Boolean),
-    Addrs: null,
-    CurAddr: '',
-    Relay: '',
-    RxBytes: 0,
-    TxBytes: 0,
-    Created: '',
-    LastSeen: new Date().toISOString(),
-    LastHandshake: '',
+    Addrs: null, CurAddr: '', Relay: '', RxBytes: 0, TxBytes: 0,
+    Created: '', LastSeen: new Date().toISOString(), LastHandshake: '',
     Online: webData.Status === 'Running',
-    ExitNode: webData.UsingExitNode ? true : false,
+    ExitNode: !!webData.UsingExitNode,
     ExitNodeOption: webData.AdvertisingExitNode,
     Active: true,
     Tags: webData.Tags || undefined,
@@ -129,189 +256,74 @@ function adaptWebAPIToLocalAPI(webData: WebAPIData): TailscaleStatus {
       Online: true,
       TailscaleIPs: [webData.UsingExitNode.ip || ''].filter(Boolean),
     } : undefined,
-    Peer: {}, // Web API doesn't provide peer data - would need separate call
+    Peer: {},
     MagicDNSSuffix: webData.TailnetName,
-    CurrentTailnet: {
-      Name: webData.TailnetName,
-      MagicDNSSuffix: webData.TailnetName,
-    },
+    CurrentTailnet: { Name: webData.TailnetName, MagicDNSSuffix: webData.TailnetName },
   };
 }
 
-// Check if Tailscale socket is available
-export function isTailscaleAvailable(): boolean {
-  if (TAILSCALE_API_URL) return true;
-  try {
-    return fs.existsSync(TAILSCALE_SOCKET);
-  } catch {
-    return false;
-  }
-}
-
-// Make request to Tailscale API (Local or Web)
-async function tailscaleRequest<T>(
-  method: string,
-  path: string,
-  body?: unknown
-): Promise<T> {
-  return new Promise((resolve, reject) => {
-    let requestPath = path;
-    
-    // Adapt Local API paths to Web API paths when using Web API
-    if (IS_WEB_API) {
-      if (path === '/localapi/v0/status') {
-        requestPath = '/api/data';
-      } else if (path.startsWith('/localapi/v0/')) {
-        // For now, other Local API endpoints are not supported in Web API
-        reject(new Error(`Web API does not support endpoint: ${path}`));
-        return;
-      }
-    }
-
-    const options: http.RequestOptions = {
-      method,
-      path: requestPath,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    };
-
-    if (TAILSCALE_API_URL) {
-      // HTTP mode
-      const url = new URL(requestPath, TAILSCALE_API_URL);
-      options.hostname = url.hostname;
-      options.port = url.port || 80;
-      options.path = url.pathname;
-    } else {
-      // Unix socket mode
-      options.socketPath = TAILSCALE_SOCKET;
-    }
-
-    const req = http.request(options, (res) => {
-      let data = '';
-      res.on('data', (chunk) => (data += chunk));
-      res.on('end', () => {
-        if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
-          try {
-            resolve(data ? JSON.parse(data) : ({} as T));
-          } catch {
-            resolve(data as unknown as T);
-          }
-        } else {
-          reject(new Error(`Tailscale API error: ${res.statusCode} ${data}`));
-        }
-      });
-    });
-
-    req.on('error', (err) => {
-      reject(new Error(`Tailscale connection failed: ${err.message}`));
-    });
-
-    if (body) {
-      req.write(JSON.stringify(body));
-    }
-
-    req.end();
-  });
+// Adapter: Control Plane device to local format
+function adaptControlPlaneDevice(device: ControlPlaneDevice): TailscaleDevice {
+  const isOnline = new Date(device.lastSeen).getTime() > Date.now() - 5 * 60 * 1000;
+  return {
+    ID: device.nodeId,
+    PublicKey: '',
+    HostName: device.hostname || device.name,
+    DNSName: device.name,
+    OS: device.os,
+    UserID: 0,
+    TailscaleIPs: device.addresses || [],
+    Addrs: null, CurAddr: '', Relay: '', RxBytes: 0, TxBytes: 0,
+    Created: device.created,
+    LastSeen: device.lastSeen,
+    LastHandshake: '',
+    Online: isOnline,
+    ExitNode: (device.advertisedRoutes || []).includes('0.0.0.0/0'),
+    ExitNodeOption: (device.advertisedRoutes || []).includes('0.0.0.0/0'),
+    Active: isOnline,
+    Tags: device.tags,
+  };
 }
 
 // Get current Tailscale status
 export async function getStatus(): Promise<TailscaleStatus> {
-  if (IS_WEB_API) {
-    const webData = await tailscaleRequest<WebAPIData>('GET', '/localapi/v0/status');
-    return adaptWebAPIToLocalAPI(webData);
-  } else {
-    return tailscaleRequest<TailscaleStatus>('GET', '/localapi/v0/status');
+  switch (API_MODE) {
+    case 'control': {
+      const response = await controlPlaneRequest<ControlPlaneDevicesResponse>('GET', '/devices');
+      const devices = response.devices || [];
+      const firstDevice = devices[0];
+      
+      const self: TailscaleDevice = firstDevice ? adaptControlPlaneDevice(firstDevice) : {
+        ID: '', PublicKey: '', HostName: 'Unknown', DNSName: '', OS: '', UserID: 0,
+        TailscaleIPs: [], Addrs: null, CurAddr: '', Relay: '', RxBytes: 0, TxBytes: 0,
+        Created: '', LastSeen: '', LastHandshake: '', Online: false,
+        ExitNode: false, ExitNodeOption: false, Active: false,
+      };
+
+      const peers: Record<string, TailscaleDevice> = {};
+      devices.slice(1).forEach(d => { peers[d.nodeId] = adaptControlPlaneDevice(d); });
+
+      return {
+        Version: 'Control API',
+        BackendState: 'Running',
+        TailscaleIPs: self.TailscaleIPs,
+        Self: self,
+        Peer: peers,
+        MagicDNSSuffix: TAILSCALE_TAILNET || '',
+        CurrentTailnet: { Name: TAILSCALE_TAILNET || '', MagicDNSSuffix: TAILSCALE_TAILNET || '' },
+      };
+    }
+    case 'web': {
+      const webData = await localApiRequest<WebAPIData>('GET', '/localapi/v0/status');
+      return adaptWebAPIToLocalAPI(webData);
+    }
+    case 'socket':
+    default:
+      return localApiRequest<TailscaleStatus>('GET', '/localapi/v0/status');
   }
 }
 
-// Get current preferences
-export async function getPrefs(): Promise<TailscalePrefs> {
-  if (IS_WEB_API) {
-    // Web API doesn't provide preference details, return minimal data
-    return {
-      ExitNodeAllowLANAccess: false,
-      AdvertiseExitNode: false,
-      ShieldsUp: false,
-    };
-  }
-  return tailscaleRequest<TailscalePrefs>('GET', '/localapi/v0/prefs');
-}
-
-// Set exit node
-export async function setExitNode(nodeId: string | null): Promise<void> {
-  if (IS_WEB_API) {
-    throw new Error('Exit node control not available via Web API. Use Tailscale app or CLI.');
-  }
-  const prefs: Partial<TailscalePrefs> = {
-    ExitNodeID: nodeId || '',
-  };
-  await tailscaleRequest('PATCH', '/localapi/v0/prefs', prefs);
-}
-
-// Set exit node with LAN access
-export async function setExitNodeAllowLAN(allow: boolean): Promise<void> {
-  if (IS_WEB_API) {
-    throw new Error('Exit node LAN control not available via Web API. Use Tailscale app or CLI.');
-  }
-  await tailscaleRequest('PATCH', '/localapi/v0/prefs', {
-    ExitNodeAllowLANAccess: allow,
-  });
-}
-
-// Disconnect/reconnect Tailscale
-export async function setWantRunning(want: boolean): Promise<void> {
-  if (IS_WEB_API) {
-    throw new Error('Connection control not available via Web API. Use Tailscale app or CLI.');
-  }
-  await tailscaleRequest('PATCH', '/localapi/v0/prefs', {
-    WantRunning: want,
-  });
-}
-
-// Get simplified device list
-export async function getDevices(): Promise<{
-  self: SimplifiedDevice;
-  peers: SimplifiedDevice[];
-  tailnet: string;
-  exitNode?: SimplifiedDevice;
-}> {
-  const status = await getStatus();
-  
-  const simplify = (d: TailscaleDevice, isSelf = false): SimplifiedDevice => ({
-    id: d.ID,
-    hostname: d.HostName,
-    dnsName: d.DNSName.replace(/\.$/, ''),
-    os: d.OS,
-    ips: d.TailscaleIPs,
-    online: d.Online,
-    lastSeen: d.LastSeen,
-    isExitNode: d.ExitNodeOption,
-    isCurrentExitNode: d.ExitNode,
-    isSelf,
-    rxBytes: d.RxBytes,
-    txBytes: d.TxBytes,
-    tags: d.Tags,
-  });
-
-  const self = simplify(status.Self, true);
-  const peers = Object.values(status.Peer || {}).map((p) => simplify(p));
-  
-  // Find current exit node
-  const exitNode = peers.find((p) => p.isCurrentExitNode);
-
-  return {
-    self,
-    peers: peers.sort((a, b) => {
-      // Online first, then by hostname
-      if (a.online !== b.online) return a.online ? -1 : 1;
-      return a.hostname.localeCompare(b.hostname);
-    }),
-    tailnet: status.CurrentTailnet?.Name || status.MagicDNSSuffix || 'unknown',
-    exitNode,
-  };
-}
-
+// Simplified device interface for UI
 export interface SimplifiedDevice {
   id: string;
   hostname: string;
@@ -328,50 +340,53 @@ export interface SimplifiedDevice {
   tags?: string[];
 }
 
-// Format bytes to human readable
-export function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-}
-
-// Get OS emoji
-export function getOsEmoji(os: string): string {
-  const lower = os.toLowerCase();
-  if (lower.includes('macos') || lower.includes('darwin')) return '🍎';
-  if (lower.includes('windows')) return '🪟';
-  if (lower.includes('linux')) return '🐧';
-  if (lower.includes('ios')) return '📱';
-  if (lower.includes('android')) return '🤖';
-  if (lower.includes('synology')) return '💾';
-  return '💻';
-}
-
-// Scan for common services on a device
-export async function scanDeviceServices(
-  ip: string,
-  ports: number[] = [22, 80, 443, 8080, 8123, 3000, 5000, 8000, 9000]
-): Promise<{ port: number; open: boolean }[]> {
-  const results = await Promise.all(
-    ports.map(async (port) => {
-      try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 1000);
-        
-        await fetch(`http://${ip}:${port}/`, {
-          method: 'HEAD',
-          signal: controller.signal,
-        }).catch(() => {});
-        
-        clearTimeout(timeout);
-        return { port, open: true };
-      } catch {
-        return { port, open: false };
-      }
-    })
-  );
+// Get all devices
+export async function getDevices(): Promise<{ self: SimplifiedDevice | null; peers: SimplifiedDevice[]; exitNode: SimplifiedDevice | null }> {
+  const status = await getStatus();
   
-  return results.filter((r) => r.open);
+  const mapDevice = (device: TailscaleDevice, isSelf: boolean = false): SimplifiedDevice => ({
+    id: device.ID,
+    hostname: device.HostName,
+    dnsName: device.DNSName?.replace(/\.$/, '') || '',
+    os: device.OS,
+    ips: device.TailscaleIPs || [],
+    online: device.Online,
+    lastSeen: device.LastSeen || device.LastHandshake || '',
+    isExitNode: device.ExitNodeOption,
+    isCurrentExitNode: status.ExitNodeStatus?.ID === device.ID,
+    isSelf,
+    rxBytes: device.RxBytes || 0,
+    txBytes: device.TxBytes || 0,
+    tags: device.Tags,
+  });
+
+  const self = status.Self ? mapDevice(status.Self, true) : null;
+  const peers = Object.values(status.Peer || {}).map(p => mapDevice(p, false));
+  const exitNode = status.ExitNodeStatus ? peers.find(p => p.id === status.ExitNodeStatus?.ID) || null : null;
+
+  return { self, peers, exitNode };
+}
+
+// Get preferences
+export async function getPrefs(): Promise<TailscalePrefs> {
+  if (API_MODE === 'control' || API_MODE === 'web') {
+    return { ExitNodeAllowLANAccess: false, AdvertiseExitNode: false, ShieldsUp: false };
+  }
+  return localApiRequest<TailscalePrefs>('GET', '/localapi/v0/prefs');
+}
+
+// Set exit node (socket mode only)
+export async function setExitNode(nodeId: string | null): Promise<void> {
+  if (API_MODE !== 'socket') {
+    throw new Error('Exit node control requires local Tailscale socket. Use the Tailscale app on the device.');
+  }
+  await localApiRequest('PATCH', '/localapi/v0/prefs', { ExitNodeID: nodeId || '' });
+}
+
+// Set exit node LAN access (socket mode only)
+export async function setExitNodeAllowLAN(allow: boolean): Promise<void> {
+  if (API_MODE !== 'socket') {
+    throw new Error('Exit node LAN control requires local Tailscale socket.');
+  }
+  await localApiRequest('PATCH', '/localapi/v0/prefs', { ExitNodeAllowLANAccess: allow });
 }
