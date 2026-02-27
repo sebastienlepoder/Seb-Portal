@@ -1,10 +1,10 @@
 'use client';
 
-import {
-  GitBranch, useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/usePortal';
 import MainSidebar from '@/components/layout/MainSidebar';
 import {
+  GitBranch,
   Server,
   Box,
   Database,
