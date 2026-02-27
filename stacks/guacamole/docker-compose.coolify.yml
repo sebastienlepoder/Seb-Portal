@@ -1,0 +1,62 @@
+services:
+  guacd:
+    image: guacamole/guacd:latest
+    restart: unless-stopped
+    volumes:
+      - guacd-drive:/drive
+      - guacd-record:/record
+
+  guacamole:
+    image: guacamole/guacamole:latest
+    restart: unless-stopped
+    depends_on:
+      guacd:
+        condition: service_started
+      db-init:
+        condition: service_completed_successfully
+    environment:
+      - GUACD_HOSTNAME=guacd
+      - POSTGRESQL_HOSTNAME=postgres
+      - POSTGRESQL_DATABASE=guacamole_db
+      - POSTGRESQL_USER=guacamole
+      - POSTGRESQL_PASSWORD=GuacSecure2026!
+      - TOTP_ENABLED=true
+    ports:
+      - "8080:8080"
+
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=guacamole_db
+      - POSTGRES_USER=guacamole
+      - POSTGRES_PASSWORD=GuacSecure2026!
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U guacamole -d guacamole_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  db-init:
+    image: guacamole/guacamole:latest
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - POSTGRESQL_HOSTNAME=postgres
+      - POSTGRESQL_DATABASE=guacamole_db
+      - POSTGRESQL_USER=guacamole
+      - POSTGRESQL_PASSWORD=GuacSecure2026!
+    entrypoint: /bin/sh
+    command: >
+      -c "
+      /opt/guacamole/bin/initdb.sh --postgresql | 
+      PGPASSWORD=GuacSecure2026! psql -h postgres -U guacamole -d guacamole_db -f - || true
+      "
+
+volumes:
+  guacd-drive:
+  guacd-record:
+  postgres-data:

@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  hbbs:
+    image: rustdesk/rustdesk-server:latest
+    container_name: rustdesk-hbbs
+    command: hbbs
+    volumes:
+      - ./data:/root
+    networks:
+      - rustdesk-net
+    ports:
+      - "21115:21115"      # NAT type test
+      - "21116:21116"      # TCP hole punching
+      - "21116:21116/udp"  # ID registration + heartbeat
+      - "21118:21118"      # Web client WebSocket
+    restart: unless-stopped
+
+  hbbr:
+    image: rustdesk/rustdesk-server:latest
+    container_name: rustdesk-hbbr
+    command: hbbr
+    volumes:
+      - ./data:/root
+    networks:
+      - rustdesk-net
+    ports:
+      - "21117:21117"      # Relay traffic
+      - "21119:21119"      # Web client relay WebSocket
+    restart: unless-stopped
+
+networks:
+  rustdesk-net:
+    driver: bridge
