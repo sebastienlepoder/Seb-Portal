@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import {
+  GitBranch, useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/usePortal';
 import MainSidebar from '@/components/layout/MainSidebar';
 import {
@@ -186,8 +187,8 @@ export default function CoolifyPage() {
             <div className="flex items-center gap-3">
               <Cloud className="h-6 w-6 text-purple-400" />
               <div>
-                <h1 className="text-xl font-bold text-portal-text">Coolify</h1>
-                <p className="text-sm text-portal-muted">Container & deployment management</p>
+                <h1 className="text-xl font-bold text-portal-text">VPS Servers</h1>
+                <p className="text-sm text-portal-muted">Container & deployment management (Coolify)</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -470,7 +471,18 @@ function AppRow({
               <DetailItem label="UUID" value={app.uuid} mono />
               <DetailItem label="Build Pack" value={app.build_pack} />
               {app.git_repository && (
-                <DetailItem label="Repository" value={app.git_repository} />
+                <div className="flex items-center gap-2">
+                  <DetailItem label="Repository" value={app.git_repository} />
+                  <a
+                    href={app.git_repository}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-3 p-1.5 text-portal-muted hover:text-portal-text bg-portal-bg rounded transition-colors"
+                    title="Open Repository"
+                  >
+                    <GitBranch className="h-4 w-4" />
+                  </a>
+                </div>
               )}
               {app.git_branch && (
                 <DetailItem label="Branch" value={app.git_branch} />
