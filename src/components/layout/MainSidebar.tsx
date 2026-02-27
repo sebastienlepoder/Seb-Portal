@@ -18,6 +18,7 @@ import {
   X,
   Wifi,
   Monitor,
+  Cloud,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -52,7 +53,8 @@ export default function MainSidebar({
   const isMail = pathname === '/mail';
   const isProjects = pathname?.startsWith('/projects');
   const isTailscale = pathname === '/tailscale';
-  const isRemote = pathname === '/remote';
+  const isRemote = pathname === "/remote";
+  const isCoolify = pathname === "/coolify";
 
   return (
     <>
@@ -180,6 +182,13 @@ export default function MainSidebar({
             active={isRemote}
             label="Remote Desktop"
             icon={<Monitor className="h-3.5 w-3.5" />}
+          />
+          <SidebarLink
+            collapsed={collapsed}
+            href="/coolify"
+            active={isCoolify}
+            label="Coolify"
+            icon={<Cloud className="h-3.5 w-3.5" />}
           />
 
           {/* Dashboard sections (only on dashboard) */}
