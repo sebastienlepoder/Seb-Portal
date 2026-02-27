@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@/lib/db';
 
 const GUACAMOLE_URL = process.env.GUACAMOLE_URL || 'http://187.77.214.29:8090/guacamole';
 const GUACAMOLE_USER = process.env.GUACAMOLE_USER || 'guacadmin';
