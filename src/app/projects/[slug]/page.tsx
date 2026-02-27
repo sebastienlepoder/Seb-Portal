@@ -7,7 +7,6 @@ import {
   ArrowLeft, 
   FileText, 
   GitBranch,
-  Clock,
   ExternalLink,
   RefreshCw,
   Edit3,
@@ -15,11 +14,18 @@ import {
   X,
   MessageSquare,
   ListChecks,
-  History
+  History,
+  BookOpen,
+  Folder,
+  FolderOpen,
+  ChevronRight,
+  ChevronDown,
+  File,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import ReactMarkdown from 'react-markdown';
+import { cn } from '@/lib/utils';
 
 interface Project {
   id: string;
@@ -38,7 +44,20 @@ interface ProjectFile {
   exists: boolean;
 }
 
-const tabs = [
+interface DocFile {
+  name: string;
+  path: string;
+  type: 'file' | 'dir';
+  url: string;
+  children?: DocFile[];
+}
+
+interface DocsData {
+  tree: DocFile[];
+  hasDocsFolder: boolean;
+}
+
+const localTabs = [
   { id: 'notes', label: '🦀 Notes Claw', file: 'CLAW-NOTES.md', icon: ListChecks },
   { id: 'readme', label: '📋 README', file: 'README.md', icon: FileText },
   { id: 'changelog', label: '📝 Changelog', file: 'CHANGELOG.md', icon: History },
@@ -57,6 +76,14 @@ export default function ProjectDetailPage() {
   const [editing, setEditing] = useState(false);
   const [editContent, setEditContent] = useState('');
   const [saving, setSaving] = useState(false);
+  
+  // Docs state
+  const [docsData, setDocsData] = useState<DocsData | null>(null);
+  const [loadingDocs, setLoadingDocs] = useState(false);
+  const [selectedDocPath, setSelectedDocPath] = useState<string | null>(null);
+  const [docContent, setDocContent] = useState<string | null>(null);
+  const [loadingDocContent, setLoadingDocContent] = useState(false);
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!loading && !user) window.location.href = '/login';
@@ -73,14 +100,13 @@ export default function ProjectDetailPage() {
     }
   }, [user, slug]);
 
-  // Load file content when tab changes
+  // Load local file content when tab changes (for non-docs tabs)
   useEffect(() => {
-    if (!project || !slug) return;
+    if (!project || !slug || activeTab === 'docs') return;
     
-    const tab = tabs.find(t => t.id === activeTab);
+    const tab = localTabs.find(t => t.id === activeTab);
     if (!tab) return;
 
-    // Check cache
     if (fileContent[tab.file]) return;
 
     setLoadingFile(true);
@@ -98,7 +124,69 @@ export default function ProjectDetailPage() {
       .catch(() => setLoadingFile(false));
   }, [project, slug, activeTab, fileContent]);
 
-  const currentTab = tabs.find(t => t.id === activeTab);
+  // Load docs tree when docs tab is selected
+  useEffect(() => {
+    if (activeTab !== 'docs' || !project?.repoUrl || docsData) return;
+
+    setLoadingDocs(true);
+    fetch(`/api/github/docs?repo=${encodeURIComponent(project.repoUrl)}&action=tree`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.ok) {
+          setDocsData(data.data);
+          // Auto-select first markdown file if exists
+          const firstMd = findFirstMarkdownFile(data.data.tree);
+          if (firstMd) {
+            setSelectedDocPath(firstMd.path);
+          }
+        }
+        setLoadingDocs(false);
+      })
+      .catch(() => setLoadingDocs(false));
+  }, [activeTab, project?.repoUrl, docsData]);
+
+  // Load selected doc content
+  useEffect(() => {
+    if (!selectedDocPath || !project?.repoUrl) return;
+
+    setLoadingDocContent(true);
+    fetch(`/api/github/docs?repo=${encodeURIComponent(project.repoUrl)}&action=file&file=${encodeURIComponent(selectedDocPath)}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.ok) {
+          setDocContent(data.data.content);
+        }
+        setLoadingDocContent(false);
+      })
+      .catch(() => setLoadingDocContent(false));
+  }, [selectedDocPath, project?.repoUrl]);
+
+  const findFirstMarkdownFile = (tree: DocFile[]): DocFile | null => {
+    for (const item of tree) {
+      if (item.type === 'file' && item.name.endsWith('.md')) {
+        return item;
+      }
+      if (item.children) {
+        const found = findFirstMarkdownFile(item.children);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+
+  const toggleFolder = (path: string) => {
+    setExpandedFolders(prev => {
+      const next = new Set(prev);
+      if (next.has(path)) {
+        next.delete(path);
+      } else {
+        next.add(path);
+      }
+      return next;
+    });
+  };
+
+  const currentTab = localTabs.find(t => t.id === activeTab);
   const currentFile = currentTab ? fileContent[currentTab.file] : null;
 
   const handleEdit = () => {
@@ -161,6 +249,12 @@ export default function ProjectDetailPage() {
       </div>
     );
   }
+
+  // Build tabs array with docs if repo exists
+  const tabs = [
+    ...localTabs,
+    ...(project.repoUrl ? [{ id: 'docs', label: '📚 Docs', file: null, icon: BookOpen }] : []),
+  ];
 
   return (
     <div className="h-screen bg-portal-bg flex overflow-hidden">
@@ -230,123 +324,274 @@ export default function ProjectDetailPage() {
 
         {/* Content */}
         <div className="p-6">
-          <div className="bg-portal-card border border-portal-border rounded-xl">
-            {/* Toolbar */}
-            <div className="flex items-center justify-between px-4 py-2 border-b border-portal-border">
-              <span className="text-sm text-portal-muted">
-                {currentTab?.file}
-              </span>
-              <div className="flex items-center gap-2">
-                {editing ? (
-                  <>
-                    <button
-                      onClick={handleCancel}
-                      className="flex items-center gap-1 px-3 py-1.5 text-xs text-portal-muted hover:text-portal-text rounded transition-colors"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleSave}
-                      disabled={saving}
-                      className="flex items-center gap-1 px-3 py-1.5 text-xs bg-portal-accent hover:bg-portal-accent-dark text-white rounded transition-colors disabled:opacity-50"
-                    >
-                      <Save className="h-3.5 w-3.5" />
-                      {saving ? 'Saving...' : 'Save'}
-                    </button>
-                  </>
+          {activeTab === 'docs' ? (
+            // Docs Tab Content
+            <div className="flex gap-6">
+              {/* Docs Sidebar / Tree */}
+              <div className="w-64 flex-shrink-0">
+                <div className="bg-portal-card border border-portal-border rounded-xl">
+                  <div className="px-4 py-3 border-b border-portal-border">
+                    <h3 className="text-sm font-semibold text-portal-text flex items-center gap-2">
+                      <BookOpen className="h-4 w-4 text-blue-400" />
+                      Documentation
+                    </h3>
+                  </div>
+                  <div className="p-2 max-h-[60vh] overflow-y-auto">
+                    {loadingDocs ? (
+                      <div className="flex items-center justify-center py-8">
+                        <RefreshCw className="h-5 w-5 animate-spin text-portal-muted" />
+                      </div>
+                    ) : docsData?.hasDocsFolder ? (
+                      <DocsTree
+                        items={docsData.tree}
+                        selectedPath={selectedDocPath}
+                        expandedFolders={expandedFolders}
+                        onSelectFile={setSelectedDocPath}
+                        onToggleFolder={toggleFolder}
+                      />
+                    ) : (
+                      <div className="text-center py-8">
+                        <Folder className="h-8 w-8 text-portal-muted mx-auto mb-2" />
+                        <p className="text-sm text-portal-muted">No docs folder found</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Docs Content */}
+              <div className="flex-1">
+                <div className="bg-portal-card border border-portal-border rounded-xl">
+                  <div className="flex items-center justify-between px-4 py-2 border-b border-portal-border">
+                    <span className="text-sm text-portal-muted font-mono">
+                      {selectedDocPath || 'Select a file'}
+                    </span>
+                    {selectedDocPath && (
+                      <a
+                        href={`${project.repoUrl}/blob/main/${selectedDocPath}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-portal-muted hover:text-portal-text flex items-center gap-1"
+                      >
+                        View on GitHub
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    )}
+                  </div>
+                  <div className="p-6">
+                    {loadingDocContent ? (
+                      <div className="flex items-center justify-center py-12">
+                        <RefreshCw className="h-6 w-6 animate-spin text-portal-muted" />
+                      </div>
+                    ) : docContent ? (
+                      <div className="prose prose-invert prose-sm max-w-none">
+                        <MarkdownRenderer content={docContent} />
+                      </div>
+                    ) : (
+                      <div className="text-center py-12">
+                        <FileText className="h-12 w-12 text-portal-muted mx-auto mb-4" />
+                        <p className="text-portal-muted">Select a file to view its contents</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            // Local Files Tab Content
+            <div className="bg-portal-card border border-portal-border rounded-xl">
+              <div className="flex items-center justify-between px-4 py-2 border-b border-portal-border">
+                <span className="text-sm text-portal-muted">
+                  {currentTab?.file}
+                </span>
+                <div className="flex items-center gap-2">
+                  {editing ? (
+                    <>
+                      <button
+                        onClick={handleCancel}
+                        className="flex items-center gap-1 px-3 py-1.5 text-xs text-portal-muted hover:text-portal-text rounded transition-colors"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleSave}
+                        disabled={saving}
+                        className="flex items-center gap-1 px-3 py-1.5 text-xs bg-portal-accent hover:bg-portal-accent-dark text-white rounded transition-colors disabled:opacity-50"
+                      >
+                        <Save className="h-3.5 w-3.5" />
+                        {saving ? 'Saving...' : 'Save'}
+                      </button>
+                    </>
+                  ) : (
+                    user.role?.toLowerCase() === 'admin' && currentFile?.exists && (
+                      <button
+                        onClick={handleEdit}
+                        className="flex items-center gap-1 px-3 py-1.5 text-xs text-portal-muted hover:text-portal-text bg-portal-bg rounded transition-colors"
+                      >
+                        <Edit3 className="h-3.5 w-3.5" />
+                        Edit
+                      </button>
+                    )
+                  )}
+                </div>
+              </div>
+
+              <div className="p-6">
+                {loadingFile ? (
+                  <div className="flex items-center justify-center py-12">
+                    <RefreshCw className="h-6 w-6 animate-spin text-portal-muted" />
+                  </div>
+                ) : editing ? (
+                  <textarea
+                    value={editContent}
+                    onChange={(e) => setEditContent(e.target.value)}
+                    className="w-full h-[60vh] bg-portal-bg border border-portal-border rounded-lg p-4 text-sm text-portal-text font-mono focus:outline-none focus:border-portal-accent/50 resize-none"
+                    placeholder="Markdown content..."
+                  />
+                ) : currentFile?.exists ? (
+                  <div className="prose prose-invert prose-sm max-w-none">
+                    <MarkdownRenderer content={currentFile.content} />
+                  </div>
                 ) : (
-                  user.role?.toLowerCase() === 'admin' && currentFile?.exists && (
-                    <button
-                      onClick={handleEdit}
-                      className="flex items-center gap-1 px-3 py-1.5 text-xs text-portal-muted hover:text-portal-text bg-portal-bg rounded transition-colors"
-                    >
-                      <Edit3 className="h-3.5 w-3.5" />
-                      Edit
-                    </button>
-                  )
+                  <div className="text-center py-12">
+                    <FileText className="h-12 w-12 text-portal-muted mx-auto mb-4" />
+                    <p className="text-portal-muted mb-4">This file doesn't exist yet.</p>
+                    {user.role?.toLowerCase() === 'admin' && (
+                      <button
+                        onClick={() => {
+                          setEditContent(`# ${currentTab?.label}\n\n`);
+                          setEditing(true);
+                        }}
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-portal-accent hover:bg-portal-accent-dark text-white rounded-lg transition-colors text-sm"
+                      >
+                        <Edit3 className="h-4 w-4" />
+                        Create File
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
-
-            {/* File content */}
-            <div className="p-6">
-              {loadingFile ? (
-                <div className="flex items-center justify-center py-12">
-                  <RefreshCw className="h-6 w-6 animate-spin text-portal-muted" />
-                </div>
-              ) : editing ? (
-                <textarea
-                  value={editContent}
-                  onChange={(e) => setEditContent(e.target.value)}
-                  className="w-full h-[60vh] bg-portal-bg border border-portal-border rounded-lg p-4 text-sm text-portal-text font-mono focus:outline-none focus:border-portal-accent/50 resize-none"
-                  placeholder="Markdown content..."
-                />
-              ) : currentFile?.exists ? (
-                <div className="prose prose-invert prose-sm max-w-none">
-                  <ReactMarkdown
-                    components={{
-                      h1: ({ children }) => <h1 className="text-2xl font-bold text-portal-text mb-4">{children}</h1>,
-                      h2: ({ children }) => <h2 className="text-xl font-semibold text-portal-text mt-6 mb-3">{children}</h2>,
-                      h3: ({ children }) => <h3 className="text-lg font-medium text-portal-text mt-4 mb-2">{children}</h3>,
-                      p: ({ children }) => <p className="text-portal-muted mb-3">{children}</p>,
-                      ul: ({ children }) => <ul className="list-disc list-inside text-portal-muted mb-3 space-y-1">{children}</ul>,
-                      ol: ({ children }) => <ol className="list-decimal list-inside text-portal-muted mb-3 space-y-1">{children}</ol>,
-                      li: ({ children }) => <li className="text-portal-muted">{children}</li>,
-                      code: ({ children, className }) => {
-                        const isBlock = className?.includes('language-');
-                        return isBlock ? (
-                          <pre className="bg-portal-bg border border-portal-border rounded-lg p-4 overflow-x-auto mb-3">
-                            <code className="text-sm text-portal-text font-mono">{children}</code>
-                          </pre>
-                        ) : (
-                          <code className="bg-portal-bg px-1.5 py-0.5 rounded text-portal-accent text-sm font-mono">{children}</code>
-                        );
-                      },
-                      pre: ({ children }) => <>{children}</>,
-                      a: ({ href, children }) => (
-                        <a href={href} target="_blank" rel="noopener noreferrer" className="text-portal-accent hover:underline">
-                          {children}
-                        </a>
-                      ),
-                      table: ({ children }) => (
-                        <div className="overflow-x-auto mb-4">
-                          <table className="w-full border-collapse border border-portal-border">{children}</table>
-                        </div>
-                      ),
-                      th: ({ children }) => <th className="border border-portal-border bg-portal-bg px-3 py-2 text-left text-sm font-medium text-portal-text">{children}</th>,
-                      td: ({ children }) => <td className="border border-portal-border px-3 py-2 text-sm text-portal-muted">{children}</td>,
-                      blockquote: ({ children }) => (
-                        <blockquote className="border-l-4 border-portal-accent pl-4 italic text-portal-muted mb-3">{children}</blockquote>
-                      ),
-                      hr: () => <hr className="border-portal-border my-6" />,
-                    }}
-                  >
-                    {currentFile.content}
-                  </ReactMarkdown>
-                </div>
-              ) : (
-                <div className="text-center py-12">
-                  <FileText className="h-12 w-12 text-portal-muted mx-auto mb-4" />
-                  <p className="text-portal-muted mb-4">This file doesn't exist yet.</p>
-                  {user.role?.toLowerCase() === 'admin' && (
-                    <button
-                      onClick={() => {
-                        setEditContent(`# ${currentTab?.label}\n\n`);
-                        setEditing(true);
-                      }}
-                      className="inline-flex items-center gap-2 px-4 py-2 bg-portal-accent hover:bg-portal-accent-dark text-white rounded-lg transition-colors text-sm"
-                    >
-                      <Edit3 className="h-4 w-4" />
-                      Create File
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
+          )}
         </div>
       </div>
     </div>
+  );
+}
+
+// Docs Tree Component
+function DocsTree({
+  items,
+  selectedPath,
+  expandedFolders,
+  onSelectFile,
+  onToggleFolder,
+  depth = 0,
+}: {
+  items: DocFile[];
+  selectedPath: string | null;
+  expandedFolders: Set<string>;
+  onSelectFile: (path: string) => void;
+  onToggleFolder: (path: string) => void;
+  depth?: number;
+}) {
+  return (
+    <div className={cn(depth > 0 && 'ml-3 border-l border-portal-border pl-2')}>
+      {items.map((item) => (
+        <div key={item.path}>
+          {item.type === 'dir' ? (
+            <>
+              <button
+                onClick={() => onToggleFolder(item.path)}
+                className="w-full flex items-center gap-2 px-2 py-1.5 text-sm text-portal-muted hover:text-portal-text hover:bg-portal-bg rounded transition-colors"
+              >
+                {expandedFolders.has(item.path) ? (
+                  <>
+                    <ChevronDown className="h-3 w-3" />
+                    <FolderOpen className="h-4 w-4 text-yellow-400" />
+                  </>
+                ) : (
+                  <>
+                    <ChevronRight className="h-3 w-3" />
+                    <Folder className="h-4 w-4 text-yellow-400" />
+                  </>
+                )}
+                <span className="truncate">{item.name}</span>
+              </button>
+              {expandedFolders.has(item.path) && item.children && (
+                <DocsTree
+                  items={item.children}
+                  selectedPath={selectedPath}
+                  expandedFolders={expandedFolders}
+                  onSelectFile={onSelectFile}
+                  onToggleFolder={onToggleFolder}
+                  depth={depth + 1}
+                />
+              )}
+            </>
+          ) : (
+            <button
+              onClick={() => onSelectFile(item.path)}
+              className={cn(
+                'w-full flex items-center gap-2 px-2 py-1.5 text-sm rounded transition-colors',
+                selectedPath === item.path
+                  ? 'bg-portal-accent/20 text-portal-accent'
+                  : 'text-portal-muted hover:text-portal-text hover:bg-portal-bg'
+              )}
+            >
+              <File className="h-4 w-4 ml-3" />
+              <span className="truncate">{item.name}</span>
+            </button>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Markdown Renderer Component  
+function MarkdownRenderer({ content }: { content: string }) {
+  return (
+    <ReactMarkdown
+      components={{
+        h1: ({ children }) => <h1 className="text-2xl font-bold text-portal-text mb-4">{children}</h1>,
+        h2: ({ children }) => <h2 className="text-xl font-semibold text-portal-text mt-6 mb-3">{children}</h2>,
+        h3: ({ children }) => <h3 className="text-lg font-medium text-portal-text mt-4 mb-2">{children}</h3>,
+        p: ({ children }) => <p className="text-portal-muted mb-3">{children}</p>,
+        ul: ({ children }) => <ul className="list-disc list-inside text-portal-muted mb-3 space-y-1">{children}</ul>,
+        ol: ({ children }) => <ol className="list-decimal list-inside text-portal-muted mb-3 space-y-1">{children}</ol>,
+        li: ({ children }) => <li className="text-portal-muted">{children}</li>,
+        code: ({ children, className }) => {
+          const isBlock = className?.includes('language-');
+          return isBlock ? (
+            <pre className="bg-portal-bg border border-portal-border rounded-lg p-4 overflow-x-auto mb-3">
+              <code className="text-sm text-portal-text font-mono">{children}</code>
+            </pre>
+          ) : (
+            <code className="bg-portal-bg px-1.5 py-0.5 rounded text-portal-accent text-sm font-mono">{children}</code>
+          );
+        },
+        pre: ({ children }) => <>{children}</>,
+        a: ({ href, children }) => (
+          <a href={href} target="_blank" rel="noopener noreferrer" className="text-portal-accent hover:underline">
+            {children}
+          </a>
+        ),
+        table: ({ children }) => (
+          <div className="overflow-x-auto mb-4">
+            <table className="w-full border-collapse border border-portal-border">{children}</table>
+          </div>
+        ),
+        th: ({ children }) => <th className="border border-portal-border bg-portal-bg px-3 py-2 text-left text-sm font-medium text-portal-text">{children}</th>,
+        td: ({ children }) => <td className="border border-portal-border px-3 py-2 text-sm text-portal-muted">{children}</td>,
+        blockquote: ({ children }) => (
+          <blockquote className="border-l-4 border-portal-accent pl-4 italic text-portal-muted mb-3">{children}</blockquote>
+        ),
+        hr: () => <hr className="border-portal-border my-6" />,
+      }}
+    >
+      {content}
+    </ReactMarkdown>
   );
 }
