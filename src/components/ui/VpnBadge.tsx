@@ -17,7 +17,7 @@ export function VpnBadge({ status }: { status: VpnStatus | null }) {
       )}
     >
       {status.connected ? <Shield className="h-3.5 w-3.5" /> : <ShieldOff className="h-3.5 w-3.5" />}
-      <span>VPN {status.connected ? 'ON' : 'OFF'}</span>
+      <span>Tailscale {status.connected ? 'ON' : 'OFF'}</span>
     </div>
   );
 }
