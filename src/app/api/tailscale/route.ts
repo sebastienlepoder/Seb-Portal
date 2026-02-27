@@ -78,8 +78,8 @@ export async function GET(req: NextRequest) {
             version: status.Version,
             ips: status.TailscaleIPs,
             hostname: status.Self?.HostName,
-            tailnet: status.CurrentTailnet?.Name || status.MagicDNSSuffix,
             ...devices,
+            tailnet: status.CurrentTailnet?.Name || status.MagicDNSSuffix,
           },
         });
       }
