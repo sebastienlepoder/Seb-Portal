@@ -187,7 +187,7 @@ export default function MainSidebar({
             collapsed={collapsed}
             href="/coolify"
             active={isCoolify}
-            label="Coolify"
+            label="VPS Servers"
             icon={<Cloud className="h-3.5 w-3.5" />}
           />
 
