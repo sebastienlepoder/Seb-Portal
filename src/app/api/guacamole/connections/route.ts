@@ -121,7 +121,7 @@ function parseConnectionTree(tree: GuacConnectionGroup): { connections: GuacConn
 export async function GET(request: Request) {
   // Verify portal auth
   const cookieStore = await cookies();
-  const sessionToken = cookieStore.get('session')?.value;
+  const sessionToken = cookieStore.get('lepoder_session')?.value;
   
   if (!sessionToken) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
