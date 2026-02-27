@@ -1,6 +1,6 @@
 /**
- * Tailscale Local API Client
- * Connects to tailscaled via Unix socket or HTTP API
+ * Tailscale API Client
+ * Connects to tailscaled via Unix socket (Local API) or HTTP (Web API)
  * 
  * Docs: https://tailscale.com/kb/1242/tailscale-local-api
  */
@@ -10,6 +10,7 @@ import http from 'http';
 
 const TAILSCALE_SOCKET = process.env.TAILSCALE_SOCKET || '/var/run/tailscale/tailscaled.sock';
 const TAILSCALE_API_URL = process.env.TAILSCALE_API_URL; // Optional: use HTTP instead of socket
+const IS_WEB_API = TAILSCALE_API_URL && !TAILSCALE_API_URL.includes('localapi');
 
 export interface TailscaleStatus {
   Version: string;
@@ -62,6 +63,81 @@ export interface TailscalePrefs {
   ShieldsUp: boolean;
 }
 
+// Web API interfaces (tailscale web)
+export interface WebAPIData {
+  ID: string;
+  Status: string;
+  DeviceName: string;
+  TailnetName: string;
+  DomainName: string;
+  IPv4: string;
+  IPv6: string;
+  OS: string;
+  IPNVersion: string;
+  Profile?: {
+    ID: number;
+    LoginName: string;
+    DisplayName: string;
+    ProfilePicURL: string;
+  };
+  IsTagged: boolean;
+  Tags: string[] | null;
+  KeyExpiry: string;
+  KeyExpired: boolean;
+  TUNMode: boolean;
+  UsingExitNode: any;
+  AdvertisingExitNode: boolean;
+  AdvertisingExitNodeApproved: boolean;
+  AdvertisedRoutes: any;
+  Features?: {
+    [key: string]: boolean;
+  };
+}
+
+// Adapter: Convert Web API data to Local API format
+function adaptWebAPIToLocalAPI(webData: WebAPIData): TailscaleStatus {
+  const self: TailscaleDevice = {
+    ID: webData.ID,
+    PublicKey: '', // Not available in Web API
+    HostName: webData.DeviceName,
+    DNSName: `${webData.DeviceName}.${webData.TailnetName}.`,
+    OS: webData.OS,
+    UserID: 0,
+    TailscaleIPs: [webData.IPv4, webData.IPv6].filter(Boolean),
+    Addrs: null,
+    CurAddr: '',
+    Relay: '',
+    RxBytes: 0,
+    TxBytes: 0,
+    Created: '',
+    LastSeen: new Date().toISOString(),
+    LastHandshake: '',
+    Online: webData.Status === 'Running',
+    ExitNode: webData.UsingExitNode ? true : false,
+    ExitNodeOption: webData.AdvertisingExitNode,
+    Active: true,
+    Tags: webData.Tags || undefined,
+  };
+
+  return {
+    Version: webData.IPNVersion,
+    BackendState: webData.Status === 'Running' ? 'Running' : 'Stopped',
+    TailscaleIPs: [webData.IPv4, webData.IPv6].filter(Boolean),
+    Self: self,
+    ExitNodeStatus: webData.UsingExitNode ? {
+      ID: webData.UsingExitNode.id || '',
+      Online: true,
+      TailscaleIPs: [webData.UsingExitNode.ip || ''].filter(Boolean),
+    } : undefined,
+    Peer: {}, // Web API doesn't provide peer data - would need separate call
+    MagicDNSSuffix: webData.TailnetName,
+    CurrentTailnet: {
+      Name: webData.TailnetName,
+      MagicDNSSuffix: webData.TailnetName,
+    },
+  };
+}
+
 // Check if Tailscale socket is available
 export function isTailscaleAvailable(): boolean {
   if (TAILSCALE_API_URL) return true;
@@ -72,16 +148,29 @@ export function isTailscaleAvailable(): boolean {
   }
 }
 
-// Make request to Tailscale local API
+// Make request to Tailscale API (Local or Web)
 async function tailscaleRequest<T>(
   method: string,
   path: string,
   body?: unknown
 ): Promise<T> {
   return new Promise((resolve, reject) => {
+    let requestPath = path;
+    
+    // Adapt Local API paths to Web API paths when using Web API
+    if (IS_WEB_API) {
+      if (path === '/localapi/v0/status') {
+        requestPath = '/api/data';
+      } else if (path.startsWith('/localapi/v0/')) {
+        // For now, other Local API endpoints are not supported in Web API
+        reject(new Error(`Web API does not support endpoint: ${path}`));
+        return;
+      }
+    }
+
     const options: http.RequestOptions = {
       method,
-      path,
+      path: requestPath,
       headers: {
         'Content-Type': 'application/json',
       },
@@ -89,7 +178,7 @@ async function tailscaleRequest<T>(
 
     if (TAILSCALE_API_URL) {
       // HTTP mode
-      const url = new URL(path, TAILSCALE_API_URL);
+      const url = new URL(requestPath, TAILSCALE_API_URL);
       options.hostname = url.hostname;
       options.port = url.port || 80;
       options.path = url.pathname;
@@ -128,16 +217,32 @@ async function tailscaleRequest<T>(
 
 // Get current Tailscale status
 export async function getStatus(): Promise<TailscaleStatus> {
-  return tailscaleRequest<TailscaleStatus>('GET', '/localapi/v0/status');
+  if (IS_WEB_API) {
+    const webData = await tailscaleRequest<WebAPIData>('GET', '/localapi/v0/status');
+    return adaptWebAPIToLocalAPI(webData);
+  } else {
+    return tailscaleRequest<TailscaleStatus>('GET', '/localapi/v0/status');
+  }
 }
 
 // Get current preferences
 export async function getPrefs(): Promise<TailscalePrefs> {
+  if (IS_WEB_API) {
+    // Web API doesn't provide preference details, return minimal data
+    return {
+      ExitNodeAllowLANAccess: false,
+      AdvertiseExitNode: false,
+      ShieldsUp: false,
+    };
+  }
   return tailscaleRequest<TailscalePrefs>('GET', '/localapi/v0/prefs');
 }
 
 // Set exit node
 export async function setExitNode(nodeId: string | null): Promise<void> {
+  if (IS_WEB_API) {
+    throw new Error('Exit node control not available via Web API. Use Tailscale app or CLI.');
+  }
   const prefs: Partial<TailscalePrefs> = {
     ExitNodeID: nodeId || '',
   };
@@ -146,6 +251,9 @@ export async function setExitNode(nodeId: string | null): Promise<void> {
 
 // Set exit node with LAN access
 export async function setExitNodeAllowLAN(allow: boolean): Promise<void> {
+  if (IS_WEB_API) {
+    throw new Error('Exit node LAN control not available via Web API. Use Tailscale app or CLI.');
+  }
   await tailscaleRequest('PATCH', '/localapi/v0/prefs', {
     ExitNodeAllowLANAccess: allow,
   });
@@ -153,6 +261,9 @@ export async function setExitNodeAllowLAN(allow: boolean): Promise<void> {
 
 // Disconnect/reconnect Tailscale
 export async function setWantRunning(want: boolean): Promise<void> {
+  if (IS_WEB_API) {
+    throw new Error('Connection control not available via Web API. Use Tailscale app or CLI.');
+  }
   await tailscaleRequest('PATCH', '/localapi/v0/prefs', {
     WantRunning: want,
   });
