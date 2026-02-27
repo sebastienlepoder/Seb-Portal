@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
-import { prisma } from '@/lib/db';
+import { getSession } from '@/lib/auth';
 
 const GUACAMOLE_URL = process.env.GUACAMOLE_URL || 'http://187.77.214.29:8090/guacamole';
 const GUACAMOLE_USER = process.env.GUACAMOLE_USER || 'guacadmin';
@@ -58,7 +57,6 @@ async function getGuacamoleToken(): Promise<string | null> {
 
 async function fetchConnections(token: string): Promise<{ connections: GuacConnection[]; groups: GuacConnectionGroup[] }> {
   try {
-    // Fetch connection groups (includes connections)
     const response = await fetch(
       `${GUACAMOLE_URL}/api/session/data/postgresql/connectionGroups/ROOT/tree?token=${token}`,
       {
@@ -69,7 +67,6 @@ async function fetchConnections(token: string): Promise<{ connections: GuacConne
     );
 
     if (!response.ok) {
-      // Try alternative endpoint for MySQL/other backends
       const altResponse = await fetch(
         `${GUACAMOLE_URL}/api/session/data/mysql/connectionGroups/ROOT/tree?token=${token}`,
         {
@@ -119,21 +116,11 @@ function parseConnectionTree(tree: GuacConnectionGroup): { connections: GuacConn
 }
 
 export async function GET(request: Request) {
-  // Verify portal auth
-  const cookieStore = await cookies();
-  const sessionToken = cookieStore.get('lepoder_session')?.value;
+  // Verify portal auth using iron-session
+  const session = await getSession();
   
-  if (!sessionToken) {
-    return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
-  }
-
-  const session = await prisma.session.findUnique({
-    where: { token: sessionToken },
-    include: { user: true },
-  });
-
-  if (!session || session.expiresAt < new Date()) {
-    return NextResponse.json({ ok: false, error: 'Session expired' }, { status: 401 });
+  if (!session.user) {
+    return NextResponse.json({ ok: false, error: 'Not authenticated' }, { status: 401 });
   }
 
   // Get Guacamole token
