@@ -12,12 +12,17 @@ import {
   Server,
   RefreshCw,
   Globe,
-  MapPin,
   Clock,
   ArrowUpDown,
   Check,
-  X,
-  ExternalLink,
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  Tag,
+  Network,
+  Cpu,
+  Calendar,
+  Activity,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -39,6 +44,7 @@ interface Device {
 
 interface TailscaleData {
   available: boolean;
+  connectionMode?: string;
   connected?: boolean;
   state?: string;
   version?: string;
@@ -74,6 +80,11 @@ function formatLastSeen(dateStr: string): string {
   return `${diffDays}d ago`;
 }
 
+function formatDate(dateStr: string): string {
+  if (!dateStr || dateStr === '0001-01-01T00:00:00Z') return 'Unknown';
+  return new Date(dateStr).toLocaleString();
+}
+
 function getOsIcon(os: string) {
   const lower = os.toLowerCase();
   if (lower.includes('ios') || lower.includes('iphone') || lower.includes('ipad')) {
@@ -88,12 +99,17 @@ function getOsIcon(os: string) {
   return <Monitor className="h-4 w-4" />;
 }
 
+function copyToClipboard(text: string) {
+  navigator.clipboard.writeText(text);
+}
+
 export default function TailscalePage() {
   const { user, loading: authLoading, logout } = useAuth();
   const [data, setData] = useState<TailscaleData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [settingExitNode, setSettingExitNode] = useState<string | null>(null);
+  const [expandedDevice, setExpandedDevice] = useState<string | null>(null);
 
   const fetchData = async () => {
     try {
@@ -148,6 +164,10 @@ export default function TailscalePage() {
     }
   };
 
+  const toggleDevice = (deviceId: string) => {
+    setExpandedDevice(expandedDevice === deviceId ? null : deviceId);
+  };
+
   if (authLoading || !user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-portal-bg">
@@ -157,7 +177,7 @@ export default function TailscalePage() {
   }
 
   const isAdmin = user.role === 'admin';
-  const exitNodes = data?.peers?.filter(p => p.isExitNode) || [];
+  const allDevices = data ? [data.self, ...(data.peers || [])].filter(Boolean) as Device[] : [];
 
   return (
     <div className="h-screen bg-portal-bg flex overflow-hidden">
@@ -172,7 +192,12 @@ export default function TailscalePage() {
               <div>
                 <h1 className="text-xl font-bold text-portal-text">Tailscale</h1>
                 <p className="text-sm text-portal-muted">
-                  {data?.tailnet ? `${data.tailnet}` : 'Network management'}
+                  {data?.tailnet ? data.tailnet : 'Network management'}
+                  {data?.connectionMode && (
+                    <span className="ml-2 text-xs bg-portal-bg px-2 py-0.5 rounded">
+                      {data.connectionMode} mode
+                    </span>
+                  )}
                 </p>
               </div>
             </div>
@@ -194,9 +219,6 @@ export default function TailscalePage() {
               <WifiOff className="h-12 w-12 text-amber-400 mx-auto mb-4" />
               <h2 className="text-lg font-semibold text-portal-text mb-2">Tailscale Not Available</h2>
               <p className="text-sm text-portal-muted mb-4">{data.message}</p>
-              <code className="text-xs bg-portal-bg px-3 py-2 rounded block">
-                Mount: /var/run/tailscale/tailscaled.sock
-              </code>
             </div>
           )}
 
@@ -236,18 +258,18 @@ export default function TailscalePage() {
                   )}
                 </div>
 
-                {/* This Device */}
+                {/* Tailnet */}
                 <div className="bg-portal-card border border-portal-border rounded-xl p-4">
                   <div className="flex items-center gap-3 mb-3">
                     <div className="p-2 bg-blue-500/20 rounded-lg">
-                      <Monitor className="h-5 w-5 text-blue-400" />
+                      <Network className="h-5 w-5 text-blue-400" />
                     </div>
                     <div>
-                      <p className="text-sm font-medium text-portal-text">{data.self?.hostname}</p>
-                      <p className="text-xs text-portal-muted">{data.self?.os}</p>
+                      <p className="text-sm font-medium text-portal-text">Tailnet</p>
+                      <p className="text-xs text-portal-muted">{data.tailnet}</p>
                     </div>
                   </div>
-                  <p className="text-xs text-portal-muted truncate">{data.self?.dnsName}</p>
+                  <p className="text-xs text-portal-muted">{allDevices.length} devices</p>
                 </div>
 
                 {/* Exit Node */}
@@ -283,25 +305,21 @@ export default function TailscalePage() {
                 </div>
               </div>
 
-              {/* Devices List */}
+              {/* Devices List - Accordion Style */}
               <div className="bg-portal-card border border-portal-border rounded-xl">
                 <div className="px-4 py-3 border-b border-portal-border">
                   <h2 className="text-sm font-semibold text-portal-text">
-                    Devices ({(data.peers?.length || 0) + 1})
+                    Devices ({allDevices.length})
                   </h2>
                 </div>
 
                 <div className="divide-y divide-portal-border">
-                  {/* Self */}
-                  {data.self && (
-                    <DeviceRow device={data.self} isAdmin={isAdmin} />
-                  )}
-
-                  {/* Peers */}
-                  {data.peers?.map((device) => (
-                    <DeviceRow
+                  {allDevices.map((device) => (
+                    <DeviceAccordion
                       key={device.id}
                       device={device}
+                      isExpanded={expandedDevice === device.id}
+                      onToggle={() => toggleDevice(device.id)}
                       isAdmin={isAdmin}
                       onSetExitNode={
                         device.isExitNode && !device.isCurrentExitNode
@@ -313,54 +331,6 @@ export default function TailscalePage() {
                   ))}
                 </div>
               </div>
-
-              {/* Exit Nodes Section */}
-              {exitNodes.length > 0 && isAdmin && (
-                <div className="mt-6 bg-portal-card border border-portal-border rounded-xl">
-                  <div className="px-4 py-3 border-b border-portal-border">
-                    <h2 className="text-sm font-semibold text-portal-text">
-                      Available Exit Nodes ({exitNodes.length})
-                    </h2>
-                  </div>
-                  <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {exitNodes.map((node) => (
-                      <button
-                        key={node.id}
-                        onClick={() => handleSetExitNode(node.id)}
-                        disabled={node.isCurrentExitNode || settingExitNode !== null}
-                        className={cn(
-                          'flex items-center gap-3 p-3 rounded-lg border transition-colors text-left',
-                          node.isCurrentExitNode
-                            ? 'border-purple-500/50 bg-purple-500/10'
-                            : 'border-portal-border hover:border-portal-accent/50 hover:bg-portal-bg'
-                        )}
-                      >
-                        <div className={cn(
-                          'p-2 rounded-lg',
-                          node.online ? 'bg-green-500/20' : 'bg-gray-500/20'
-                        )}>
-                          <Globe className={cn(
-                            'h-4 w-4',
-                            node.online ? 'text-green-400' : 'text-gray-400'
-                          )} />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-portal-text truncate">
-                            {node.hostname}
-                          </p>
-                          <p className="text-xs text-portal-muted">{node.os}</p>
-                        </div>
-                        {node.isCurrentExitNode && (
-                          <Check className="h-4 w-4 text-purple-400" />
-                        )}
-                        {settingExitNode === node.id && (
-                          <RefreshCw className="h-4 w-4 text-portal-muted animate-spin" />
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
             </>
           )}
         </div>
@@ -369,86 +339,270 @@ export default function TailscalePage() {
   );
 }
 
-function DeviceRow({
+function DeviceAccordion({
   device,
+  isExpanded,
+  onToggle,
   isAdmin,
   onSetExitNode,
   settingExitNode,
 }: {
   device: Device;
+  isExpanded: boolean;
+  onToggle: () => void;
   isAdmin: boolean;
   onSetExitNode?: () => void;
   settingExitNode?: boolean;
 }) {
   return (
-    <div className={cn(
-      'flex items-center gap-4 px-4 py-3',
-      device.isSelf && 'bg-blue-500/5'
-    )}>
-      {/* Status indicator */}
-      <div className={cn(
-        'w-2 h-2 rounded-full',
-        device.online ? 'bg-green-400' : 'bg-gray-500'
-      )} />
+    <div className={cn(device.isSelf && 'bg-blue-500/5')}>
+      {/* Header Row - Clickable */}
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center gap-4 px-4 py-3 hover:bg-portal-bg/50 transition-colors text-left"
+      >
+        {/* Expand/Collapse Icon */}
+        <div className="text-portal-muted">
+          {isExpanded ? (
+            <ChevronDown className="h-4 w-4" />
+          ) : (
+            <ChevronRight className="h-4 w-4" />
+          )}
+        </div>
 
-      {/* Icon */}
-      <div className="text-portal-muted">
-        {getOsIcon(device.os)}
-      </div>
+        {/* Status indicator */}
+        <div className={cn(
+          'w-2 h-2 rounded-full flex-shrink-0',
+          device.online ? 'bg-green-400' : 'bg-gray-500'
+        )} />
 
-      {/* Info */}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <p className="text-sm font-medium text-portal-text truncate">
-            {device.hostname}
-          </p>
-          {device.isSelf && (
-            <span className="text-[10px] px-1.5 py-0.5 bg-blue-500/20 text-blue-400 rounded">
-              This device
+        {/* Icon */}
+        <div className="text-portal-muted flex-shrink-0">
+          {getOsIcon(device.os)}
+        </div>
+
+        {/* Info */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <p className="text-sm font-medium text-portal-text truncate">
+              {device.hostname}
+            </p>
+            {device.isSelf && (
+              <span className="text-[10px] px-1.5 py-0.5 bg-blue-500/20 text-blue-400 rounded flex-shrink-0">
+                This device
+              </span>
+            )}
+            {device.isCurrentExitNode && (
+              <span className="text-[10px] px-1.5 py-0.5 bg-purple-500/20 text-purple-400 rounded flex-shrink-0">
+                Exit node
+              </span>
+            )}
+            {device.isExitNode && !device.isCurrentExitNode && (
+              <span className="text-[10px] px-1.5 py-0.5 bg-portal-bg text-portal-muted rounded flex-shrink-0">
+                Exit available
+              </span>
+            )}
+            <span className={cn(
+              'text-[10px] px-1.5 py-0.5 rounded flex-shrink-0',
+              device.online ? 'bg-green-500/20 text-green-400' : 'bg-gray-500/20 text-gray-400'
+            )}>
+              {device.online ? 'Online' : 'Offline'}
             </span>
-          )}
-          {device.isCurrentExitNode && (
-            <span className="text-[10px] px-1.5 py-0.5 bg-purple-500/20 text-purple-400 rounded">
-              Exit node
-            </span>
-          )}
-          {device.isExitNode && !device.isCurrentExitNode && (
-            <span className="text-[10px] px-1.5 py-0.5 bg-portal-bg text-portal-muted rounded">
-              Exit available
-            </span>
-          )}
+          </div>
+          <p className="text-xs text-portal-muted truncate">{device.os}</p>
         </div>
-        <div className="flex items-center gap-3 text-xs text-portal-muted">
-          <span>{device.os}</span>
-          <span className="font-mono">{device.ips[0]}</span>
-          {device.tags && device.tags.length > 0 && (
-            <span>{device.tags.join(', ')}</span>
-          )}
-        </div>
-      </div>
 
-      {/* Stats */}
-      <div className="hidden md:flex items-center gap-4 text-xs text-portal-muted">
-        <div className="flex items-center gap-1" title="Last seen">
-          <Clock className="h-3 w-3" />
-          {formatLastSeen(device.lastSeen)}
+        {/* Quick Stats */}
+        <div className="hidden md:flex items-center gap-4 text-xs text-portal-muted flex-shrink-0">
+          <span className="font-mono">{device.ips?.[0]}</span>
+          <span>{formatLastSeen(device.lastSeen)}</span>
         </div>
-        <div className="flex items-center gap-1" title="Traffic">
-          <ArrowUpDown className="h-3 w-3" />
-          {formatBytes(device.rxBytes + device.txBytes)}
-        </div>
-      </div>
+      </button>
 
-      {/* Actions */}
-      {isAdmin && onSetExitNode && (
-        <button
-          onClick={onSetExitNode}
-          disabled={settingExitNode}
-          className="text-xs text-portal-accent hover:text-portal-accent-light"
-        >
-          {settingExitNode ? <RefreshCw className="h-3 w-3 animate-spin" /> : 'Use as exit'}
-        </button>
+      {/* Expanded Details */}
+      {isExpanded && (
+        <div className="px-4 pb-4 pt-2 ml-8 border-t border-portal-border/50">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {/* Basic Info */}
+            <div className="space-y-3">
+              <h4 className="text-xs font-semibold text-portal-muted uppercase tracking-wide">
+                Device Info
+              </h4>
+              
+              <DetailRow
+                icon={<Monitor className="h-3.5 w-3.5" />}
+                label="Hostname"
+                value={device.hostname}
+                copyable
+              />
+              
+              <DetailRow
+                icon={<Cpu className="h-3.5 w-3.5" />}
+                label="Operating System"
+                value={device.os}
+              />
+              
+              <DetailRow
+                icon={<Activity className="h-3.5 w-3.5" />}
+                label="Status"
+                value={device.online ? 'Online' : 'Offline'}
+                valueClass={device.online ? 'text-green-400' : 'text-gray-400'}
+              />
+              
+              <DetailRow
+                icon={<Tag className="h-3.5 w-3.5" />}
+                label="Device ID"
+                value={device.id || 'N/A'}
+                copyable
+                mono
+              />
+            </div>
+
+            {/* Network Info */}
+            <div className="space-y-3">
+              <h4 className="text-xs font-semibold text-portal-muted uppercase tracking-wide">
+                Network
+              </h4>
+              
+              <DetailRow
+                icon={<Network className="h-3.5 w-3.5" />}
+                label="DNS Name"
+                value={device.dnsName || 'N/A'}
+                copyable
+                mono
+              />
+              
+              {device.ips?.map((ip, i) => (
+                <DetailRow
+                  key={i}
+                  icon={<Globe className="h-3.5 w-3.5" />}
+                  label={i === 0 ? 'IPv4' : 'IPv6'}
+                  value={ip}
+                  copyable
+                  mono
+                />
+              ))}
+              
+              {device.tags && device.tags.length > 0 && (
+                <DetailRow
+                  icon={<Tag className="h-3.5 w-3.5" />}
+                  label="Tags"
+                  value={device.tags.join(', ')}
+                />
+              )}
+            </div>
+
+            {/* Stats & Timing */}
+            <div className="space-y-3">
+              <h4 className="text-xs font-semibold text-portal-muted uppercase tracking-wide">
+                Activity
+              </h4>
+              
+              <DetailRow
+                icon={<Clock className="h-3.5 w-3.5" />}
+                label="Last Seen"
+                value={formatDate(device.lastSeen)}
+              />
+              
+              <DetailRow
+                icon={<ArrowUpDown className="h-3.5 w-3.5" />}
+                label="Data Received"
+                value={formatBytes(device.rxBytes || 0)}
+              />
+              
+              <DetailRow
+                icon={<ArrowUpDown className="h-3.5 w-3.5" />}
+                label="Data Sent"
+                value={formatBytes(device.txBytes || 0)}
+              />
+              
+              <DetailRow
+                icon={<ArrowUpDown className="h-3.5 w-3.5" />}
+                label="Total Traffic"
+                value={formatBytes((device.rxBytes || 0) + (device.txBytes || 0))}
+              />
+            </div>
+          </div>
+
+          {/* Actions */}
+          {isAdmin && onSetExitNode && (
+            <div className="mt-4 pt-4 border-t border-portal-border/50">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSetExitNode();
+                }}
+                disabled={settingExitNode}
+                className="px-4 py-2 bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 rounded-lg text-sm transition-colors"
+              >
+                {settingExitNode ? (
+                  <span className="flex items-center gap-2">
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                    Setting exit node...
+                  </span>
+                ) : (
+                  'Use as Exit Node'
+                )}
+              </button>
+            </div>
+          )}
+        </div>
       )}
+    </div>
+  );
+}
+
+function DetailRow({
+  icon,
+  label,
+  value,
+  copyable,
+  mono,
+  valueClass,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  copyable?: boolean;
+  mono?: boolean;
+  valueClass?: string;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    copyToClipboard(value);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="flex items-start gap-2">
+      <div className="text-portal-muted mt-0.5">{icon}</div>
+      <div className="flex-1 min-w-0">
+        <p className="text-[10px] text-portal-muted uppercase tracking-wide">{label}</p>
+        <div className="flex items-center gap-2">
+          <p className={cn(
+            'text-sm text-portal-text truncate',
+            mono && 'font-mono text-xs',
+            valueClass
+          )}>
+            {value}
+          </p>
+          {copyable && (
+            <button
+              onClick={handleCopy}
+              className="text-portal-muted hover:text-portal-text flex-shrink-0"
+              title="Copy to clipboard"
+            >
+              {copied ? (
+                <Check className="h-3 w-3 text-green-400" />
+              ) : (
+                <Copy className="h-3 w-3" />
+              )}
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
