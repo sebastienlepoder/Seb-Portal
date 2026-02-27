@@ -34,13 +34,21 @@ interface GuacConnectionGroup {
   childConnectionGroups?: GuacConnectionGroup[];
 }
 
+// Encode connection ID for Guacamole client URL
+function encodeGuacClientId(connectionId: string, dataSource: string = 'postgresql'): string {
+  // Format: <connection-id>\0c\0<data-source> (null bytes as separators, 'c' for connection)
+  const raw = `${connectionId}\0c\0${dataSource}`;
+  // Base64 encode
+  return btoa(raw);
+}
+
 export default function RemotePage() {
   const { user, loading: authLoading, logout } = useAuth();
   const [connections, setConnections] = useState<GuacConnection[]>([]);
   const [groups, setGroups] = useState<GuacConnectionGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeConnection, setActiveConnection] = useState<{ id: string; name: string } | null>(null);
+  const [activeConnection, setActiveConnection] = useState<{ id: string; name: string; encodedId: string } | null>(null);
   const [guacToken, setGuacToken] = useState<string | null>(null);
 
   useEffect(() => {
@@ -80,7 +88,8 @@ export default function RemotePage() {
       setError('Not authenticated with Guacamole');
       return;
     }
-    setActiveConnection({ id: connection.identifier, name: connection.name });
+    const encodedId = encodeGuacClientId(connection.identifier);
+    setActiveConnection({ id: connection.identifier, name: connection.name, encodedId });
   };
 
   const getProtocolIcon = (protocol: string) => {
@@ -168,7 +177,7 @@ export default function RemotePage() {
 
         <div className="flex flex-1 min-h-0">
           {/* Connection iframe */}
-          {activeConnection && (
+          {activeConnection && guacToken && (
             <div className="flex-1 flex flex-col bg-black">
               <div className="flex items-center justify-between px-4 py-2 bg-portal-card border-b border-portal-border">
                 <div className="flex items-center gap-2">
@@ -183,7 +192,7 @@ export default function RemotePage() {
                 </button>
               </div>
               <iframe
-                src={`${guacBaseUrl}/#/client/${encodeURIComponent(activeConnection.id)}?token=${guacToken}`}
+                src={`${guacBaseUrl}/#/client/${activeConnection.encodedId}?token=${guacToken}`}
                 className="flex-1 w-full border-0"
                 allow="clipboard-read; clipboard-write"
               />
@@ -251,7 +260,7 @@ export default function RemotePage() {
                         Connect
                       </button>
                       <a
-                        href={`${guacBaseUrl}/#/client/${encodeURIComponent(conn.identifier)}`}
+                        href={`${guacBaseUrl}/#/client/${encodeGuacClientId(conn.identifier)}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="p-2 text-portal-muted hover:text-portal-text hover:bg-portal-card-hover rounded-lg transition-colors"
