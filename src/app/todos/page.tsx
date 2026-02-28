@@ -65,6 +65,15 @@ export default function TodosPage() {
     if (user) fetchTodos();
   }, [user, filter, categoryFilter]);
 
+  
+  const seedRoadmap = async () => {
+    if (!confirm('Add Portal roadmap todos?')) return;
+    const res = await fetch('/api/todos/seed', { method: 'POST' });
+    const result = await res.json();
+    alert(result.message || result.error);
+    if (result.ok) fetchTodos();
+  };
+
   const addTodo = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTodo.trim()) return;
@@ -160,6 +169,14 @@ export default function TodosPage() {
                 <Plus className="h-4 w-4" />
                 Add Task
               </button>
+              {user?.role?.toLowerCase() === 'admin' && (
+                <button
+                  onClick={seedRoadmap}
+                  className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors text-sm"
+                >
+                  Seed Roadmap
+                </button>
+              )}
             </div>
           </div>
         </div>
