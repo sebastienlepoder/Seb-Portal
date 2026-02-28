@@ -18,30 +18,49 @@ const PORTAL_TODOS = [
   { title: "AI Chat Panel", description: "Embedded ChatGPT/Claude in portal", category: "Portal", priority: 0 },
 ];
 
-// POST /api/todos/seed - Seed portal todos (admin only, one-time)
+const SEED_SECRET = 'lepoder-seed-2026';
+
 export async function POST(req: NextRequest) {
   try {
-    const user = await getSessionUser();
-    if (!user || user.role?.toLowerCase() !== 'admin') {
-      return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
+    // Check for secret key OR authenticated admin
+    const url = new URL(req.url);
+    const secret = url.searchParams.get('secret');
+    
+    let userId: string;
+    
+    if (secret === SEED_SECRET) {
+      // Find admin user
+      const admin = await prisma.user.findFirst({
+        where: { role: { equals: 'admin', mode: 'insensitive' } }
+      });
+      if (!admin) {
+        return NextResponse.json({ ok: false, error: 'No admin user found' }, { status: 400 });
+      }
+      userId = admin.id;
+    } else {
+      const user = await getSessionUser();
+      if (!user || user.role?.toLowerCase() !== 'admin') {
+        return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
+      }
+      userId = user.id;
     }
 
     // Check if already seeded
     const existing = await prisma.todo.count({
-      where: { userId: user.id, category: 'Portal' }
+      where: { userId, category: 'Portal' }
     });
 
     if (existing > 0) {
       return NextResponse.json({ 
         ok: false, 
-        error: `Already have ${existing} Portal todos. Delete them first if you want to re-seed.` 
+        error: `Already have ${existing} Portal todos` 
       }, { status: 400 });
     }
 
     // Create todos
     const created = await prisma.todo.createMany({
       data: PORTAL_TODOS.map((t, i) => ({
-        userId: user.id,
+        userId,
         title: t.title,
         description: t.description,
         category: t.category,
