@@ -19,6 +19,7 @@ import {
   Wifi,
   Monitor,
   Cloud,
+  CheckSquare,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -55,6 +56,7 @@ export default function MainSidebar({
   const isTailscale = pathname === '/tailscale';
   const isRemote = pathname === "/remote";
   const isCoolify = pathname === "/coolify";
+  const isTodos = pathname === "/todos";
 
   return (
     <>
