@@ -28,12 +28,18 @@ export async function POST(req: NextRequest) {
     let userId: string;
     
     if (secret === SEED_SECRET) {
-      // Find admin user (check both cases)
+      // Find any admin user
       const admin = await prisma.user.findFirst({
-        where: { OR: [{ role: 'admin' }, { role: 'Admin' }] }
+        where: { OR: [{ role: 'admin' }, { role: 'Admin' }, { role: 'ADMIN' }] }
       });
       if (!admin) {
-        return NextResponse.json({ ok: false, error: 'No admin user found' }, { status: 400 });
+        // List all users for debugging
+        const users = await prisma.user.findMany({ select: { id: true, email: true, role: true } });
+        return NextResponse.json({ 
+          ok: false, 
+          error: 'No admin user found',
+          users: users.map(u => ({ email: u.email, role: u.role }))
+        }, { status: 400 });
       }
       userId = admin.id;
     } else {
@@ -56,24 +62,31 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    // Create todos
-    const created = await prisma.todo.createMany({
-      data: PORTAL_TODOS.map((t, i) => ({
-        userId,
-        title: t.title,
-        description: t.description,
-        category: t.category,
-        priority: t.priority,
-        sortOrder: i,
-      })),
-    });
+    // Create todos one by one to catch errors
+    let created = 0;
+    for (const t of PORTAL_TODOS) {
+      await prisma.todo.create({
+        data: {
+          userId,
+          title: t.title,
+          description: t.description,
+          category: t.category,
+          priority: t.priority,
+          sortOrder: created,
+        },
+      });
+      created++;
+    }
 
     return NextResponse.json({ 
       ok: true, 
-      message: `Created ${created.count} Portal todos` 
+      message: `Created ${created} Portal todos` 
     });
   } catch (error) {
     console.error('Seed error:', error);
-    return NextResponse.json({ ok: false, error: 'Seed failed' }, { status: 500 });
+    return NextResponse.json({ 
+      ok: false, 
+      error: 'Seed failed: ' + (error instanceof Error ? error.message : String(error))
+    }, { status: 500 });
   }
 }
