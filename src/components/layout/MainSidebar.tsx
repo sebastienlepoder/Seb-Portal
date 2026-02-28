@@ -192,6 +192,13 @@ export default function MainSidebar({
             label="VPS Servers"
             icon={<Cloud className="h-3.5 w-3.5" />}
           />
+          <SidebarLink
+            collapsed={collapsed}
+            href="/todos"
+            active={isTodos}
+            label="Todo List"
+            icon={<CheckSquare className="h-3.5 w-3.5" />}
+          />
 
           {/* Dashboard sections (only on dashboard) */}
           {isDashboard && onSectionChange && sections.length > 0 && (
