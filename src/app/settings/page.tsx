@@ -1,6 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import {
+  Download,
+  Upload, useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/usePortal';
 import { Shield, Key, QrCode, Check, X, Loader2 } from 'lucide-react';
 import { UpdatePanel } from '@/components/admin/UpdatePanel';
@@ -180,6 +182,68 @@ export default function SettingsPage() {
         </section>
       </div>
     </div>
+
+        {/* Export / Import Section */}
+        {user?.role?.toLowerCase() === 'admin' && (
+          <section className="bg-portal-card border border-portal-border rounded-xl">
+            <div className="px-4 py-3 border-b border-portal-border">
+              <h2 className="text-sm font-semibold text-portal-text flex items-center gap-2">
+                <Download className="h-4 w-4 text-green-400" />
+                Backup & Restore
+              </h2>
+            </div>
+            <div className="p-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-portal-text">Export Configuration</p>
+                  <p className="text-xs text-portal-muted">Download services, todos, settings as JSON</p>
+                </div>
+                <a
+                  href="/api/admin/export"
+                  download
+                  className="flex items-center gap-2 px-4 py-2 text-sm bg-green-500/20 text-green-400 hover:bg-green-500/30 rounded-lg transition-colors"
+                >
+                  <Download className="h-4 w-4" />
+                  Export
+                </a>
+              </div>
+              <div className="border-t border-portal-border pt-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-portal-text">Import Configuration</p>
+                    <p className="text-xs text-portal-muted">Restore from exported JSON</p>
+                  </div>
+                  <label className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 rounded-lg transition-colors cursor-pointer">
+                    <Upload className="h-4 w-4" />
+                    Import
+                    <input
+                      type="file"
+                      accept=".json"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        try {
+                          const text = await file.text();
+                          const d = JSON.parse(text);
+                          const res = await fetch('/api/admin/export', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ data: d.data, options: { merge: true } }),
+                          });
+                          const result = await res.json();
+                          alert(result.ok ? result.message : 'Import failed: ' + result.error);
+                          if (result.ok) window.location.reload();
+                        } catch { alert('Invalid JSON'); }
+                        e.target.value = '';
+                      }}
+                    />
+                  </label>
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
     </PortalShell>
   );
 }
