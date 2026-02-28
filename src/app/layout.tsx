@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import ClientProviders from '@/components/ClientProviders';
 
 export const metadata: Metadata = {
   title: 'LEPODER Portal',
@@ -17,7 +18,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className="dark">
       <body className="bg-portal-bg text-portal-text font-sans antialiased min-h-screen overflow-x-hidden">
-        {children}
+        <ClientProviders>
+          {children}
+        </ClientProviders>
       </body>
     </html>
   );
