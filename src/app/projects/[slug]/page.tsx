@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/usePortal';
 import MainSidebar from '@/components/layout/MainSidebar';
 import { 
-  ArrowLeft, 
+  ArrowLeft,
+  Settings, 
   FileText, 
   GitBranch,
   ExternalLink,
@@ -84,6 +85,17 @@ export default function ProjectDetailPage() {
   const [docContent, setDocContent] = useState<string | null>(null);
   const [loadingDocContent, setLoadingDocContent] = useState(false);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
+
+  // Settings modal state
+  const [showSettings, setShowSettings] = useState(false);
+  const [settingsForm, setSettingsForm] = useState({
+    name: '',
+    description: '',
+    repoUrl: '',
+    icon: '',
+    status: 'active',
+  });
+  const [savingSettings, setSavingSettings] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) window.location.href = '/login';
@@ -184,6 +196,50 @@ export default function ProjectDetailPage() {
       }
       return next;
     });
+  };
+
+  
+  const openSettings = () => {
+    if (project) {
+      setSettingsForm({
+        name: project.name || '',
+        description: project.description || '',
+        repoUrl: project.repoUrl || '',
+        icon: project.icon || '',
+        status: project.status || 'active',
+      });
+      setShowSettings(true);
+    }
+  };
+
+  const saveSettings = async () => {
+    if (!slug) return;
+    setSavingSettings(true);
+    try {
+      const res = await fetch(`/api/projects/${slug}`, {
+        method: 'PUT',
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(user?.csrfToken ? { 'x-csrf-token': user.csrfToken } : {}),
+        },
+        body: JSON.stringify(settingsForm),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setProject(data.data);
+        setShowSettings(false);
+        // Reset docs data to reload with new repo URL
+        setDocsData(null);
+        setSelectedDocPath(null);
+        setDocContent(null);
+      } else {
+        alert(data.error || 'Failed to save');
+      }
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setSavingSettings(false);
+    }
   };
 
   const currentTab = localTabs.find(t => t.id === activeTab);
@@ -295,6 +351,15 @@ export default function ProjectDetailPage() {
                     GitHub
                     <ExternalLink className="h-3 w-3" />
                   </a>
+                )}
+                {user?.role?.toLowerCase() === 'admin' && (
+                  <button
+                    onClick={openSettings}
+                    className="flex items-center gap-2 px-3 py-1.5 text-sm text-portal-muted hover:text-portal-text bg-portal-card border border-portal-border rounded-lg transition-colors"
+                  >
+                    <Settings className="h-4 w-4" />
+                    Settings
+                  </button>
                 )}
               </div>
             </div>
@@ -476,6 +541,91 @@ export default function ProjectDetailPage() {
           )}
         </div>
       </div>
+      {/* Settings Modal */}
+      {showSettings && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-portal-card border border-portal-border rounded-xl w-full max-w-md mx-4 shadow-2xl">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-portal-border">
+              <h2 className="text-lg font-semibold text-portal-text">Project Settings</h2>
+              <button
+                onClick={() => setShowSettings(false)}
+                className="p-1 text-portal-muted hover:text-portal-text rounded transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm text-portal-muted mb-1">Name</label>
+                <input
+                  type="text"
+                  value={settingsForm.name}
+                  onChange={(e) => setSettingsForm(f => ({ ...f, name: e.target.value }))}
+                  className="w-full px-3 py-2 bg-portal-bg border border-portal-border rounded-lg text-portal-text text-sm focus:outline-none focus:border-portal-accent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-portal-muted mb-1">Description</label>
+                <input
+                  type="text"
+                  value={settingsForm.description}
+                  onChange={(e) => setSettingsForm(f => ({ ...f, description: e.target.value }))}
+                  className="w-full px-3 py-2 bg-portal-bg border border-portal-border rounded-lg text-portal-text text-sm focus:outline-none focus:border-portal-accent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-portal-muted mb-1">GitHub Repository URL</label>
+                <input
+                  type="url"
+                  value={settingsForm.repoUrl}
+                  onChange={(e) => setSettingsForm(f => ({ ...f, repoUrl: e.target.value }))}
+                  placeholder="https://github.com/user/repo"
+                  className="w-full px-3 py-2 bg-portal-bg border border-portal-border rounded-lg text-portal-text text-sm focus:outline-none focus:border-portal-accent"
+                />
+                <p className="text-xs text-portal-muted mt-1">Required to view docs from GitHub</p>
+              </div>
+              <div>
+                <label className="block text-sm text-portal-muted mb-1">Icon (emoji)</label>
+                <input
+                  type="text"
+                  value={settingsForm.icon}
+                  onChange={(e) => setSettingsForm(f => ({ ...f, icon: e.target.value }))}
+                  placeholder="📁"
+                  className="w-full px-3 py-2 bg-portal-bg border border-portal-border rounded-lg text-portal-text text-sm focus:outline-none focus:border-portal-accent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-portal-muted mb-1">Status</label>
+                <select
+                  value={settingsForm.status}
+                  onChange={(e) => setSettingsForm(f => ({ ...f, status: e.target.value }))}
+                  className="w-full px-3 py-2 bg-portal-bg border border-portal-border rounded-lg text-portal-text text-sm focus:outline-none focus:border-portal-accent"
+                >
+                  <option value="active">Active</option>
+                  <option value="paused">Paused</option>
+                  <option value="completed">Completed</option>
+                  <option value="archived">Archived</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 px-6 py-4 border-t border-portal-border">
+              <button
+                onClick={() => setShowSettings(false)}
+                className="px-4 py-2 text-sm text-portal-muted hover:text-portal-text rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveSettings}
+                disabled={savingSettings}
+                className="px-4 py-2 text-sm bg-portal-accent hover:bg-portal-accent-dark text-white rounded-lg transition-colors disabled:opacity-50"
+              >
+                {savingSettings ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
