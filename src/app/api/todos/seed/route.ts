@@ -22,16 +22,15 @@ const SEED_SECRET = 'lepoder-seed-2026';
 
 export async function POST(req: NextRequest) {
   try {
-    // Check for secret key OR authenticated admin
     const url = new URL(req.url);
     const secret = url.searchParams.get('secret');
     
     let userId: string;
     
     if (secret === SEED_SECRET) {
-      // Find admin user
+      // Find admin user (check both cases)
       const admin = await prisma.user.findFirst({
-        where: { role: { equals: 'admin', mode: 'insensitive' } }
+        where: { OR: [{ role: 'admin' }, { role: 'Admin' }] }
       });
       if (!admin) {
         return NextResponse.json({ ok: false, error: 'No admin user found' }, { status: 400 });
