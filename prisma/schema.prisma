@@ -29,6 +29,7 @@ model User {
   clickEvents      ClickEvent[]
   urgentItems      UrgentItem[]
   microsoftAccount MicrosoftAccount?
+  todos            Todo[]
 }
 
 // ─── Microsoft Account (Graph API) ──────────────────────────
@@ -259,4 +260,24 @@ model ProjectSession {
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId, date])
+}
+
+model Todo {
+  id          String    @id @default(uuid())
+  userId      String
+  title       String
+  description String?
+  category    String    @default("General")
+  priority    Int       @default(0) // 0=normal, 1=medium, 2=high
+  completed   Boolean   @default(false)
+  completedAt DateTime?
+  dueDate     DateTime?
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, completed])
+  @@index([userId, category])
 }
