@@ -97,7 +97,7 @@ export async function generateIconViaApi(req: IconGenRequest): Promise<IconGenRe
           } else {
             writeFileSync(filePath, Buffer.from(await response.arrayBuffer()));
           }
-          const url = `/icons/generated/${fileSlug}.${ext}`;
+          const url = `/api/icons/serve/${fileSlug}.${ext}`;
           await cacheIcon(fileSlug, filePath, 'custom_api');
           return { success: true, path: filePath, url, provider: 'custom_api' };
         }
@@ -119,7 +119,7 @@ export async function generateIconViaApi(req: IconGenRequest): Promise<IconGenRe
   // Strategy 1: Clearbit Logo API
   const clearbitPath = join(ICON_DIR, `${fileSlug}.png`);
   if (await fetchAndSave(`https://logo.clearbit.com/${domain}`, clearbitPath)) {
-    const url = `/icons/generated/${fileSlug}.png`;
+    const url = `/api/icons/serve/${fileSlug}.png`;
     await cacheIcon(fileSlug, clearbitPath, 'clearbit');
     return { success: true, path: clearbitPath, url, provider: 'clearbit' };
   }
@@ -127,7 +127,7 @@ export async function generateIconViaApi(req: IconGenRequest): Promise<IconGenRe
   // Strategy 2: Google Favicon API (with redirect)
   const faviconPath = join(ICON_DIR, `${fileSlug}-fav.png`);
   if (await fetchAndSave(`https://www.google.com/s2/favicons?domain=${domain}&sz=128`, faviconPath)) {
-    const url = `/icons/generated/${fileSlug}-fav.png`;
+    const url = `/api/icons/serve/${fileSlug}-fav.png`;
     await cacheIcon(fileSlug, faviconPath, 'google_favicon');
     return { success: true, path: faviconPath, url, provider: 'google_favicon' };
   }
@@ -135,7 +135,7 @@ export async function generateIconViaApi(req: IconGenRequest): Promise<IconGenRe
   // Strategy 3: Try DuckDuckGo favicon
   const ddgPath = join(ICON_DIR, `${fileSlug}-ddg.png`);
   if (await fetchAndSave(`https://icons.duckduckgo.com/ip3/${domain}.ico`, ddgPath)) {
-    const url = `/icons/generated/${fileSlug}-ddg.png`;
+    const url = `/api/icons/serve/${fileSlug}-ddg.png`;
     await cacheIcon(fileSlug, ddgPath, 'duckduckgo');
     return { success: true, path: ddgPath, url, provider: 'duckduckgo' };
   }
