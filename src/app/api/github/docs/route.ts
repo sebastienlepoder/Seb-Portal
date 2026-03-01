@@ -4,14 +4,13 @@ import { getSessionUser } from '@/lib/auth';
 // GitHub API base
 const GITHUB_API = 'https://api.github.com';
 
-interface GitHubContent {
-  name: string;
+interface GitHubTreeItem {
   path: string;
+  mode: string;
+  type: 'blob' | 'tree';
   sha: string;
-  size: number;
-  type: 'file' | 'dir';
-  download_url: string | null;
-  html_url: string;
+  size?: number;
+  url: string;
 }
 
 interface DocFile {
@@ -24,7 +23,6 @@ interface DocFile {
 
 // Extract owner/repo from GitHub URL
 function parseGitHubUrl(url: string): { owner: string; repo: string } | null {
-  // Handle various GitHub URL formats
   const patterns = [
     /github\.com\/([^\/]+)\/([^\/]+?)(?:\.git)?(?:\/|$)/,
     /github\.com:([^\/]+)\/([^\/]+?)(?:\.git)?$/,
@@ -39,13 +37,12 @@ function parseGitHubUrl(url: string): { owner: string; repo: string } | null {
   return null;
 }
 
-// Fetch directory contents from GitHub
-async function fetchGitHubContents(
+// Fetch the entire repo tree recursively
+async function fetchRepoTree(
   owner: string,
   repo: string,
-  path: string = 'docs',
   token?: string
-): Promise<GitHubContent[]> {
+): Promise<GitHubTreeItem[]> {
   const headers: Record<string, string> = {
     'Accept': 'application/vnd.github.v3+json',
     'User-Agent': 'LEPODER-Portal',
@@ -55,20 +52,122 @@ async function fetchGitHubContents(
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const res = await fetch(`${GITHUB_API}/repos/${owner}/${repo}/contents/${path}`, {
+  // Get default branch
+  const repoRes = await fetch(`${GITHUB_API}/repos/${owner}/${repo}`, {
     headers,
-    next: { revalidate: 300 }, // Cache for 5 minutes
+    next: { revalidate: 300 },
   });
+  
+  if (!repoRes.ok) {
+    throw new Error(`GitHub API error: ${repoRes.status}`);
+  }
+  
+  const repoData = await repoRes.json();
+  const defaultBranch = repoData.default_branch || 'main';
 
-  if (!res.ok) {
-    if (res.status === 404) {
-      return [];
-    }
-    throw new Error(`GitHub API error: ${res.status}`);
+  // Get full tree recursively
+  const treeRes = await fetch(
+    `${GITHUB_API}/repos/${owner}/${repo}/git/trees/${defaultBranch}?recursive=1`,
+    { headers, next: { revalidate: 300 } }
+  );
+
+  if (!treeRes.ok) {
+    throw new Error(`GitHub API error: ${treeRes.status}`);
   }
 
-  const data = await res.json();
-  return Array.isArray(data) ? data : [data];
+  const treeData = await treeRes.json();
+  return treeData.tree || [];
+}
+
+// Filter and build hierarchical tree of markdown files
+function buildMarkdownTree(items: GitHubTreeItem[], owner: string, repo: string): DocFile[] {
+  // Filter to only .md files (exclude node_modules, .git, etc.)
+  const mdFiles = items.filter(item => {
+    if (item.type !== 'blob') return false;
+    if (!item.path.toLowerCase().endsWith('.md')) return false;
+    
+    // Exclude common non-documentation paths
+    const excludePaths = ['node_modules/', '.git/', '.next/', 'dist/', 'build/', 'vendor/'];
+    return !excludePaths.some(ex => item.path.includes(ex));
+  });
+
+  // Build hierarchical structure
+  const root: DocFile[] = [];
+  const folders: Record<string, DocFile> = {};
+
+  // First pass: create all necessary folders
+  for (const file of mdFiles) {
+    const parts = file.path.split('/');
+    let currentPath = '';
+    
+    for (let i = 0; i < parts.length - 1; i++) {
+      const parentPath = currentPath;
+      currentPath = currentPath ? `${currentPath}/${parts[i]}` : parts[i];
+      
+      if (!folders[currentPath]) {
+        const folder: DocFile = {
+          name: parts[i],
+          path: currentPath,
+          type: 'dir',
+          url: `https://github.com/${owner}/${repo}/tree/main/${currentPath}`,
+          children: [],
+        };
+        folders[currentPath] = folder;
+        
+        if (parentPath && folders[parentPath]) {
+          folders[parentPath].children!.push(folder);
+        } else if (!parentPath) {
+          root.push(folder);
+        }
+      }
+    }
+  }
+
+  // Second pass: add files to their folders
+  for (const file of mdFiles) {
+    const parts = file.path.split('/');
+    const fileName = parts[parts.length - 1];
+    const parentPath = parts.slice(0, -1).join('/');
+    
+    const docFile: DocFile = {
+      name: fileName,
+      path: file.path,
+      type: 'file',
+      url: `https://github.com/${owner}/${repo}/blob/main/${file.path}`,
+    };
+    
+    if (parentPath && folders[parentPath]) {
+      folders[parentPath].children!.push(docFile);
+    } else {
+      root.push(docFile);
+    }
+  }
+
+  // Sort recursively: folders first, then files, alphabetically
+  function sortTree(items: DocFile[]): DocFile[] {
+    items.sort((a, b) => {
+      if (a.type !== b.type) return a.type === 'dir' ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+    for (const item of items) {
+      if (item.children) {
+        item.children = sortTree(item.children);
+      }
+    }
+    return items;
+  }
+
+  return sortTree(root);
+}
+
+// Count total files in tree
+function countFiles(tree: DocFile[]): number {
+  let count = 0;
+  for (const item of tree) {
+    if (item.type === 'file') count++;
+    else if (item.children) count += countFiles(item.children);
+  }
+  return count;
 }
 
 // Fetch file content from GitHub
@@ -99,42 +198,7 @@ async function fetchFileContent(
   return res.text();
 }
 
-// Recursively build docs tree
-async function buildDocsTree(
-  owner: string,
-  repo: string,
-  path: string = 'docs',
-  token?: string,
-  depth: number = 0
-): Promise<DocFile[]> {
-  if (depth > 3) return []; // Limit recursion depth
-
-  const contents = await fetchGitHubContents(owner, repo, path, token);
-  const tree: DocFile[] = [];
-
-  for (const item of contents) {
-    const docFile: DocFile = {
-      name: item.name,
-      path: item.path,
-      type: item.type,
-      url: item.html_url,
-    };
-
-    if (item.type === 'dir') {
-      docFile.children = await buildDocsTree(owner, repo, item.path, token, depth + 1);
-    }
-
-    tree.push(docFile);
-  }
-
-  // Sort: directories first, then files, alphabetically
-  return tree.sort((a, b) => {
-    if (a.type !== b.type) return a.type === 'dir' ? -1 : 1;
-    return a.name.localeCompare(b.name);
-  });
-}
-
-// GET /api/github/docs - Fetch docs from a GitHub repo
+// GET /api/github/docs - Fetch ALL markdown files from a GitHub repo
 export async function GET(req: NextRequest) {
   try {
     const user = await getSessionUser();
@@ -161,15 +225,19 @@ export async function GET(req: NextRequest) {
 
     switch (action) {
       case 'tree': {
-        // Get docs folder tree
-        const tree = await buildDocsTree(owner, repo, 'docs', token);
+        // Get ALL markdown files from entire repo
+        const repoTree = await fetchRepoTree(owner, repo, token);
+        const tree = buildMarkdownTree(repoTree, owner, repo);
+        const fileCount = countFiles(tree);
+        
         return NextResponse.json({
           ok: true,
           data: {
             owner,
             repo,
             tree,
-            hasDocsFolder: tree.length > 0,
+            fileCount,
+            hasDocsFolder: tree.length > 0, // Now means "has any .md files"
           },
         });
       }
@@ -192,14 +260,19 @@ export async function GET(req: NextRequest) {
       }
 
       case 'check': {
-        // Just check if docs folder exists
-        const contents = await fetchGitHubContents(owner, repo, 'docs', token);
+        // Quick check if repo has any markdown files
+        const repoTree = await fetchRepoTree(owner, repo, token);
+        const mdCount = repoTree.filter(
+          item => item.type === 'blob' && 
+          item.path.toLowerCase().endsWith('.md') &&
+          !item.path.includes('node_modules/')
+        ).length;
+        
         return NextResponse.json({
           ok: true,
           data: {
-            hasDocsFolder: contents.length > 0,
-            fileCount: contents.filter(c => c.type === 'file').length,
-            dirCount: contents.filter(c => c.type === 'dir').length,
+            hasDocsFolder: mdCount > 0,
+            fileCount: mdCount,
           },
         });
       }
