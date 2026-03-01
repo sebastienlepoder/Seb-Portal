@@ -64,5 +64,5 @@ export async function generateAndSaveFallback(
     update: { path: filePath, provider: 'fallback' },
   });
 
-  return `/icons/generated/${slug}.svg`;
+  return `/api/icons/serve/${slug}`;
 }
