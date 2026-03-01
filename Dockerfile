@@ -57,4 +57,4 @@ ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
 # Run migrations then start
-CMD ["sh", "-c", "node server.js"]
+CMD ["sh", "-c", "npx prisma db push --accept-data-loss && node server.js"]
