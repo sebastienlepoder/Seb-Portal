@@ -4,6 +4,7 @@ import { verifyCsrf } from '@/lib/csrf';
 import { auditLog, getClientIp } from '@/lib/audit';
 import prisma from '@/lib/db';
 import { generateIconViaApi } from '@/server/iconProviders/cloudApiProvider';
+import { generateIconWithAI } from '@/server/iconProviders/aiIconProvider';
 import { generateAndSaveFallback } from '@/server/iconProviders/fallbackProvider';
 
 export async function POST(request: Request) {
@@ -23,7 +24,10 @@ export async function POST(request: Request) {
     let domain: string | undefined;
     try { domain = new URL(service.url).hostname; } catch { /* keep undefined */ }
 
-    // Try brand icon first (Clearbit → Google Favicon → custom API)
+    let iconUrl: string | null = null;
+    let provider: string = 'fallback';
+
+    // Step 1: Try brand icon first (Google Favicon → DuckDuckGo)
     const brandResult = await generateIconViaApi({
       name: service.name,
       slug: service.slug,
@@ -31,20 +35,33 @@ export async function POST(request: Request) {
       domain,
     });
 
-    let iconUrl: string | null;
-    let provider: string;
-
     if (brandResult.success && brandResult.url) {
       iconUrl = brandResult.url;
       provider = brandResult.provider || 'brand';
     } else {
-      // Final fallback: deterministic SVG with initials
-      iconUrl = await generateAndSaveFallback(
-        service.slug,
-        service.name,
-        service.description || undefined
-      );
-      provider = 'fallback';
+      // Step 2: Try AI-generated icon using Claude
+      console.log(`[icon] Trying AI generation for ${service.name}...`);
+      const aiResult = await generateIconWithAI({
+        name: service.name,
+        slug: service.slug,
+        description: service.description || undefined,
+        category: service.category || undefined,
+      });
+
+      if (aiResult.success && aiResult.url) {
+        iconUrl = aiResult.url;
+        provider = 'ai-claude';
+        console.log(`[icon] AI generated icon for ${service.name}`);
+      } else {
+        // Step 3: Final fallback - deterministic SVG with initials
+        console.log(`[icon] Using fallback for ${service.name}: ${aiResult.error}`);
+        iconUrl = await generateAndSaveFallback(
+          service.slug,
+          service.name,
+          service.description || undefined
+        );
+        provider = 'fallback';
+      }
     }
 
     await prisma.service.update({
@@ -59,8 +76,9 @@ export async function POST(request: Request) {
       ipAddress: getClientIp(request),
     });
 
-    return NextResponse.json({ ok: true, data: { iconUrl } });
+    return NextResponse.json({ ok: true, data: { iconUrl, provider } });
   } catch (e) {
+    console.error('[icon] Regenerate error:', e);
     if ((e as Error).message === 'FORBIDDEN') {
       return NextResponse.json({ ok: false, error: 'Admin required' }, { status: 403 });
     }
