@@ -47,7 +47,7 @@ Requirements:
 Return ONLY the SVG code, nothing else. No markdown, no explanation.`;
 
     const response = await client.messages.create({
-      model: 'claude-3-5-haiku-20241022',
+      model: 'claude-3-haiku-20240307',
       max_tokens: 1500,
       messages: [{ role: 'user', content: prompt }],
     });
