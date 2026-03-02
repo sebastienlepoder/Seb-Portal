@@ -80,7 +80,7 @@ export default function ProjectsPage() {
         <div className="max-w-6xl mx-auto">
           {/* Header */}
           <div className="flex flex-col sm:flex-row sm:items-center gap-4 mb-8">
-            <div className="pl-12 sm:pl-0">
+            <div className="pl-12 sm:pl-0 min-w-0">
               <h1 className="text-2xl font-bold text-portal-text flex items-center gap-2">
                 <FolderGit2 className="h-6 w-6 text-portal-accent" />
                 Projets

@@ -180,15 +180,15 @@ export default function CoolifyPage() {
     <div className="h-screen bg-portal-bg flex overflow-hidden">
       <MainSidebar user={user} onLogout={logout} />
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden">
         {/* Header */}
         <div className="border-b border-portal-border bg-portal-card px-4 sm:px-6 py-4">
           <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-            <div className="flex items-center gap-3 pl-12 sm:pl-0">
+            <div className="flex items-center gap-3 pl-12 sm:pl-0 min-w-0">
               <Cloud className="h-6 w-6 text-purple-400" />
               <div>
-                <h1 className="text-xl font-bold text-portal-text">VPS Servers</h1>
-                <p className="text-sm text-portal-muted">Container & deployment management (Coolify)</p>
+                <h1 className="text-lg font-bold text-portal-text truncate">VPS Servers</h1>
+                <p className="text-sm text-portal-muted truncate">Coolify</p>
               </div>
             </div>
             <div className="flex items-center gap-2 pl-12 sm:pl-0 sm:ml-auto">
@@ -213,7 +213,7 @@ export default function CoolifyPage() {
           </div>
         </div>
 
-        <div className="p-4 sm:p-6">
+        <div className="p-4 sm:p-6 max-w-full">
           {/* Not available */}
           {data && !data.available && (
             <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-6 text-center">

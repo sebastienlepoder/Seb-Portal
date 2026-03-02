@@ -183,11 +183,11 @@ export default function TailscalePage() {
     <div className="h-screen bg-portal-bg flex overflow-hidden">
       <MainSidebar user={user} onLogout={logout} />
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden">
         {/* Header */}
         <div className="border-b border-portal-border bg-portal-card px-4 sm:px-6 py-4">
           <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-            <div className="flex items-center gap-3 pl-12 sm:pl-0">
+            <div className="flex items-center gap-3 pl-12 sm:pl-0 min-w-0">
               <Shield className="h-6 w-6 text-blue-400" />
               <div>
                 <h1 className="text-xl font-bold text-portal-text">Tailscale</h1>

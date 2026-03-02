@@ -465,7 +465,7 @@ function ServiceEditorModal({
 
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-fade-in">
-      <div className="bg-portal-card border border-portal-border rounded-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+      <div className="bg-portal-card border border-portal-border rounded-xl w-full max-w-lg max-h-[90vh] overflow-y-auto overflow-x-hidden">
         <div className="flex items-center justify-between p-4 border-b border-portal-border">
           <h3 className="text-sm font-semibold text-portal-text">Edit Service</h3>
           <button onClick={onClose} className="p-1 text-portal-muted hover:text-portal-text">
