@@ -142,51 +142,54 @@ export default function TodosPage() {
     <div className="h-screen bg-portal-bg flex overflow-hidden">
       <MainSidebar user={user} onLogout={logout} />
 
-      <div className="flex-1 overflow-y-auto">
-        {/* Header - Mobile responsive */}
-        <div className="border-b border-portal-border bg-portal-card px-4 sm:px-6 py-4">
-          <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-            {/* Title section - add left padding on mobile for hamburger menu */}
-            <div className="flex items-center gap-3 pl-12 sm:pl-0">
-              <CheckSquare className="h-6 w-6 text-green-400 flex-shrink-0" />
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Sticky Header */}
+        <div className="sticky top-0 z-10 border-b border-portal-border bg-portal-card px-4 py-3 flex-shrink-0">
+          {/* Title row */}
+          <div className="flex items-center gap-3 mb-3">
+            <div className="pl-10 sm:pl-0 flex items-center gap-3 flex-1 min-w-0">
+              <CheckSquare className="h-5 w-5 text-green-400 flex-shrink-0" />
               <div className="min-w-0">
-                <h1 className="text-xl font-bold text-portal-text">Todo List</h1>
-                <p className="text-sm text-portal-muted">
+                <h1 className="text-lg font-bold text-portal-text">Todo List</h1>
+                <p className="text-xs text-portal-muted">
                   {data?.stats.active || 0} active · {data?.stats.completed || 0} completed
                 </p>
               </div>
             </div>
-            
-            {/* Actions - right aligned on desktop, full width on mobile */}
-            <div className="flex items-center gap-2 sm:ml-auto pl-12 sm:pl-0">
+            <button
+              onClick={fetchTodos}
+              className="p-2 text-portal-muted hover:text-portal-text rounded-lg transition-colors flex-shrink-0"
+            >
+              <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
+            </button>
+          </div>
+          
+          {/* Actions row */}
+          <div className="flex items-center gap-2 pl-10 sm:pl-0">
+            <button
+              onClick={() => setShowAddForm(true)}
+              className="flex items-center gap-2 px-3 py-2 bg-portal-accent hover:bg-portal-accent-dark text-white rounded-lg transition-colors text-sm whitespace-nowrap"
+            >
+              <Plus className="h-4 w-4" />
+              <span className="hidden xs:inline">Add Task</span>
+              <span className="xs:hidden">Add</span>
+            </button>
+            {user?.role?.toLowerCase() === 'admin' && (
               <button
-                onClick={fetchTodos}
-                className="p-2 text-portal-muted hover:text-portal-text rounded-lg transition-colors flex-shrink-0"
+                onClick={seedRoadmap}
+                className="flex items-center gap-2 px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors text-sm whitespace-nowrap"
               >
-                <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
+                <span className="hidden sm:inline">Seed Roadmap</span>
+                <span className="sm:hidden">Seed</span>
               </button>
-              <button
-                onClick={() => setShowAddForm(true)}
-                className="flex items-center justify-center gap-2 px-4 py-2 bg-portal-accent hover:bg-portal-accent-dark text-white rounded-lg transition-colors text-sm flex-1 sm:flex-initial"
-              >
-                <Plus className="h-4 w-4" />
-                <span>Add Task</span>
-              </button>
-              {user?.role?.toLowerCase() === 'admin' && (
-                <button
-                  onClick={seedRoadmap}
-                  className="flex items-center justify-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors text-sm flex-1 sm:flex-initial"
-                >
-                  <span>Seed Roadmap</span>
-                </button>
-              )}
-            </div>
+            )}
           </div>
         </div>
 
-        <div className="p-4 sm:p-6">
-          {/* Filters - scrollable on mobile */}
-          <div className="flex flex-wrap gap-3 sm:gap-4 mb-6">
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-y-auto overflow-x-hidden p-4">
+          {/* Filters */}
+          <div className="flex flex-wrap items-center gap-2 mb-4">
             <div className="flex gap-1 bg-portal-card border border-portal-border rounded-lg p-1">
               {(['all', 'active', 'completed'] as const).map(f => (
                 <button
@@ -208,7 +211,7 @@ export default function TodosPage() {
                 <select
                   value={categoryFilter || ''}
                   onChange={e => setCategoryFilter(e.target.value || null)}
-                  className="px-3 py-1.5 text-sm bg-portal-card border border-portal-border rounded-lg text-portal-text focus:outline-none"
+                  className="px-2 py-1.5 text-sm bg-portal-card border border-portal-border rounded-lg text-portal-text focus:outline-none max-w-[140px]"
                 >
                   <option value="">All Categories</option>
                   {data.categories.map(c => (
@@ -221,62 +224,60 @@ export default function TodosPage() {
             {data?.stats.completed ? (
               <button
                 onClick={clearCompleted}
-                className="text-sm text-portal-muted hover:text-red-400 transition-colors whitespace-nowrap"
+                className="text-sm text-portal-muted hover:text-red-400 transition-colors whitespace-nowrap ml-auto"
               >
-                Clear completed
+                Clear done
               </button>
             ) : null}
           </div>
 
           {/* Add Form */}
           {showAddForm && (
-            <form onSubmit={addTodo} className="bg-portal-card border border-portal-border rounded-xl p-4 mb-6">
-              <div className="mb-4">
+            <form onSubmit={addTodo} className="bg-portal-card border border-portal-border rounded-xl p-4 mb-4">
+              <div className="mb-3">
                 <input
                   type="text"
                   value={newTodo}
                   onChange={e => setNewTodo(e.target.value)}
                   placeholder="What needs to be done?"
                   autoFocus
-                  className="w-full px-4 py-2 bg-portal-bg border border-portal-border rounded-lg text-portal-text placeholder-portal-muted focus:outline-none focus:border-portal-accent"
+                  className="w-full px-3 py-2 bg-portal-bg border border-portal-border rounded-lg text-portal-text placeholder-portal-muted focus:outline-none focus:border-portal-accent text-sm"
                 />
               </div>
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="flex gap-2 sm:gap-4">
-                  <select
-                    value={newCategory}
-                    onChange={e => setNewCategory(e.target.value)}
-                    className="flex-1 sm:flex-initial px-3 py-1.5 text-sm bg-portal-bg border border-portal-border rounded-lg text-portal-text"
-                  >
-                    <option>General</option>
-                    <option>Work</option>
-                    <option>Personal</option>
-                    <option>Portal</option>
-                    <option>Ideas</option>
-                  </select>
-                  <select
-                    value={newPriority}
-                    onChange={e => setNewPriority(Number(e.target.value))}
-                    className="flex-1 sm:flex-initial px-3 py-1.5 text-sm bg-portal-bg border border-portal-border rounded-lg text-portal-text"
-                  >
-                    <option value={0}>Normal</option>
-                    <option value={1}>Medium</option>
-                    <option value={2}>High</option>
-                  </select>
-                </div>
-                <div className="flex gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  value={newCategory}
+                  onChange={e => setNewCategory(e.target.value)}
+                  className="px-2 py-1.5 text-sm bg-portal-bg border border-portal-border rounded-lg text-portal-text"
+                >
+                  <option>General</option>
+                  <option>Work</option>
+                  <option>Personal</option>
+                  <option>Portal</option>
+                  <option>Ideas</option>
+                </select>
+                <select
+                  value={newPriority}
+                  onChange={e => setNewPriority(Number(e.target.value))}
+                  className="px-2 py-1.5 text-sm bg-portal-bg border border-portal-border rounded-lg text-portal-text"
+                >
+                  <option value={0}>Normal</option>
+                  <option value={1}>Medium</option>
+                  <option value={2}>High</option>
+                </select>
+                <div className="flex gap-2 ml-auto">
                   <button
                     type="button"
                     onClick={() => setShowAddForm(false)}
-                    className="flex-1 sm:flex-initial px-4 py-2 text-sm text-portal-muted hover:text-portal-text rounded-lg transition-colors"
+                    className="px-3 py-1.5 text-sm text-portal-muted hover:text-portal-text rounded-lg transition-colors"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="flex-1 sm:flex-initial px-4 py-2 text-sm bg-portal-accent hover:bg-portal-accent-dark text-white rounded-lg transition-colors"
+                    className="px-3 py-1.5 text-sm bg-portal-accent hover:bg-portal-accent-dark text-white rounded-lg transition-colors"
                   >
-                    Add Task
+                    Add
                   </button>
                 </div>
               </div>
@@ -290,9 +291,9 @@ export default function TodosPage() {
                 <RefreshCw className="h-6 w-6 animate-spin text-portal-muted mx-auto" />
               </div>
             ) : data?.todos.length === 0 ? (
-              <div className="p-12 text-center">
-                <CheckSquare className="h-12 w-12 text-portal-muted mx-auto mb-4" />
-                <p className="text-portal-muted">
+              <div className="p-8 text-center">
+                <CheckSquare className="h-10 w-10 text-portal-muted mx-auto mb-3" />
+                <p className="text-portal-muted text-sm">
                   {filter === 'completed' ? 'No completed tasks' : 
                    filter === 'active' ? 'All done! 🎉' : 'No tasks yet'}
                 </p>
@@ -302,7 +303,7 @@ export default function TodosPage() {
                 <div
                   key={todo.id}
                   className={cn(
-                    'flex items-center gap-3 sm:gap-4 px-3 sm:px-4 py-3 group transition-colors',
+                    'flex items-center gap-3 px-3 py-3 group transition-colors',
                     todo.completed && 'bg-portal-bg/50'
                   )}
                 >
@@ -332,7 +333,7 @@ export default function TodosPage() {
                         }}
                         onBlur={() => updateTodo(todo.id, editTitle)}
                         autoFocus
-                        className="w-full px-2 py-1 bg-portal-bg border border-portal-border rounded text-portal-text focus:outline-none"
+                        className="w-full px-2 py-1 bg-portal-bg border border-portal-border rounded text-portal-text focus:outline-none text-sm"
                       />
                     ) : (
                       <p
@@ -344,17 +345,17 @@ export default function TodosPage() {
                         {todo.title}
                       </p>
                     )}
-                    <div className="flex items-center gap-3 mt-1">
+                    <div className="flex items-center gap-2 mt-0.5">
                       <span className="text-xs text-portal-muted">{todo.category}</span>
                       {todo.priority > 0 && (
                         <span className={cn('text-xs', getPriorityColor(todo.priority))}>
-                          {todo.priority === 2 ? '⚡ High' : '● Medium'}
+                          {todo.priority === 2 ? '⚡ High' : '● Med'}
                         </span>
                       )}
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                  <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity flex-shrink-0">
                     <button
                       onClick={() => { setEditingId(todo.id); setEditTitle(todo.title); }}
                       className="p-1.5 text-portal-muted hover:text-portal-text rounded transition-colors"
