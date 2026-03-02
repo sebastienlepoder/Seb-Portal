@@ -143,47 +143,50 @@ export default function TodosPage() {
       <MainSidebar user={user} onLogout={logout} />
 
       <div className="flex-1 overflow-y-auto">
-        {/* Header */}
-        <div className="border-b border-portal-border bg-portal-card px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <CheckSquare className="h-6 w-6 text-green-400" />
-              <div>
+        {/* Header - Mobile responsive */}
+        <div className="border-b border-portal-border bg-portal-card px-4 sm:px-6 py-4">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+            {/* Title section - add left padding on mobile for hamburger menu */}
+            <div className="flex items-center gap-3 pl-12 sm:pl-0">
+              <CheckSquare className="h-6 w-6 text-green-400 flex-shrink-0" />
+              <div className="min-w-0">
                 <h1 className="text-xl font-bold text-portal-text">Todo List</h1>
                 <p className="text-sm text-portal-muted">
                   {data?.stats.active || 0} active · {data?.stats.completed || 0} completed
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            
+            {/* Actions - right aligned on desktop, full width on mobile */}
+            <div className="flex items-center gap-2 sm:ml-auto pl-12 sm:pl-0">
               <button
                 onClick={fetchTodos}
-                className="p-2 text-portal-muted hover:text-portal-text rounded-lg transition-colors"
+                className="p-2 text-portal-muted hover:text-portal-text rounded-lg transition-colors flex-shrink-0"
               >
                 <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
               </button>
               <button
                 onClick={() => setShowAddForm(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-portal-accent hover:bg-portal-accent-dark text-white rounded-lg transition-colors"
+                className="flex items-center justify-center gap-2 px-4 py-2 bg-portal-accent hover:bg-portal-accent-dark text-white rounded-lg transition-colors text-sm flex-1 sm:flex-initial"
               >
                 <Plus className="h-4 w-4" />
-                Add Task
+                <span>Add Task</span>
               </button>
               {user?.role?.toLowerCase() === 'admin' && (
                 <button
                   onClick={seedRoadmap}
-                  className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors text-sm"
+                  className="flex items-center justify-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors text-sm flex-1 sm:flex-initial"
                 >
-                  Seed Roadmap
+                  <span>Seed Roadmap</span>
                 </button>
               )}
             </div>
           </div>
         </div>
 
-        <div className="p-6">
-          {/* Filters */}
-          <div className="flex flex-wrap gap-4 mb-6">
+        <div className="p-4 sm:p-6">
+          {/* Filters - scrollable on mobile */}
+          <div className="flex flex-wrap gap-3 sm:gap-4 mb-6">
             <div className="flex gap-1 bg-portal-card border border-portal-border rounded-lg p-1">
               {(['all', 'active', 'completed'] as const).map(f => (
                 <button
@@ -201,7 +204,7 @@ export default function TodosPage() {
 
             {data?.categories && data.categories.length > 0 && (
               <div className="flex gap-2 items-center">
-                <Tag className="h-4 w-4 text-portal-muted" />
+                <Tag className="h-4 w-4 text-portal-muted flex-shrink-0" />
                 <select
                   value={categoryFilter || ''}
                   onChange={e => setCategoryFilter(e.target.value || null)}
@@ -218,7 +221,7 @@ export default function TodosPage() {
             {data?.stats.completed ? (
               <button
                 onClick={clearCompleted}
-                className="text-sm text-portal-muted hover:text-red-400 transition-colors"
+                className="text-sm text-portal-muted hover:text-red-400 transition-colors whitespace-nowrap"
               >
                 Clear completed
               </button>
@@ -228,22 +231,22 @@ export default function TodosPage() {
           {/* Add Form */}
           {showAddForm && (
             <form onSubmit={addTodo} className="bg-portal-card border border-portal-border rounded-xl p-4 mb-6">
-              <div className="flex gap-4 mb-4">
+              <div className="mb-4">
                 <input
                   type="text"
                   value={newTodo}
                   onChange={e => setNewTodo(e.target.value)}
                   placeholder="What needs to be done?"
                   autoFocus
-                  className="flex-1 px-4 py-2 bg-portal-bg border border-portal-border rounded-lg text-portal-text placeholder-portal-muted focus:outline-none focus:border-portal-accent"
+                  className="w-full px-4 py-2 bg-portal-bg border border-portal-border rounded-lg text-portal-text placeholder-portal-muted focus:outline-none focus:border-portal-accent"
                 />
               </div>
-              <div className="flex items-center justify-between">
-                <div className="flex gap-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex gap-2 sm:gap-4">
                   <select
                     value={newCategory}
                     onChange={e => setNewCategory(e.target.value)}
-                    className="px-3 py-1.5 text-sm bg-portal-bg border border-portal-border rounded-lg text-portal-text"
+                    className="flex-1 sm:flex-initial px-3 py-1.5 text-sm bg-portal-bg border border-portal-border rounded-lg text-portal-text"
                   >
                     <option>General</option>
                     <option>Work</option>
@@ -254,7 +257,7 @@ export default function TodosPage() {
                   <select
                     value={newPriority}
                     onChange={e => setNewPriority(Number(e.target.value))}
-                    className="px-3 py-1.5 text-sm bg-portal-bg border border-portal-border rounded-lg text-portal-text"
+                    className="flex-1 sm:flex-initial px-3 py-1.5 text-sm bg-portal-bg border border-portal-border rounded-lg text-portal-text"
                   >
                     <option value={0}>Normal</option>
                     <option value={1}>Medium</option>
@@ -265,13 +268,13 @@ export default function TodosPage() {
                   <button
                     type="button"
                     onClick={() => setShowAddForm(false)}
-                    className="px-4 py-2 text-sm text-portal-muted hover:text-portal-text rounded-lg transition-colors"
+                    className="flex-1 sm:flex-initial px-4 py-2 text-sm text-portal-muted hover:text-portal-text rounded-lg transition-colors"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-2 text-sm bg-portal-accent hover:bg-portal-accent-dark text-white rounded-lg transition-colors"
+                    className="flex-1 sm:flex-initial px-4 py-2 text-sm bg-portal-accent hover:bg-portal-accent-dark text-white rounded-lg transition-colors"
                   >
                     Add Task
                   </button>
@@ -299,7 +302,7 @@ export default function TodosPage() {
                 <div
                   key={todo.id}
                   className={cn(
-                    'flex items-center gap-4 px-4 py-3 group transition-colors',
+                    'flex items-center gap-3 sm:gap-4 px-3 sm:px-4 py-3 group transition-colors',
                     todo.completed && 'bg-portal-bg/50'
                   )}
                 >
@@ -351,7 +354,7 @@ export default function TodosPage() {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                     <button
                       onClick={() => { setEditingId(todo.id); setEditTitle(todo.title); }}
                       className="p-1.5 text-portal-muted hover:text-portal-text rounded transition-colors"
