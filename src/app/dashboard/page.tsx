@@ -152,7 +152,7 @@ export default function DashboardPage() {
       <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
         {/* Header */}
         <header className="shrink-0 z-20 bg-portal-bg/80 backdrop-blur-lg border-b border-portal-border">
-          <div className="flex items-center gap-3 px-4 py-3">
+          <div className="flex items-center gap-3 px-4 py-3 pl-14 sm:pl-4">
             <SearchBar services={services} onSelect={openService} />
 
             <div className="flex items-center gap-2 ml-auto">

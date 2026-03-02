@@ -182,16 +182,16 @@ export default function CoolifyPage() {
 
       <div className="flex-1 overflow-y-auto">
         {/* Header */}
-        <div className="border-b border-portal-border bg-portal-card px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
+        <div className="border-b border-portal-border bg-portal-card px-4 sm:px-6 py-4">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+            <div className="flex items-center gap-3 pl-12 sm:pl-0">
               <Cloud className="h-6 w-6 text-purple-400" />
               <div>
                 <h1 className="text-xl font-bold text-portal-text">VPS Servers</h1>
                 <p className="text-sm text-portal-muted">Container & deployment management (Coolify)</p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 pl-12 sm:pl-0 sm:ml-auto">
               <a
                 href={process.env.NEXT_PUBLIC_COOLIFY_URL || 'http://187.77.214.29:8000'}
                 target="_blank"
@@ -213,7 +213,7 @@ export default function CoolifyPage() {
           </div>
         </div>
 
-        <div className="p-6">
+        <div className="p-4 sm:p-6">
           {/* Not available */}
           {data && !data.available && (
             <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-6 text-center">
@@ -445,7 +445,7 @@ function AppRow({
         </div>
         <div className={cn('w-2 h-2 rounded-full flex-shrink-0', getStatusBg(app.status))} />
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 pl-12 sm:pl-0 sm:ml-auto">
             <p className="text-sm font-medium text-portal-text truncate">{app.name}</p>
             <span className={cn(
               'text-[10px] px-1.5 py-0.5 rounded',
@@ -471,7 +471,7 @@ function AppRow({
               <DetailItem label="UUID" value={app.uuid} mono />
               <DetailItem label="Build Pack" value={app.build_pack} />
               {app.git_repository && (
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 pl-12 sm:pl-0 sm:ml-auto">
                   <DetailItem label="Repository" value={app.git_repository} />
                   <a
                     href={app.git_repository}

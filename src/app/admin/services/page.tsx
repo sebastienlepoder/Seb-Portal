@@ -92,8 +92,8 @@ export default function AdminServicesPage() {
     <div className="min-h-screen bg-portal-bg p-6">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-4 mb-6">
+          <div className="flex items-center gap-3 pl-10 sm:pl-0">
             <a
               href="/dashboard"
               className="p-2 text-portal-muted hover:text-portal-text hover:bg-portal-card rounded-lg transition-colors"
@@ -105,9 +105,9 @@ export default function AdminServicesPage() {
               <p className="text-xs text-portal-muted">{services.length} services configured</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 sm:ml-auto">
             <a
-              href="/api/admin/backup?format=json"
+                        href="/api/admin/backup?format=json"
               className="flex items-center gap-1.5 px-3 py-2 text-xs bg-portal-card border border-portal-border text-portal-text rounded-lg hover:bg-portal-card-hover transition-colors"
             >
               <Download className="h-3.5 w-3.5" />
@@ -147,7 +147,7 @@ export default function AdminServicesPage() {
               </div>
               <div className="flex items-center gap-2">
                 {svc.requiresVPN && (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
                     VPN
                   </span>
                 )}

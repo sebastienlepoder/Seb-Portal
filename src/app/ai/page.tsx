@@ -95,7 +95,7 @@ export default function AiPage() {
       {/* Header */}
       <div className="border-b border-portal-border bg-portal-card">
         <div className="max-w-6xl mx-auto flex items-center gap-3 px-4 py-3">
-          <a href="/dashboard" className="p-2 text-portal-muted hover:text-portal-text hover:bg-portal-card-hover rounded-lg transition-colors">
+          <a href="/dashboard" className="ml-10 sm:ml-0 p-2 text-portal-muted hover:text-portal-text hover:bg-portal-card-hover rounded-lg transition-colors">
             <ArrowLeft className="h-4 w-4" />
           </a>
           <Sparkles className="h-5 w-5 text-portal-accent" />

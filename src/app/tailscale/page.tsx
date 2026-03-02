@@ -185,9 +185,9 @@ export default function TailscalePage() {
 
       <div className="flex-1 overflow-y-auto">
         {/* Header */}
-        <div className="border-b border-portal-border bg-portal-card px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
+        <div className="border-b border-portal-border bg-portal-card px-4 sm:px-6 py-4">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+            <div className="flex items-center gap-3 pl-12 sm:pl-0">
               <Shield className="h-6 w-6 text-blue-400" />
               <div>
                 <h1 className="text-xl font-bold text-portal-text">Tailscale</h1>
@@ -204,7 +204,7 @@ export default function TailscalePage() {
             <button
               onClick={fetchData}
               disabled={loading}
-              className="flex items-center gap-2 px-3 py-1.5 text-sm text-portal-muted hover:text-portal-text hover:bg-portal-bg rounded-lg transition-colors"
+              className="sm:ml-auto flex items-center gap-2 px-3 py-1.5 text-sm text-portal-muted hover:text-portal-text hover:bg-portal-bg rounded-lg transition-colors"
             >
               <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
               Refresh
@@ -212,7 +212,7 @@ export default function TailscalePage() {
           </div>
         </div>
 
-        <div className="p-6">
+        <div className="p-4 sm:p-6">
           {/* Not available */}
           {data && !data.available && (
             <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-6 text-center">

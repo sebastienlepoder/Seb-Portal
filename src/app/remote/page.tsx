@@ -148,12 +148,12 @@ export default function RemotePage() {
       <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
         {/* Header */}
         <header className="shrink-0 z-20 bg-portal-bg/80 backdrop-blur-lg border-b border-portal-border">
-          <div className="flex items-center justify-between px-6 py-4">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-4 px-4 sm:px-6 py-4">
             <div className="flex items-center gap-3">
               <Monitor className="h-6 w-6 text-portal-accent" />
               <h1 className="text-lg font-semibold text-portal-text">Remote Desktop</h1>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 pl-12 sm:pl-0 sm:ml-auto">
               <button
                 onClick={fetchConnections}
                 disabled={loading}
@@ -180,7 +180,7 @@ export default function RemotePage() {
           {activeConnection && guacToken && (
             <div className="flex-1 flex flex-col bg-black">
               <div className="flex items-center justify-between px-4 py-2 bg-portal-card border-b border-portal-border">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 pl-12 sm:pl-0 sm:ml-auto">
                   <Wifi className="h-4 w-4 text-green-400" />
                   <span className="text-sm text-portal-text">{activeConnection.name}</span>
                 </div>

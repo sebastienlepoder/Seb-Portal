@@ -79,8 +79,8 @@ export default function ProjectsPage() {
       <div className="flex-1 overflow-y-auto p-6">
         <div className="max-w-6xl mx-auto">
           {/* Header */}
-          <div className="flex items-center justify-between mb-8">
-            <div>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-4 mb-8">
+            <div className="pl-12 sm:pl-0">
               <h1 className="text-2xl font-bold text-portal-text flex items-center gap-2">
                 <FolderGit2 className="h-6 w-6 text-portal-accent" />
                 Projets
@@ -91,7 +91,7 @@ export default function ProjectsPage() {
             {user.role?.toLowerCase() === 'admin' && (
               <Link
                 href="/projects/new"
-                className="flex items-center gap-2 px-4 py-2 bg-portal-accent hover:bg-portal-accent-dark text-white rounded-lg transition-colors text-sm"
+                className="sm:ml-auto flex items-center gap-2 px-4 py-2 bg-portal-accent hover:bg-portal-accent-dark text-white rounded-lg transition-colors text-sm"
               >
                 <Plus className="h-4 w-4" />
                 Nouveau projet
