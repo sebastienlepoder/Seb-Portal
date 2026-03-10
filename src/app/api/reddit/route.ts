@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { requireApiAuth } from '@/lib/auth';
 
 // Subreddits to monitor for personal finance app discussions
 const SUBREDDITS = [
@@ -234,6 +235,12 @@ function processPost(post: RedditPost): ProcessedPost | null {
 }
 
 export async function GET(request: Request) {
+  try {
+    await requireApiAuth();
+  } catch {
+    return NextResponse.json({ ok: false, error: 'Not authenticated' }, { status: 401 });
+  }
+
   const { searchParams } = new URL(request.url);
   const filter = searchParams.get('filter') || 'all'; // all, feature_request, pain_point, comparison, review
   const competitor = searchParams.get('competitor');
