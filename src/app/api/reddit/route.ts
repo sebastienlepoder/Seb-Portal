@@ -11,6 +11,9 @@ const SUBREDDITS = [
   'financialindependence',
   'PovertyFinance',
   'Frugal',
+  'budget',
+  'FinancialPlanning',
+  'Money',
 ];
 
 // Competitor app names to track
@@ -108,11 +111,17 @@ function calculateRelevance(post: RedditPost): { score: number; keywords: string
   const matchedCompetitors: string[] = [];
   let score = 0;
 
+  // Base score for being in a relevant subreddit
+  const relevantSubs = ['ynab', 'monarchmoney', 'copilotmoney', 'simplifi', 'budgetingapps'];
+  if (relevantSubs.some(sub => post.subreddit.toLowerCase().includes(sub))) {
+    score += 10; // Bonus for being in a dedicated finance app subreddit
+  }
+
   // Check for competitor mentions
   for (const keyword of COMPETITOR_KEYWORDS) {
     if (text.includes(keyword)) {
       matchedCompetitors.push(keyword);
-      score += 15;
+      score += 10;
     }
   }
 
@@ -120,29 +129,29 @@ function calculateRelevance(post: RedditPost): { score: number; keywords: string
   for (const keyword of INSIGHT_KEYWORDS) {
     if (text.includes(keyword)) {
       matchedKeywords.push(keyword);
-      score += 10;
+      score += 5;
     }
   }
 
   // Boost score based on engagement
-  score += Math.min(post.score / 10, 20); // Cap at 20 points from upvotes
-  score += Math.min(post.num_comments / 5, 15); // Cap at 15 points from comments
+  score += Math.min(post.score / 5, 25); // Cap at 25 points from upvotes
+  score += Math.min(post.num_comments / 3, 20); // Cap at 20 points from comments
 
-  // Determine insight type
+  // Determine insight type and add bonus
   let insightType: ProcessedPost['insightType'] = 'discussion';
   
-  if (/wish|would be nice|feature request|missing|should add|please add/i.test(text)) {
+  if (/wish|would be nice|feature request|missing feature|should add|please add|i want|need.*feature/i.test(text)) {
     insightType = 'feature_request';
-    score += 25;
-  } else if (/frustrat|annoy|hate|bug|broken|issue|problem|can't|doesn't work/i.test(text)) {
-    insightType = 'pain_point';
-    score += 20;
-  } else if (/switch|compar|vs\.?|versus|better than|worse than|alternative/i.test(text)) {
-    insightType = 'comparison';
-    score += 20;
-  } else if (/review|thoughts on|experience with|been using/i.test(text)) {
-    insightType = 'review';
     score += 15;
+  } else if (/frustrat|annoy|hate|bug|broken|issue|problem|can't|doesn't work|not working|disappointed|terrible|awful|worst/i.test(text)) {
+    insightType = 'pain_point';
+    score += 15;
+  } else if (/switch|compar|vs\.?|versus|better than|worse than|alternative|moved from|moved to|left.*for|trying out/i.test(text)) {
+    insightType = 'comparison';
+    score += 15;
+  } else if (/review|thoughts on|experience with|been using|my take|honest opinion|after.*months?|after.*years?/i.test(text)) {
+    insightType = 'review';
+    score += 10;
   }
 
   return { score, keywords: matchedKeywords, type: insightType, competitors: matchedCompetitors };
@@ -150,7 +159,9 @@ function calculateRelevance(post: RedditPost): { score: number; keywords: string
 
 async function fetchSubreddit(subreddit: string, sort: 'hot' | 'new' | 'top' = 'hot', limit: number = 25): Promise<RedditPost[]> {
   try {
-    const url = `https://www.reddit.com/r/${subreddit}/${sort}.json?limit=${limit}&raw_json=1`;
+    // For 'top' sort, get posts from the past week
+    const timeParam = sort === 'top' ? '&t=week' : '';
+    const url = `https://www.reddit.com/r/${subreddit}/${sort}.json?limit=${limit}${timeParam}&raw_json=1`;
     const res = await fetch(url, {
       headers: {
         'User-Agent': 'LEPODER-Portal/1.0 (Personal Finance Research Bot)',
@@ -199,8 +210,8 @@ async function searchReddit(query: string, limit: number = 50): Promise<RedditPo
 function processPost(post: RedditPost): ProcessedPost | null {
   const { score, keywords, type, competitors } = calculateRelevance(post);
   
-  // Filter out low-relevance posts
-  if (score < 15) return null;
+  // Filter out very low-relevance posts (lowered threshold to be more inclusive)
+  if (score < 5) return null;
 
   return {
     id: post.id,
@@ -233,26 +244,30 @@ export async function GET(request: Request) {
     const [
       hotPosts,
       newPosts,
+      topPosts,
       featureSearchPosts,
       painPointSearchPosts,
       comparisonSearchPosts,
     ] = await Promise.all([
       // Hot posts from each subreddit
-      Promise.all(SUBREDDITS.map(sub => fetchSubreddit(sub, 'hot', 15))),
+      Promise.all(SUBREDDITS.map(sub => fetchSubreddit(sub, 'hot', 25))),
       // New posts
-      Promise.all(SUBREDDITS.map(sub => fetchSubreddit(sub, 'new', 10))),
+      Promise.all(SUBREDDITS.map(sub => fetchSubreddit(sub, 'new', 15))),
+      // Top posts from the week
+      Promise.all(SUBREDDITS.slice(0, 6).map(sub => fetchSubreddit(sub, 'top', 20))),
       // Search for feature requests
-      searchReddit('feature request OR wish OR "would be nice" OR "should add"', 25),
-      // Search for pain points
-      searchReddit('frustrating OR annoying OR "doesn\'t work" OR bug OR issue', 25),
+      searchReddit('feature request OR wish OR "would be nice" OR "should add"', 50),
+      // Search for pain points  
+      searchReddit('frustrating OR annoying OR "doesn\'t work" OR bug OR issue', 50),
       // Search for comparisons
-      searchReddit('vs OR versus OR "switched from" OR "compared to" OR alternative', 25),
+      searchReddit('vs OR versus OR "switched from" OR "compared to" OR alternative', 50),
     ]);
 
     // Flatten and deduplicate
     const allPosts = [
       ...hotPosts.flat(),
       ...newPosts.flat(),
+      ...topPosts.flat(),
       ...featureSearchPosts,
       ...painPointSearchPosts,
       ...comparisonSearchPosts,
