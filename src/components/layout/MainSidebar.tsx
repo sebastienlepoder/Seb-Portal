@@ -20,6 +20,7 @@ import {
   Monitor,
   Cloud,
   CheckSquare,
+  Sparkles,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -57,6 +58,7 @@ export default function MainSidebar({
   const isRemote = pathname === "/remote";
   const isCoolify = pathname === "/coolify";
   const isTodos = pathname === "/todos";
+  const isInsights = pathname === "/insights";
 
   return (
     <>
@@ -198,6 +200,13 @@ export default function MainSidebar({
             active={isTodos}
             label="Todo List"
             icon={<CheckSquare className="h-3.5 w-3.5" />}
+          />
+          <SidebarLink
+            collapsed={collapsed}
+            href="/insights"
+            active={isInsights}
+            label="Insights"
+            icon={<Sparkles className="h-3.5 w-3.5" />}
           />
 
           {/* Dashboard sections (only on dashboard) */}
