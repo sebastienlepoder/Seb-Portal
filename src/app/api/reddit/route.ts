@@ -107,14 +107,15 @@ interface ProcessedPost {
 }
 
 function calculateRelevance(post: RedditPost): { score: number; keywords: string[]; type: ProcessedPost['insightType']; competitors: string[] } {
-  const text = `${post.title} ${post.selftext}`.toLowerCase();
+  const text = `${post.title || ''} ${post.selftext || ''}`.toLowerCase();
+  const subreddit = (post.subreddit || '').toLowerCase();
   const matchedKeywords: string[] = [];
   const matchedCompetitors: string[] = [];
   let score = 0;
 
   // Base score for being in a relevant subreddit
   const relevantSubs = ['ynab', 'monarchmoney', 'copilotmoney', 'simplifi', 'budgetingapps'];
-  if (relevantSubs.some(sub => post.subreddit.toLowerCase().includes(sub))) {
+  if (relevantSubs.some(sub => subreddit.includes(sub))) {
     score += 10; // Bonus for being in a dedicated finance app subreddit
   }
 
@@ -209,17 +210,21 @@ async function searchReddit(query: string, limit: number = 50): Promise<RedditPo
 }
 
 function processPost(post: RedditPost): ProcessedPost | null {
+  // Skip posts with missing required fields
+  if (!post || !post.id || !post.title) return null;
+  
   const { score, keywords, type, competitors } = calculateRelevance(post);
   
   // Filter out very low-relevance posts (lowered threshold to be more inclusive)
   if (score < 5) return null;
 
+  const body = post.selftext || '';
   return {
     id: post.id,
     title: post.title,
-    body: post.selftext.length > 500 ? post.selftext.substring(0, 500) + '...' : post.selftext,
-    author: post.author,
-    subreddit: post.subreddit,
+    body: body.length > 500 ? body.substring(0, 500) + '...' : body,
+    author: post.author || '[deleted]',
+    subreddit: post.subreddit || 'unknown',
     score: post.score,
     comments: post.num_comments,
     created: new Date(post.created_utc * 1000).toISOString(),
