@@ -1,14 +1,18 @@
 import { NextResponse } from 'next/server';
 import { requireApiAuth } from '@/lib/auth';
 
-// Subreddits to monitor for personal finance app discussions
-const SUBREDDITS = [
-  'personalfinance',
+// App-specific subreddits (always relevant)
+const APP_SUBREDDITS = [
   'ynab',
-  'MonarchMoney',
+  'MonarchMoney', 
   'CopilotMoney',
   'SimpliFi',
   'budgetingapps',
+];
+
+// General finance subs - only include if post mentions a competitor
+const GENERAL_SUBREDDITS = [
+  'personalfinance',
   'financialindependence',
   'PovertyFinance',
   'Frugal',
@@ -16,6 +20,9 @@ const SUBREDDITS = [
   'FinancialPlanning',
   'Money',
 ];
+
+// Combined for fetching
+const SUBREDDITS = [...APP_SUBREDDITS, ...GENERAL_SUBREDDITS];
 
 // Competitor app names to track
 const COMPETITOR_KEYWORDS = [
@@ -215,7 +222,14 @@ function processPost(post: RedditPost): ProcessedPost | null {
   
   const { score, keywords, type, competitors } = calculateRelevance(post);
   
-  // Filter out very low-relevance posts (lowered threshold to be more inclusive)
+  // For general finance subs, REQUIRE at least one competitor mention
+  const subredditLower = (post.subreddit || '').toLowerCase();
+  const isGeneralSub = GENERAL_SUBREDDITS.some(sub => sub.toLowerCase() === subredditLower);
+  if (isGeneralSub && competitors.length === 0) {
+    return null; // Skip posts from general subs that don't mention competitors
+  }
+  
+  // Filter out very low-relevance posts
   if (score < 5) return null;
 
   const body = post.selftext || '';
