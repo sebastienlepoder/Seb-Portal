@@ -898,6 +898,7 @@ function TaskDetailModal({
   const [feedbackText, setFeedbackText] = useState('');
   const [submittingFeedback, setSubmittingFeedback] = useState(false);
   const [previewMode, setPreviewMode] = useState<'mobile' | 'desktop'>('mobile');
+  const [previewTheme, setPreviewTheme] = useState<'light' | 'dark'>('dark');
   const [reverting, setReverting] = useState(false);
 
   // Fetch logs for this task
@@ -1269,29 +1270,57 @@ function TaskDetailModal({
           {task.status === 'needs_review' && (
             <div className="w-96 flex flex-col bg-portal-bg/30">
               <div className="p-3 border-b border-portal-border flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setPreviewMode('mobile')}
-                    className={cn(
-                      'px-2 py-1 text-xs rounded transition-colors',
-                      previewMode === 'mobile' 
-                        ? 'bg-portal-accent text-white' 
-                        : 'text-portal-muted hover:text-portal-text'
-                    )}
-                  >
-                    📱 Mobile
-                  </button>
-                  <button
-                    onClick={() => setPreviewMode('desktop')}
-                    className={cn(
-                      'px-2 py-1 text-xs rounded transition-colors',
-                      previewMode === 'desktop' 
-                        ? 'bg-portal-accent text-white' 
-                        : 'text-portal-muted hover:text-portal-text'
-                    )}
-                  >
-                    🖥️ Desktop
-                  </button>
+                <div className="flex items-center gap-3">
+                  {/* Device selector */}
+                  <div className="flex items-center gap-1 bg-portal-bg rounded-lg p-0.5">
+                    <button
+                      onClick={() => setPreviewMode('mobile')}
+                      className={cn(
+                        'px-2 py-1 text-xs rounded transition-colors',
+                        previewMode === 'mobile' 
+                          ? 'bg-portal-accent text-white' 
+                          : 'text-portal-muted hover:text-portal-text'
+                      )}
+                    >
+                      📱
+                    </button>
+                    <button
+                      onClick={() => setPreviewMode('desktop')}
+                      className={cn(
+                        'px-2 py-1 text-xs rounded transition-colors',
+                        previewMode === 'desktop' 
+                          ? 'bg-portal-accent text-white' 
+                          : 'text-portal-muted hover:text-portal-text'
+                      )}
+                    >
+                      🖥️
+                    </button>
+                  </div>
+                  {/* Theme selector */}
+                  <div className="flex items-center gap-1 bg-portal-bg rounded-lg p-0.5">
+                    <button
+                      onClick={() => setPreviewTheme('light')}
+                      className={cn(
+                        'px-2 py-1 text-xs rounded transition-colors',
+                        previewTheme === 'light' 
+                          ? 'bg-white text-gray-800' 
+                          : 'text-portal-muted hover:text-portal-text'
+                      )}
+                    >
+                      ☀️
+                    </button>
+                    <button
+                      onClick={() => setPreviewTheme('dark')}
+                      className={cn(
+                        'px-2 py-1 text-xs rounded transition-colors',
+                        previewTheme === 'dark' 
+                          ? 'bg-gray-800 text-white' 
+                          : 'text-portal-muted hover:text-portal-text'
+                      )}
+                    >
+                      🌙
+                    </button>
+                  </div>
                 </div>
                 <a
                   href="http://localhost:5173/demo/budget"
@@ -1306,13 +1335,14 @@ function TaskDetailModal({
               <div className="flex-1 overflow-hidden flex items-start justify-center p-3">
                 <div 
                   className={cn(
-                    'bg-white rounded-lg overflow-hidden shadow-lg border border-portal-border',
-                    previewMode === 'mobile' ? 'w-[375px]' : 'w-full'
+                    'rounded-lg overflow-hidden shadow-lg border border-portal-border',
+                    previewMode === 'mobile' ? 'w-[375px]' : 'w-full',
+                    previewTheme === 'light' ? 'bg-white' : 'bg-gray-900'
                   )}
                   style={{ height: previewMode === 'mobile' ? '667px' : '100%' }}
                 >
                   <iframe 
-                    src="http://localhost:5173/demo/budget" 
+                    src={`http://localhost:5173/demo/budget?theme=${previewTheme}`}
                     className="w-full h-full border-0"
                     title="App Preview"
                     style={{ 
