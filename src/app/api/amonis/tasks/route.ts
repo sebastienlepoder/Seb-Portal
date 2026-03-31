@@ -71,5 +71,24 @@ export async function POST(request: Request) {
     include: { agent: true },
   });
 
+  // Auto-trigger agent if task was assigned and autoTrigger not disabled
+  if (agentId && body.autoTrigger !== false) {
+    triggerAgent(task.id).catch(console.error);
+  }
+
   return NextResponse.json({ ok: true, data: task });
+}
+
+async function triggerAgent(taskId: string) {
+  const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
+  const webhookSecret = process.env.AMONIS_WEBHOOK_SECRET;
+  
+  await fetch(`${baseUrl}/api/amonis/webhook`, {
+    method: 'POST',
+    headers: { 
+      'Content-Type': 'application/json',
+      ...(webhookSecret ? { 'Authorization': `Bearer ${webhookSecret}` } : {}),
+    },
+    body: JSON.stringify({ taskId, action: 'work' }),
+  });
 }
