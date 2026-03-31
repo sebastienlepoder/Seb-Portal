@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { requireAuth } from '@/lib/auth';
+import { getApiUser } from '@/lib/auth';
 
 // GET /api/amonis/tasks/[id] - Get task details
 export async function GET(
   request: Request,
   { params }: { params: { id: string } }
 ) {
-  const user = await requireAuth(request);
+  const user = await getApiUser();
   if (!user) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
 
   const task = await prisma.amonisTask.findUnique({
@@ -27,7 +27,7 @@ export async function PATCH(
   request: Request,
   { params }: { params: { id: string } }
 ) {
-  const user = await requireAuth(request);
+  const user = await getApiUser();
   if (!user) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
 
   const body = await request.json();
@@ -76,7 +76,7 @@ export async function DELETE(
   request: Request,
   { params }: { params: { id: string } }
 ) {
-  const user = await requireAuth(request);
+  const user = await getApiUser();
   if (!user) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
 
   await prisma.amonisTask.delete({ where: { id: params.id } });

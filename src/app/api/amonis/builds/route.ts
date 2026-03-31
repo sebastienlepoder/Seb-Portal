@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { requireAuth } from '@/lib/auth';
+import { getApiUser } from '@/lib/auth';
 
 // GET /api/amonis/builds - List all builds
-export async function GET(request: Request) {
-  const user = await requireAuth(request);
+export async function GET() {
+  const user = await getApiUser();
   if (!user) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
 
   const builds = await prisma.amonisBuild.findMany({

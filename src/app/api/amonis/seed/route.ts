@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { requireAuth } from '@/lib/auth';
+import { getApiUser } from '@/lib/auth';
 
 const DEFAULT_AGENTS = [
   {
@@ -87,8 +87,8 @@ const DEFAULT_AGENTS = [
 ];
 
 // POST /api/amonis/seed - Initialize agents
-export async function POST(request: Request) {
-  const user = await requireAuth(request);
+export async function POST() {
+  const user = await getApiUser();
   if (!user || user.role !== 'admin') {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
   }

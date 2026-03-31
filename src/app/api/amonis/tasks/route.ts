@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { requireAuth } from '@/lib/auth';
+import { getApiUser } from '@/lib/auth';
 
 // GET /api/amonis/tasks - List all tasks
 export async function GET(request: Request) {
-  const user = await requireAuth(request);
+  const user = await getApiUser();
   if (!user) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
 
   const { searchParams } = new URL(request.url);
@@ -26,7 +26,7 @@ export async function GET(request: Request) {
 
 // POST /api/amonis/tasks - Create a new task
 export async function POST(request: Request) {
-  const user = await requireAuth(request);
+  const user = await getApiUser();
   if (!user) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
 
   const body = await request.json();
@@ -70,8 +70,6 @@ export async function POST(request: Request) {
     },
     include: { agent: true },
   });
-
-  // TODO: Trigger agent to start working on task via OpenClaw
 
   return NextResponse.json({ ok: true, data: task });
 }

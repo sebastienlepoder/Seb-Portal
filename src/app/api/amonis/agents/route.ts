@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { requireAuth } from '@/lib/auth';
+import { getApiUser } from '@/lib/auth';
 
 // GET /api/amonis/agents - List all agents
-export async function GET(request: Request) {
-  const user = await requireAuth(request);
+export async function GET() {
+  const user = await getApiUser();
   if (!user) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
 
   const agents = await prisma.amonisAgent.findMany({
@@ -20,7 +20,7 @@ export async function GET(request: Request) {
 
 // POST /api/amonis/agents - Create agent (admin only)
 export async function POST(request: Request) {
-  const user = await requireAuth(request);
+  const user = await getApiUser();
   if (!user || user.role !== 'admin') {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
   }
