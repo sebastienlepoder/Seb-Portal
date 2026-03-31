@@ -34,7 +34,6 @@ import {
   History,
   FileText,
   Brain,
-  Terminal,
   Undo2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -943,13 +942,6 @@ function TaskDetailModal({
     }
   };
 
-  const copyTerminalCommand = () => {
-    const prompt = buildTaskPrompt(task, agent);
-    const command = `cd ~/Documents/App\\ Development/amonis-finance/web && claude "${prompt.replace(/"/g, '\\"')}"`;
-    navigator.clipboard.writeText(command);
-    alert('Command copied! Paste in terminal to run Claude Code with this task.');
-  };
-
   const submitFeedback = async () => {
     if (!feedbackText.trim()) return;
     setSubmittingFeedback(true);
@@ -1021,14 +1013,6 @@ function TaskDetailModal({
           <div className="flex items-center gap-2">
             {isTriggerable && (
               <>
-                <button
-                  onClick={copyTerminalCommand}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-gray-600 text-white rounded-lg hover:bg-gray-700"
-                  title="Copy command to run Claude Code in terminal"
-                >
-                  <Terminal className="h-3.5 w-3.5" />
-                  Terminal
-                </button>
                 <button
                   onClick={triggerTask}
                   disabled={triggering}
