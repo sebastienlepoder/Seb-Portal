@@ -815,10 +815,60 @@ function TaskDetailModal({
 }) {
   const agent = agents.find(a => a.id === task.agentId);
   const statusConfig = STATUS_CONFIG[task.status] || STATUS_CONFIG.pending;
+  const [logs, setLogs] = useState<AgentLog[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [triggering, setTriggering] = useState(false);
+  const [activeTab, setActiveTab] = useState<'details' | 'logs'>('details');
+
+  // Fetch logs for this task
+  useEffect(() => {
+    if (activeTab === 'logs' && task.agentId) {
+      setLogsLoading(true);
+      fetch(`/api/amonis/agents/${task.agentId}/logs?taskId=${task.id}`)
+        .then(r => r.json())
+        .then(data => {
+          if (data.ok) setLogs(data.data.filter((l: AgentLog) => l.taskId === task.id));
+        })
+        .catch(() => {})
+        .finally(() => setLogsLoading(false));
+    }
+  }, [activeTab, task.agentId, task.id]);
+
+  // Auto-refresh logs when task is in progress
+  useEffect(() => {
+    if (task.status === 'in_progress' && activeTab === 'logs') {
+      const interval = setInterval(() => {
+        fetch(`/api/amonis/agents/${task.agentId}/logs?taskId=${task.id}`)
+          .then(r => r.json())
+          .then(data => {
+            if (data.ok) setLogs(data.data.filter((l: AgentLog) => l.taskId === task.id));
+          });
+      }, 5000);
+      return () => clearInterval(interval);
+    }
+  }, [task.status, task.agentId, task.id, activeTab]);
+
+  const triggerTask = async () => {
+    setTriggering(true);
+    try {
+      await fetch('/api/amonis/tasks/trigger', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskId: task.id }),
+      });
+      onRefresh();
+    } finally {
+      setTriggering(false);
+    }
+  };
+
+  const isTriggerable = ['pending', 'assigned', 'rejected'].includes(task.status);
+  const isRunning = task.status === 'in_progress';
   
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
       <div className="bg-portal-card border border-portal-border rounded-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+        {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-portal-border">
           <div className="flex items-center gap-3">
             {agent && (
@@ -832,91 +882,195 @@ function TaskDetailModal({
             <div>
               <h3 className="text-sm font-semibold text-portal-text">{task.title}</h3>
               <span className={cn('flex items-center gap-1 text-xs', statusConfig.color)}>
-                {statusConfig.icon}
+                {isRunning && <RefreshCw className="h-3 w-3 animate-spin" />}
+                {!isRunning && statusConfig.icon}
                 {statusConfig.label}
+                {isRunning && <span className="text-portal-muted ml-1">• Working...</span>}
               </span>
             </div>
           </div>
-          <button onClick={onClose} className="p-1 text-portal-muted hover:text-portal-text">
-            <X className="h-5 w-5" />
+          <div className="flex items-center gap-2">
+            {isTriggerable && (
+              <button
+                onClick={triggerTask}
+                disabled={triggering}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 disabled:opacity-50"
+              >
+                {triggering ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+                {triggering ? 'Starting...' : 'Start Task'}
+              </button>
+            )}
+            <button onClick={onClose} className="p-1 text-portal-muted hover:text-portal-text">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex border-b border-portal-border">
+          <button
+            onClick={() => setActiveTab('details')}
+            className={cn(
+              'px-4 py-2.5 text-xs font-medium border-b-2 -mb-px transition-colors',
+              activeTab === 'details'
+                ? 'border-portal-accent text-portal-accent'
+                : 'border-transparent text-portal-muted hover:text-portal-text'
+            )}
+          >
+            Details
+          </button>
+          <button
+            onClick={() => setActiveTab('logs')}
+            className={cn(
+              'flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium border-b-2 -mb-px transition-colors',
+              activeTab === 'logs'
+                ? 'border-portal-accent text-portal-accent'
+                : 'border-transparent text-portal-muted hover:text-portal-text'
+            )}
+          >
+            <FileText className="h-3.5 w-3.5" />
+            Live Logs
+            {isRunning && <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />}
           </button>
         </div>
         
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {task.description && (
-            <div>
-              <h4 className="text-xs font-medium text-portal-muted mb-1">Description</h4>
-              <p className="text-sm text-portal-text">{task.description}</p>
-            </div>
-          )}
-          
-          {task.workSummary && (
-            <div>
-              <h4 className="text-xs font-medium text-portal-muted mb-1">Work Summary</h4>
-              <div className="bg-portal-bg rounded-lg p-3 text-sm text-portal-text whitespace-pre-wrap">
-                {task.workSummary}
-              </div>
-            </div>
-          )}
-          
-          {task.filesChanged && (
-            <div>
-              <h4 className="text-xs font-medium text-portal-muted mb-1">Files Changed</h4>
-              <div className="bg-portal-bg rounded-lg p-3">
-                {JSON.parse(task.filesChanged).map((file: string, i: number) => (
-                  <div key={i} className="text-xs text-portal-text font-mono">{file}</div>
-                ))}
-              </div>
-            </div>
-          )}
-          
-          {(task.screenshotBefore || task.screenshotAfter) && (
-            <div>
-              <h4 className="text-xs font-medium text-portal-muted mb-2">Screenshots</h4>
-              <div className="grid grid-cols-2 gap-4">
-                {task.screenshotBefore && (
-                  <div>
-                    <p className="text-[10px] text-portal-muted mb-1">Before</p>
-                    <img src={task.screenshotBefore} alt="Before" className="rounded-lg border border-portal-border" />
+          {activeTab === 'details' ? (
+            <>
+              {task.description && (
+                <div>
+                  <h4 className="text-xs font-medium text-portal-muted mb-1">Description</h4>
+                  <p className="text-sm text-portal-text whitespace-pre-wrap">{task.description}</p>
+                </div>
+              )}
+
+              {/* Progress indicator for running tasks */}
+              {isRunning && (
+                <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-3">
+                  <div className="flex items-center gap-2">
+                    <RefreshCw className="h-4 w-4 text-emerald-400 animate-spin" />
+                    <span className="text-sm text-emerald-400">Agent is working on this task...</span>
                   </div>
-                )}
-                {task.screenshotAfter && (
-                  <div>
-                    <p className="text-[10px] text-portal-muted mb-1">After</p>
-                    <img src={task.screenshotAfter} alt="After" className="rounded-lg border border-portal-border" />
+                  <p className="text-xs text-portal-muted mt-1">Check the Live Logs tab to see progress</p>
+                </div>
+              )}
+              
+              {task.workSummary && (
+                <div>
+                  <h4 className="text-xs font-medium text-portal-muted mb-1">Work Summary</h4>
+                  <div className="bg-portal-bg rounded-lg p-3 text-sm text-portal-text whitespace-pre-wrap">
+                    {task.workSummary}
                   </div>
-                )}
-              </div>
-            </div>
-          )}
-          
-          {task.designerNotes && (
-            <div className="bg-purple-500/10 border border-purple-500/20 rounded-lg p-3">
-              <div className="flex items-center gap-2 mb-1">
-                <Palette className="h-4 w-4 text-purple-400" />
-                <h4 className="text-xs font-medium text-purple-400">Designer Review</h4>
-                {task.designerApproved !== null && (
-                  task.designerApproved
-                    ? <CheckCircle className="h-3.5 w-3.5 text-green-400 ml-auto" />
-                    : <XCircle className="h-3.5 w-3.5 text-red-400 ml-auto" />
-                )}
-              </div>
-              <p className="text-sm text-portal-text">{task.designerNotes}</p>
-            </div>
-          )}
-          
-          {task.devilNotes && (
-            <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3">
-              <div className="flex items-center gap-2 mb-1">
-                <Bug className="h-4 w-4 text-red-400" />
-                <h4 className="text-xs font-medium text-red-400">QA Review</h4>
-                {task.devilApproved !== null && (
-                  task.devilApproved
-                    ? <CheckCircle className="h-3.5 w-3.5 text-green-400 ml-auto" />
-                    : <XCircle className="h-3.5 w-3.5 text-red-400 ml-auto" />
-                )}
-              </div>
-              <p className="text-sm text-portal-text">{task.devilNotes}</p>
+                </div>
+              )}
+              
+              {task.filesChanged && (
+                <div>
+                  <h4 className="text-xs font-medium text-portal-muted mb-1">Files Changed</h4>
+                  <div className="bg-portal-bg rounded-lg p-3">
+                    {(() => {
+                      try {
+                        return JSON.parse(task.filesChanged).map((file: string, i: number) => (
+                          <div key={i} className="text-xs text-portal-text font-mono">{file}</div>
+                        ));
+                      } catch {
+                        return <div className="text-xs text-portal-text font-mono">{task.filesChanged}</div>;
+                      }
+                    })()}
+                  </div>
+                </div>
+              )}
+              
+              {(task.screenshotBefore || task.screenshotAfter) && (
+                <div>
+                  <h4 className="text-xs font-medium text-portal-muted mb-2">Screenshots</h4>
+                  <div className="grid grid-cols-2 gap-4">
+                    {task.screenshotBefore && (
+                      <div>
+                        <p className="text-[10px] text-portal-muted mb-1">Before</p>
+                        <img src={task.screenshotBefore} alt="Before" className="rounded-lg border border-portal-border" />
+                      </div>
+                    )}
+                    {task.screenshotAfter && (
+                      <div>
+                        <p className="text-[10px] text-portal-muted mb-1">After</p>
+                        <img src={task.screenshotAfter} alt="After" className="rounded-lg border border-portal-border" />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+              
+              {task.designerNotes && (
+                <div className="bg-purple-500/10 border border-purple-500/20 rounded-lg p-3">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Palette className="h-4 w-4 text-purple-400" />
+                    <h4 className="text-xs font-medium text-purple-400">Designer Review</h4>
+                    {task.designerApproved !== null && (
+                      task.designerApproved
+                        ? <CheckCircle className="h-3.5 w-3.5 text-green-400 ml-auto" />
+                        : <XCircle className="h-3.5 w-3.5 text-red-400 ml-auto" />
+                    )}
+                  </div>
+                  <p className="text-sm text-portal-text">{task.designerNotes}</p>
+                </div>
+              )}
+              
+              {task.devilNotes && (
+                <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Bug className="h-4 w-4 text-red-400" />
+                    <h4 className="text-xs font-medium text-red-400">QA Review</h4>
+                    {task.devilApproved !== null && (
+                      task.devilApproved
+                        ? <CheckCircle className="h-3.5 w-3.5 text-green-400 ml-auto" />
+                        : <XCircle className="h-3.5 w-3.5 text-red-400 ml-auto" />
+                    )}
+                  </div>
+                  <p className="text-sm text-portal-text">{task.devilNotes}</p>
+                </div>
+              )}
+            </>
+          ) : (
+            /* Logs Tab */
+            <div className="space-y-2">
+              {logsLoading ? (
+                <div className="flex justify-center py-8">
+                  <RefreshCw className="h-5 w-5 animate-spin text-portal-muted" />
+                </div>
+              ) : logs.length === 0 ? (
+                <p className="text-sm text-portal-muted text-center py-8">
+                  {isRunning ? 'Waiting for logs...' : 'No logs yet. Start the task to see agent activity.'}
+                </p>
+              ) : (
+                logs.map(log => (
+                  <div
+                    key={log.id}
+                    className={cn(
+                      'rounded-lg p-3 text-xs',
+                      log.type === 'thinking' ? 'bg-purple-500/10 border border-purple-500/20' :
+                      log.type === 'action' ? 'bg-blue-500/10 border border-blue-500/20' :
+                      log.type === 'error' ? 'bg-red-500/10 border border-red-500/20' :
+                      'bg-portal-bg border border-portal-border'
+                    )}
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className={cn(
+                        'font-medium uppercase text-[10px]',
+                        log.type === 'thinking' ? 'text-purple-400' :
+                        log.type === 'action' ? 'text-blue-400' :
+                        log.type === 'error' ? 'text-red-400' : 'text-portal-muted'
+                      )}>
+                        {log.type}
+                      </span>
+                      <span className="text-portal-muted">
+                        {new Date(log.createdAt).toLocaleTimeString()}
+                      </span>
+                    </div>
+                    <p className="text-portal-text whitespace-pre-wrap">{log.message}</p>
+                  </div>
+                ))
+              )}
             </div>
           )}
         </div>
