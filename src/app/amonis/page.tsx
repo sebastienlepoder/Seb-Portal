@@ -35,6 +35,7 @@ import {
   FileText,
   Brain,
   Terminal,
+  Undo2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -121,6 +122,7 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.
   approved: { label: 'Approved', color: 'text-green-400', icon: <CheckCircle className="h-3.5 w-3.5" /> },
   rejected: { label: 'Rejected', color: 'text-red-500', icon: <XCircle className="h-3.5 w-3.5" /> },
   done: { label: 'Done', color: 'text-emerald-400', icon: <CheckCircle className="h-3.5 w-3.5" /> },
+  reverted: { label: 'Reverted', color: 'text-gray-500', icon: <Undo2 className="h-3.5 w-3.5" /> },
 };
 
 const PRIORITY_LABELS = ['Low', 'Normal', 'High', 'Urgent'];
@@ -897,6 +899,7 @@ function TaskDetailModal({
   const [submittingFeedback, setSubmittingFeedback] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [loadingPreview, setLoadingPreview] = useState(false);
+  const [reverting, setReverting] = useState(false);
 
   // Fetch logs for this task
   useEffect(() => {
@@ -990,6 +993,21 @@ function TaskDetailModal({
       console.error('Preview failed:', err);
     } finally {
       setLoadingPreview(false);
+    }
+  };
+
+  const revertChanges = async () => {
+    if (!confirm('This will revert the code changes made by the agent. Are you sure?')) return;
+    setReverting(true);
+    try {
+      await fetch('/api/amonis/tasks/revert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskId: task.id }),
+      });
+      onRefresh();
+    } finally {
+      setReverting(false);
     }
   };
 
@@ -1310,23 +1328,33 @@ function TaskDetailModal({
                 </div>
               </div>
             ) : (
-              <div className="flex justify-end gap-2">
+              <div className="flex justify-between">
                 <button
-                  onClick={() => setShowFeedback(true)}
-                  className="flex items-center gap-1.5 px-4 py-2 text-xs text-amber-400 border border-amber-500/30 rounded-lg hover:bg-amber-500/10"
+                  onClick={revertChanges}
+                  disabled={reverting}
+                  className="flex items-center gap-1.5 px-4 py-2 text-xs text-red-400 border border-red-500/30 rounded-lg hover:bg-red-500/10 disabled:opacity-50"
                 >
-                  <MessageSquare className="h-3.5 w-3.5" />
-                  {task.status === 'needs_review' ? 'Request Changes' : 'Reopen with Changes'}
+                  {reverting ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Undo2 className="h-3.5 w-3.5" />}
+                  {reverting ? 'Reverting...' : 'Revert Changes'}
                 </button>
-                {task.status === 'needs_review' && (
+                <div className="flex gap-2">
                   <button
-                    onClick={() => onStatusChange('approved')}
-                    className="flex items-center gap-1.5 px-4 py-2 text-xs bg-emerald-500 text-white rounded-lg hover:bg-emerald-600"
+                    onClick={() => setShowFeedback(true)}
+                    className="flex items-center gap-1.5 px-4 py-2 text-xs text-amber-400 border border-amber-500/30 rounded-lg hover:bg-amber-500/10"
                   >
-                    <CheckCircle className="h-3.5 w-3.5" />
-                    Approve
+                    <MessageSquare className="h-3.5 w-3.5" />
+                    {task.status === 'needs_review' ? 'Request Changes' : 'Reopen with Changes'}
                   </button>
-                )}
+                  {task.status === 'needs_review' && (
+                    <button
+                      onClick={() => onStatusChange('approved')}
+                      className="flex items-center gap-1.5 px-4 py-2 text-xs bg-emerald-500 text-white rounded-lg hover:bg-emerald-600"
+                    >
+                      <CheckCircle className="h-3.5 w-3.5" />
+                      Approve
+                    </button>
+                  )}
+                </div>
               </div>
             )}
           </div>
