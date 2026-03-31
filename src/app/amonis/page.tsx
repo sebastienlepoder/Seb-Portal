@@ -212,11 +212,16 @@ export default function AmonisPage() {
       });
 
       const data = await res.json();
+      console.log('Upload response:', data);
       if (data.ok && data.url) {
         setNewTaskForm(prev => ({ ...prev, screenshots: [...prev.screenshots, data.url] }));
+      } else {
+        console.error('Upload error:', data.error);
+        alert(`Upload failed: ${data.error || 'Unknown error'}`);
       }
     } catch (err) {
       console.error('Upload failed:', err);
+      alert('Upload failed. Check console for details.');
     } finally {
       setUploadingScreenshot(false);
       e.target.value = ''; // Reset input
@@ -255,11 +260,16 @@ export default function AmonisPage() {
           });
 
           const data = await res.json();
+          console.log('Paste upload response:', data);
           if (data.ok && data.url) {
             setNewTaskForm(prev => ({ ...prev, screenshots: [...prev.screenshots, data.url] }));
+          } else {
+            console.error('Paste upload error:', data.error);
+            alert(`Upload failed: ${data.error || 'Unknown error'}`);
           }
         } catch (err) {
           console.error('Paste upload failed:', err);
+          alert('Paste upload failed. Check console for details.');
         } finally {
           setUploadingScreenshot(false);
         }
