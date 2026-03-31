@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 
+// Force dynamic - don't pre-render at build time
+export const dynamic = 'force-dynamic';
+
 // POST /api/amonis/tasks/update - Update task status (service endpoint)
 // Public endpoint for agent updates
 export async function POST(request: Request) {

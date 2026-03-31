@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 
+// Force dynamic - don't pre-render at build time
+export const dynamic = 'force-dynamic';
+
 // POST /api/amonis/tasks/trigger - Manually trigger a task to start
 // This is a public endpoint (no auth required) for the agent to call
 export async function POST(request: Request) {

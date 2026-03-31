@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 
+// Force dynamic - don't pre-render at build time
+export const dynamic = 'force-dynamic';
+
 // GET /api/amonis/tasks/pending - Get pending tasks (service endpoint)
 // Public endpoint for agent polling
 export async function GET() {
