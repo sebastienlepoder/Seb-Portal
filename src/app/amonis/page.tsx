@@ -74,6 +74,8 @@ type Task = {
   filesChanged: string | null;
   screenshotBefore: string | null;
   screenshotAfter: string | null;
+  screenshotBeforeMobile: string | null;
+  screenshotAfterMobile: string | null;
   designerNotes: string | null;
   designerApproved: boolean | null;
   devilNotes: string | null;
@@ -1019,23 +1021,53 @@ function TaskDetailModal({
                 </div>
               )}
               
-              {(task.screenshotBefore || task.screenshotAfter) && (
-                <div>
-                  <h4 className="text-xs font-medium text-portal-muted mb-2">Screenshots</h4>
-                  <div className="grid grid-cols-2 gap-4">
-                    {task.screenshotBefore && (
-                      <div>
-                        <p className="text-[10px] text-portal-muted mb-1">Before</p>
-                        <img src={task.screenshotBefore} alt="Before" className="rounded-lg border border-portal-border" />
+              {(task.screenshotBefore || task.screenshotAfter || task.screenshotBeforeMobile || task.screenshotAfterMobile) && (
+                <div className="space-y-4">
+                  {/* Desktop Screenshots */}
+                  {(task.screenshotBefore || task.screenshotAfter) && (
+                    <div>
+                      <h4 className="text-xs font-medium text-portal-muted mb-2 flex items-center gap-1.5">
+                        🖥️ Desktop
+                      </h4>
+                      <div className="grid grid-cols-2 gap-4">
+                        {task.screenshotBefore && (
+                          <div>
+                            <p className="text-[10px] text-portal-muted mb-1">Before</p>
+                            <img src={task.screenshotBefore} alt="Desktop Before" className="rounded-lg border border-portal-border" />
+                          </div>
+                        )}
+                        {task.screenshotAfter && (
+                          <div>
+                            <p className="text-[10px] text-portal-muted mb-1">After</p>
+                            <img src={task.screenshotAfter} alt="Desktop After" className="rounded-lg border border-portal-border" />
+                          </div>
+                        )}
                       </div>
-                    )}
-                    {task.screenshotAfter && (
-                      <div>
-                        <p className="text-[10px] text-portal-muted mb-1">After</p>
-                        <img src={task.screenshotAfter} alt="After" className="rounded-lg border border-portal-border" />
+                    </div>
+                  )}
+                  
+                  {/* Mobile Screenshots */}
+                  {(task.screenshotBeforeMobile || task.screenshotAfterMobile) && (
+                    <div>
+                      <h4 className="text-xs font-medium text-portal-muted mb-2 flex items-center gap-1.5">
+                        📱 Mobile
+                      </h4>
+                      <div className="grid grid-cols-2 gap-4">
+                        {task.screenshotBeforeMobile && (
+                          <div>
+                            <p className="text-[10px] text-portal-muted mb-1">Before</p>
+                            <img src={task.screenshotBeforeMobile} alt="Mobile Before" className="rounded-lg border border-portal-border max-w-[200px]" />
+                          </div>
+                        )}
+                        {task.screenshotAfterMobile && (
+                          <div>
+                            <p className="text-[10px] text-portal-muted mb-1">After</p>
+                            <img src={task.screenshotAfterMobile} alt="Mobile After" className="rounded-lg border border-portal-border max-w-[200px]" />
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
               )}
               

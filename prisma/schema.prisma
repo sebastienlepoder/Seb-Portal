@@ -329,8 +329,10 @@ model AmonisTask {
   // Work results
   workSummary     String?   // what was done (markdown)
   filesChanged    String?   // JSON array of file paths
-  screenshotBefore String?  // path to before screenshot
-  screenshotAfter  String?  // path to after screenshot
+  screenshotBefore       String?  // desktop before screenshot
+  screenshotAfter        String?  // desktop after screenshot
+  screenshotBeforeMobile String?  // mobile before screenshot
+  screenshotAfterMobile  String?  // mobile after screenshot
   
   // Reviews
   designerNotes   String?   // Designer agent feedback
