@@ -976,26 +976,6 @@ function TaskDetailModal({
     }
   };
 
-  const loadPreview = async () => {
-    setLoadingPreview(true);
-    try {
-      // Call an API that captures a screenshot of the local app
-      const res = await fetch('/api/amonis/preview', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: 'http://localhost:5173/demo/budget' }),
-      });
-      const data = await res.json();
-      if (data.ok && data.screenshot) {
-        setPreviewUrl(data.screenshot);
-      }
-    } catch (err) {
-      console.error('Preview failed:', err);
-    } finally {
-      setLoadingPreview(false);
-    }
-  };
-
   const revertChanges = async () => {
     if (!confirm('This will revert the code changes made by the agent. Are you sure?')) return;
     setReverting(true);
