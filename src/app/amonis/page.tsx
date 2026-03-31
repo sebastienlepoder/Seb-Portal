@@ -897,8 +897,7 @@ function TaskDetailModal({
   const [showFeedback, setShowFeedback] = useState(false);
   const [feedbackText, setFeedbackText] = useState('');
   const [submittingFeedback, setSubmittingFeedback] = useState(false);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [loadingPreview, setLoadingPreview] = useState(false);
+  const [previewMode, setPreviewMode] = useState<'mobile' | 'desktop'>('mobile');
   const [reverting, setReverting] = useState(false);
 
   // Fetch logs for this task
@@ -1016,7 +1015,7 @@ function TaskDetailModal({
   
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-      <div className="bg-portal-card border border-portal-border rounded-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+      <div className="bg-portal-card border border-portal-border rounded-xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-portal-border">
           <div className="flex items-center gap-3">
@@ -1093,80 +1092,54 @@ function TaskDetailModal({
           </button>
         </div>
         
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {activeTab === 'details' ? (
-            <>
-              {task.description && (
-                <div>
-                  <h4 className="text-xs font-medium text-portal-muted mb-1">Description</h4>
-                  <p className="text-sm text-portal-text whitespace-pre-wrap">{task.description}</p>
-                </div>
-              )}
+        <div className="flex-1 overflow-hidden flex">
+          {/* Left side - Details */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-4 border-r border-portal-border">
+            {activeTab === 'details' ? (
+              <>
+                {task.description && (
+                  <div>
+                    <h4 className="text-xs font-medium text-portal-muted mb-1">Description</h4>
+                    <p className="text-sm text-portal-text whitespace-pre-wrap">{task.description}</p>
+                  </div>
+                )}
 
-              {/* Progress indicator for running tasks */}
-              {isRunning && (
-                <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-3">
-                  <div className="flex items-center gap-2">
-                    <RefreshCw className="h-4 w-4 text-emerald-400 animate-spin" />
-                    <span className="text-sm text-emerald-400">Agent is working on this task...</span>
+                {/* Progress indicator for running tasks */}
+                {isRunning && (
+                  <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-3">
+                    <div className="flex items-center gap-2">
+                      <RefreshCw className="h-4 w-4 text-emerald-400 animate-spin" />
+                      <span className="text-sm text-emerald-400">Agent is working on this task...</span>
+                    </div>
+                    <p className="text-xs text-portal-muted mt-1">Check the Live Logs tab to see progress</p>
                   </div>
-                  <p className="text-xs text-portal-muted mt-1">Check the Live Logs tab to see progress</p>
-                </div>
-              )}
-              
-              {task.workSummary && (
-                <div>
-                  <h4 className="text-xs font-medium text-portal-muted mb-1">Work Summary</h4>
-                  <div className="bg-portal-bg rounded-lg p-3 text-sm text-portal-text whitespace-pre-wrap">
-                    {task.workSummary}
+                )}
+                
+                {task.workSummary && (
+                  <div>
+                    <h4 className="text-xs font-medium text-portal-muted mb-1">Work Summary</h4>
+                    <div className="bg-portal-bg rounded-lg p-3 text-sm text-portal-text whitespace-pre-wrap">
+                      {task.workSummary}
+                    </div>
                   </div>
-                </div>
-              )}
-
-              {/* Live Preview */}
-              {task.status === 'needs_review' && (
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="text-xs font-medium text-portal-muted">Preview</h4>
-                    <a
-                      href="http://localhost:5173/demo/budget"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-1.5 px-2 py-1 text-[10px] text-portal-accent border border-portal-accent/30 rounded hover:bg-portal-accent/10"
-                    >
-                      <Eye className="h-3 w-3" />
-                      Open App
-                    </a>
+                )}
+                
+                {task.filesChanged && (
+                  <div>
+                    <h4 className="text-xs font-medium text-portal-muted mb-1">Files Changed</h4>
+                    <div className="bg-portal-bg rounded-lg p-3">
+                      {(() => {
+                        try {
+                          return JSON.parse(task.filesChanged).map((file: string, i: number) => (
+                            <div key={i} className="text-xs text-portal-text font-mono">{file}</div>
+                          ));
+                        } catch {
+                          return <div className="text-xs text-portal-text font-mono">{task.filesChanged}</div>;
+                        }
+                      })()}
+                    </div>
                   </div>
-                  <div className="bg-portal-bg rounded-lg border border-portal-border overflow-hidden">
-                    <iframe 
-                      src="http://localhost:5173/demo/budget" 
-                      className="w-full h-64 border-0"
-                      title="App Preview"
-                    />
-                  </div>
-                  <p className="text-[10px] text-portal-muted mt-1 text-center">
-                    Live preview of the app. Click "Open App" for full view.
-                  </p>
-                </div>
-              )}
-              
-              {task.filesChanged && (
-                <div>
-                  <h4 className="text-xs font-medium text-portal-muted mb-1">Files Changed</h4>
-                  <div className="bg-portal-bg rounded-lg p-3">
-                    {(() => {
-                      try {
-                        return JSON.parse(task.filesChanged).map((file: string, i: number) => (
-                          <div key={i} className="text-xs text-portal-text font-mono">{file}</div>
-                        ));
-                      } catch {
-                        return <div className="text-xs text-portal-text font-mono">{task.filesChanged}</div>;
-                      }
-                    })()}
-                  </div>
-                </div>
-              )}
+                )}
               
               {(task.screenshotBefore || task.screenshotAfter || task.screenshotBeforeMobile || task.screenshotAfterMobile) && (
                 <div className="space-y-4">
@@ -1288,6 +1261,69 @@ function TaskDetailModal({
                   </div>
                 ))
               )}
+            </div>
+          )}
+          </div>
+
+          {/* Right side - Live Preview */}
+          {task.status === 'needs_review' && (
+            <div className="w-96 flex flex-col bg-portal-bg/30">
+              <div className="p-3 border-b border-portal-border flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setPreviewMode('mobile')}
+                    className={cn(
+                      'px-2 py-1 text-xs rounded transition-colors',
+                      previewMode === 'mobile' 
+                        ? 'bg-portal-accent text-white' 
+                        : 'text-portal-muted hover:text-portal-text'
+                    )}
+                  >
+                    📱 Mobile
+                  </button>
+                  <button
+                    onClick={() => setPreviewMode('desktop')}
+                    className={cn(
+                      'px-2 py-1 text-xs rounded transition-colors',
+                      previewMode === 'desktop' 
+                        ? 'bg-portal-accent text-white' 
+                        : 'text-portal-muted hover:text-portal-text'
+                    )}
+                  >
+                    🖥️ Desktop
+                  </button>
+                </div>
+                <a
+                  href="http://localhost:5173/demo/budget"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 px-2 py-1 text-[10px] text-portal-accent hover:underline"
+                >
+                  <Eye className="h-3 w-3" />
+                  Open
+                </a>
+              </div>
+              <div className="flex-1 overflow-hidden flex items-start justify-center p-3">
+                <div 
+                  className={cn(
+                    'bg-white rounded-lg overflow-hidden shadow-lg border border-portal-border',
+                    previewMode === 'mobile' ? 'w-[375px]' : 'w-full'
+                  )}
+                  style={{ height: previewMode === 'mobile' ? '667px' : '100%' }}
+                >
+                  <iframe 
+                    src="http://localhost:5173/demo/budget" 
+                    className="w-full h-full border-0"
+                    title="App Preview"
+                    style={{ 
+                      transform: previewMode === 'mobile' ? 'scale(0.85)' : 'scale(1)',
+                      transformOrigin: 'top left',
+                      width: previewMode === 'mobile' ? '118%' : '100%',
+                      height: previewMode === 'mobile' ? '118%' : '100%',
+                    }}
+                  />
+                </div>
+              </div>
             </div>
           )}
         </div>
