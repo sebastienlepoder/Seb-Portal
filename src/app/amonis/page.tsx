@@ -895,6 +895,8 @@ function TaskDetailModal({
   const [showFeedback, setShowFeedback] = useState(false);
   const [feedbackText, setFeedbackText] = useState('');
   const [submittingFeedback, setSubmittingFeedback] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [loadingPreview, setLoadingPreview] = useState(false);
 
   // Fetch logs for this task
   useEffect(() => {
@@ -968,6 +970,26 @@ function TaskDetailModal({
       onRefresh();
     } finally {
       setSubmittingFeedback(false);
+    }
+  };
+
+  const loadPreview = async () => {
+    setLoadingPreview(true);
+    try {
+      // Call an API that captures a screenshot of the local app
+      const res = await fetch('/api/amonis/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: 'http://localhost:5173/demo/budget' }),
+      });
+      const data = await res.json();
+      if (data.ok && data.screenshot) {
+        setPreviewUrl(data.screenshot);
+      }
+    } catch (err) {
+      console.error('Preview failed:', err);
+    } finally {
+      setLoadingPreview(false);
     }
   };
 
@@ -1080,6 +1102,34 @@ function TaskDetailModal({
                   <div className="bg-portal-bg rounded-lg p-3 text-sm text-portal-text whitespace-pre-wrap">
                     {task.workSummary}
                   </div>
+                </div>
+              )}
+
+              {/* Live Preview */}
+              {task.status === 'needs_review' && (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-xs font-medium text-portal-muted">Preview</h4>
+                    <a
+                      href="http://localhost:5173/demo/budget"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1.5 px-2 py-1 text-[10px] text-portal-accent border border-portal-accent/30 rounded hover:bg-portal-accent/10"
+                    >
+                      <Eye className="h-3 w-3" />
+                      Open App
+                    </a>
+                  </div>
+                  <div className="bg-portal-bg rounded-lg border border-portal-border overflow-hidden">
+                    <iframe 
+                      src="http://localhost:5173/demo/budget" 
+                      className="w-full h-64 border-0"
+                      title="App Preview"
+                    />
+                  </div>
+                  <p className="text-[10px] text-portal-muted mt-1 text-center">
+                    Live preview of the app. Click "Open App" for full view.
+                  </p>
                 </div>
               )}
               
