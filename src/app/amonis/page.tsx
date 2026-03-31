@@ -130,7 +130,8 @@ export default function AmonisPage() {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
   const [showNewTask, setShowNewTask] = useState(false);
-  const [newTaskForm, setNewTaskForm] = useState({ title: '', description: '', agentId: '', priority: 1 });
+  const [newTaskForm, setNewTaskForm] = useState({ title: '', description: '', agentId: '', priority: 1, screenshots: [] as string[] });
+  const [uploadingScreenshot, setUploadingScreenshot] = useState(false);
   const [buildInProgress, setBuildInProgress] = useState(false);
   const [activeView, setActiveView] = useState<'board' | 'agents'>('board');
 
@@ -175,14 +176,54 @@ export default function AmonisPage() {
     const res = await fetch('/api/amonis/tasks', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-csrf-token': user?.csrfToken || '' },
-      body: JSON.stringify(newTaskForm),
+      body: JSON.stringify({
+        ...newTaskForm,
+        // Include screenshots in description for context
+        description: newTaskForm.screenshots.length > 0
+          ? `${newTaskForm.description || ''}\n\n📸 Screenshots:\n${newTaskForm.screenshots.map((url, i) => `${i + 1}. ${url}`).join('\n')}`
+          : newTaskForm.description,
+      }),
     });
     
     if (res.ok) {
-      setNewTaskForm({ title: '', description: '', agentId: '', priority: 1 });
+      setNewTaskForm({ title: '', description: '', agentId: '', priority: 1, screenshots: [] });
       setShowNewTask(false);
       fetchData();
     }
+  };
+
+  const handleScreenshotUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadingScreenshot(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const res = await fetch('/api/amonis/upload', {
+        method: 'POST',
+        headers: { 'x-csrf-token': user?.csrfToken || '' },
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (data.ok && data.url) {
+        setNewTaskForm(prev => ({ ...prev, screenshots: [...prev.screenshots, data.url] }));
+      }
+    } catch (err) {
+      console.error('Upload failed:', err);
+    } finally {
+      setUploadingScreenshot(false);
+      e.target.value = ''; // Reset input
+    }
+  };
+
+  const removeScreenshot = (index: number) => {
+    setNewTaskForm(prev => ({
+      ...prev,
+      screenshots: prev.screenshots.filter((_, i) => i !== index),
+    }));
   };
 
   // Update task status
@@ -452,6 +493,48 @@ export default function AmonisPage() {
                       <option key={i} value={i}>{label}</option>
                     ))}
                   </select>
+                </div>
+              </div>
+              
+              {/* Screenshots */}
+              <div>
+                <label className="block text-xs font-medium text-portal-muted mb-1">Screenshots (optional)</label>
+                <div className="space-y-2">
+                  {newTaskForm.screenshots.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {newTaskForm.screenshots.map((url, i) => (
+                        <div key={i} className="relative group">
+                          <img src={url} alt={`Screenshot ${i + 1}`} className="h-16 w-auto rounded border border-portal-border" />
+                          <button
+                            onClick={() => removeScreenshot(i)}
+                            className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <label className={cn(
+                    "flex items-center justify-center gap-2 px-3 py-2 border border-dashed border-portal-border rounded-lg cursor-pointer hover:border-portal-accent/50 transition-colors",
+                    uploadingScreenshot && "opacity-50 pointer-events-none"
+                  )}>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleScreenshotUpload}
+                      className="hidden"
+                      disabled={uploadingScreenshot}
+                    />
+                    {uploadingScreenshot ? (
+                      <RefreshCw className="h-4 w-4 text-portal-muted animate-spin" />
+                    ) : (
+                      <ImageIcon className="h-4 w-4 text-portal-muted" />
+                    )}
+                    <span className="text-xs text-portal-muted">
+                      {uploadingScreenshot ? 'Uploading...' : 'Add screenshot'}
+                    </span>
+                  </label>
                 </div>
               </div>
             </div>

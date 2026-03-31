@@ -14,3 +14,7 @@ Thumbs.db
 *.log
 coverage/
 .turbo/
+
+# Uploaded files
+public/uploads/amonis/*
+!public/uploads/amonis/.gitkeep
