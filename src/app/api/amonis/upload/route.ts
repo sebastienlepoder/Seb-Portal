@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server';
 import { getApiUser } from '@/lib/auth';
-import { writeFile, mkdir } from 'fs/promises';
-import { join } from 'path';
-import { randomUUID } from 'crypto';
 
-// POST /api/amonis/upload - Upload a screenshot
+// Force dynamic
+export const dynamic = 'force-dynamic';
+
+// POST /api/amonis/upload - Convert screenshot to data URL
+// No file system needed - just converts to base64
 export async function POST(request: Request) {
   const user = await getApiUser();
   if (!user) return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
@@ -22,27 +23,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: 'Only images allowed' }, { status: 400 });
     }
 
-    // Limit file size (10MB)
-    if (file.size > 10 * 1024 * 1024) {
-      return NextResponse.json({ ok: false, error: 'File too large (max 10MB)' }, { status: 400 });
+    // Limit file size (5MB for base64)
+    if (file.size > 5 * 1024 * 1024) {
+      return NextResponse.json({ ok: false, error: 'File too large (max 5MB)' }, { status: 400 });
     }
 
-    // Generate unique filename
-    const ext = file.name.split('.').pop() || 'png';
-    const filename = `${randomUUID()}.${ext}`;
-    
-    // Save to public/uploads/amonis
-    const uploadDir = join(process.cwd(), 'public', 'uploads', 'amonis');
-    await mkdir(uploadDir, { recursive: true });
-    
-    const filepath = join(uploadDir, filename);
+    // Convert to base64 data URL
     const bytes = await file.arrayBuffer();
-    await writeFile(filepath, Buffer.from(bytes));
+    const base64 = Buffer.from(bytes).toString('base64');
+    const url = `data:${file.type};base64,${base64}`;
 
-    // Return public URL
-    const url = `/uploads/amonis/${filename}`;
-
-    return NextResponse.json({ ok: true, url, filename });
+    return NextResponse.json({ ok: true, url, filename: file.name });
   } catch (e) {
     console.error('Upload error:', e);
     return NextResponse.json({ ok: false, error: 'Upload failed' }, { status: 500 });
