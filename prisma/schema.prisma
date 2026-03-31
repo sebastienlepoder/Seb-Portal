@@ -281,3 +281,75 @@ model Todo {
   @@index([userId, completed])
   @@index([userId, category])
 }
+
+// ─── Amonis Finance Agent System ─────────────────────────────
+
+model AmonisAgent {
+  id          String   @id @default(uuid())
+  slug        String   @unique // budget, transactions, accounts, crypto, goals, settings, research, designer, devil
+  name        String
+  description String?
+  icon        String?  // emoji or icon name
+  color       String?  // accent color
+  scope       String?  // which files/folders this agent handles
+  status      String   @default("idle") // idle | working | waiting_review
+  enabled     Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tasks AmonisTask[]
+}
+
+model AmonisTask {
+  id              String    @id @default(uuid())
+  agentId         String?
+  title           String
+  description     String?   // detailed task description
+  status          String    @default("pending") // pending | assigned | in_progress | review_design | review_devil | needs_review | approved | rejected | done
+  priority        Int       @default(1) // 0=low, 1=normal, 2=high, 3=urgent
+  
+  // Work results
+  workSummary     String?   // what was done (markdown)
+  filesChanged    String?   // JSON array of file paths
+  screenshotBefore String?  // path to before screenshot
+  screenshotAfter  String?  // path to after screenshot
+  
+  // Reviews
+  designerNotes   String?   // Designer agent feedback
+  designerApproved Boolean?
+  devilNotes      String?   // Devil's advocate feedback
+  devilApproved   Boolean?
+  
+  // Tracking
+  assignedAt      DateTime?
+  startedAt       DateTime?
+  completedAt     DateTime?
+  reviewedAt      DateTime?
+  
+  // Build tracking
+  buildNumber     Int?      // TestFlight build this was included in
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  agent AmonisAgent? @relation(fields: [agentId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([agentId, status])
+}
+
+model AmonisBuild {
+  id            String   @id @default(uuid())
+  buildNumber   Int      @unique
+  version       String   @default("1.0")
+  status        String   @default("pending") // pending | building | uploading | processing | ready | failed
+  taskIds       String?  // JSON array of task IDs included
+  commitHash    String?
+  errorMessage  String?
+  startedAt     DateTime @default(now())
+  completedAt   DateTime?
+  createdAt     DateTime @default(now())
+  
+  @@index([status])
+}

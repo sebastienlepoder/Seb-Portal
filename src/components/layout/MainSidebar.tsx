@@ -59,6 +59,7 @@ export default function MainSidebar({
   const isCoolify = pathname === "/coolify";
   const isTodos = pathname === "/todos";
   const isInsights = pathname === "/insights";
+  const isAmonis = pathname === "/amonis";
 
   return (
     <>
@@ -207,6 +208,24 @@ export default function MainSidebar({
             active={isInsights}
             label="Insights"
             icon={<Sparkles className="h-3.5 w-3.5" />}
+          />
+          
+          {/* Amonis Finance - Development Hub */}
+          {!collapsed && (
+            <div className="px-3 pt-4 pb-1">
+              <div className="text-[10px] font-semibold text-portal-muted uppercase tracking-wider">
+                Development
+              </div>
+            </div>
+          )}
+          {collapsed && <div className="h-1 border-t border-portal-border mx-2 mt-2 mb-1" />}
+          <SidebarLink
+            collapsed={collapsed}
+            href="/amonis"
+            active={isAmonis}
+            label="Amonis Finance"
+            icon={<Sparkles className="h-3.5 w-3.5" />}
+            accent
           />
 
           {/* Dashboard sections (only on dashboard) */}
