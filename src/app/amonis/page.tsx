@@ -1296,27 +1296,47 @@ function TaskDetailModal({
                   Open
                 </a>
               </div>
-              <div className="flex-1 overflow-hidden flex items-start justify-center p-3">
-                <div 
-                  className={cn(
-                    'rounded-lg overflow-hidden shadow-lg border border-portal-border',
-                    previewMode === 'mobile' ? 'w-[375px]' : 'w-full',
-                    previewTheme === 'light' ? 'bg-white' : 'bg-gray-900'
-                  )}
-                  style={{ height: previewMode === 'mobile' ? '667px' : '100%' }}
-                >
-                  <iframe 
-                    src={`http://localhost:5173/demo/budget?theme=${previewTheme}`}
-                    className="w-full h-full border-0"
-                    title="App Preview"
-                    style={{ 
-                      transform: previewMode === 'mobile' ? 'scale(0.85)' : 'scale(1)',
-                      transformOrigin: 'top left',
-                      width: previewMode === 'mobile' ? '118%' : '100%',
-                      height: previewMode === 'mobile' ? '118%' : '100%',
-                    }}
-                  />
-                </div>
+              <div className="flex-1 overflow-hidden flex items-center justify-center p-3">
+                {previewMode === 'mobile' ? (
+                  <div 
+                    className="relative rounded-[3rem] p-3 bg-black shadow-2xl"
+                    style={{ width: '280px', height: '570px' }}
+                  >
+                    {/* Phone notch */}
+                    <div className="absolute top-3 left-1/2 -translate-x-1/2 w-24 h-6 bg-black rounded-b-2xl z-10" />
+                    <div 
+                      className={cn(
+                        'w-full h-full rounded-[2.25rem] overflow-hidden',
+                        previewTheme === 'light' ? 'bg-white' : 'bg-gray-900'
+                      )}
+                    >
+                      <iframe 
+                        src={`http://localhost:5173/demo/budget?theme=${previewTheme}`}
+                        className="w-full h-full border-0"
+                        title="App Preview"
+                        style={{ 
+                          transform: 'scale(0.67)',
+                          transformOrigin: 'top left',
+                          width: '150%',
+                          height: '150%',
+                        }}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div 
+                    className={cn(
+                      'w-full h-full rounded-lg overflow-hidden shadow-lg border border-portal-border',
+                      previewTheme === 'light' ? 'bg-white' : 'bg-gray-900'
+                    )}
+                  >
+                    <iframe 
+                      src={`http://localhost:5173/demo/budget?theme=${previewTheme}`}
+                      className="w-full h-full border-0"
+                      title="App Preview"
+                    />
+                  </div>
+                )}
               </div>
             </div>
           )}
