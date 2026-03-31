@@ -35,6 +35,7 @@ import {
   FileText,
   Brain,
   Undo2,
+  GitBranch,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -648,6 +649,18 @@ export default function AmonisPage() {
           onClose={() => setSelectedTask(null)}
           onStatusChange={(status) => updateTaskStatus(selectedTask.id, status)}
           onRefresh={fetchData}
+          onCreateFollowUp={(parentTask) => {
+            setNewTaskForm({
+              title: `Follow-up: ${parentTask.title}`,
+              description: `**Continues from:** ${parentTask.title}\n\n**Previous context:**\n${parentTask.description || 'No description'}\n\n---\n\n**New changes needed:**\n`,
+              agentId: parentTask.agentId || '',
+              priority: parentTask.priority,
+              platforms: (parentTask.platforms as 'desktop' | 'mobile' | 'both') || 'both',
+              screenshots: [],
+            });
+            setSelectedTask(null);
+            setShowNewTask(true);
+          }}
         />
       )}
 
@@ -879,6 +892,7 @@ function TaskDetailModal({
   onClose,
   onStatusChange,
   onRefresh,
+  onCreateFollowUp,
 }: {
   task: Task;
   agents: Agent[];
@@ -886,6 +900,7 @@ function TaskDetailModal({
   onClose: () => void;
   onStatusChange: (status: string) => void;
   onRefresh: () => void;
+  onCreateFollowUp: (parentTask: Task) => void;
 }) {
   const agent = agents.find(a => a.id === task.agentId);
   const statusConfig = STATUS_CONFIG[task.status] || STATUS_CONFIG.pending;
@@ -1388,6 +1403,13 @@ function TaskDetailModal({
                   {reverting ? 'Reverting...' : 'Revert Changes'}
                 </button>
                 <div className="flex gap-2">
+                  <button
+                    onClick={() => onCreateFollowUp(task)}
+                    className="flex items-center gap-1.5 px-4 py-2 text-xs text-blue-400 border border-blue-500/30 rounded-lg hover:bg-blue-500/10"
+                  >
+                    <GitBranch className="h-3.5 w-3.5" />
+                    Follow-up Task
+                  </button>
                   <button
                     onClick={() => setShowFeedback(true)}
                     className="flex items-center gap-1.5 px-4 py-2 text-xs text-amber-400 border border-amber-500/30 rounded-lg hover:bg-amber-500/10"
