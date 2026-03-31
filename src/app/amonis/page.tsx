@@ -175,17 +175,20 @@ export default function AmonisPage() {
 
   // Create task
   const createTask = async () => {
-    if (!newTaskForm.title.trim()) return;
+    if (!newTaskForm.description.trim()) return;
+    
+    // Build description with screenshots
+    const fullDescription = newTaskForm.screenshots.length > 0
+      ? `${newTaskForm.description}\n\n📸 Screenshots:\n${newTaskForm.screenshots.map((url, i) => `${i + 1}. ${url}`).join('\n')}`
+      : newTaskForm.description;
     
     const res = await fetch('/api/amonis/tasks', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-csrf-token': user?.csrfToken || '' },
       body: JSON.stringify({
         ...newTaskForm,
-        // Include screenshots in description for context
-        description: newTaskForm.screenshots.length > 0
-          ? `${newTaskForm.description || ''}\n\n📸 Screenshots:\n${newTaskForm.screenshots.map((url, i) => `${i + 1}. ${url}`).join('\n')}`
-          : newTaskForm.description,
+        title: 'New Task', // Placeholder - AI will generate real title
+        description: fullDescription,
       }),
     });
     
@@ -509,22 +512,13 @@ export default function AmonisPage() {
             </div>
             <div className="p-4 space-y-4">
               <div>
-                <label className="block text-xs font-medium text-portal-muted mb-1">Task Title</label>
-                <input
-                  type="text"
-                  value={newTaskForm.title}
-                  onChange={(e) => setNewTaskForm({ ...newTaskForm, title: e.target.value })}
-                  placeholder="e.g., Make the pie chart thicker"
-                  className="w-full bg-portal-bg border border-portal-border rounded-lg px-3 py-2 text-sm text-portal-text focus:outline-none focus:border-portal-accent/50"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-portal-muted mb-1">Description (optional)</label>
+                <label className="block text-xs font-medium text-portal-muted mb-1">What do you want?</label>
                 <textarea
                   value={newTaskForm.description}
                   onChange={(e) => setNewTaskForm({ ...newTaskForm, description: e.target.value })}
-                  placeholder="Additional details..."
-                  rows={3}
+                  placeholder="Describe what you want done... The AI will figure out the title."
+                  rows={4}
+                  autoFocus
                   className="w-full bg-portal-bg border border-portal-border rounded-lg px-3 py-2 text-sm text-portal-text focus:outline-none focus:border-portal-accent/50 resize-none"
                 />
               </div>
