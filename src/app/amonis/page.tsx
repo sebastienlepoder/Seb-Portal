@@ -898,6 +898,9 @@ function TaskDetailModal({
   const [logsLoading, setLogsLoading] = useState(false);
   const [triggering, setTriggering] = useState(false);
   const [activeTab, setActiveTab] = useState<'details' | 'logs'>('details');
+  const [showFeedback, setShowFeedback] = useState(false);
+  const [feedbackText, setFeedbackText] = useState('');
+  const [submittingFeedback, setSubmittingFeedback] = useState(false);
 
   // Fetch logs for this task
   useEffect(() => {
@@ -946,6 +949,32 @@ function TaskDetailModal({
     const command = `cd ~/Documents/App\\ Development/amonis-finance/web && claude "${prompt.replace(/"/g, '\\"')}"`;
     navigator.clipboard.writeText(command);
     alert('Command copied! Paste in terminal to run Claude Code with this task.');
+  };
+
+  const submitFeedback = async () => {
+    if (!feedbackText.trim()) return;
+    setSubmittingFeedback(true);
+    try {
+      // Append feedback to description
+      const newDescription = task.description 
+        ? `${task.description}\n\n---\n**Feedback (${new Date().toLocaleString()}):**\n${feedbackText}`
+        : `**Feedback (${new Date().toLocaleString()}):**\n${feedbackText}`;
+      
+      await fetch('/api/amonis/tasks/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          taskId: task.id, 
+          status: 'assigned',  // Reset to assigned so agent picks it up again
+          description: newDescription,
+        }),
+      });
+      setFeedbackText('');
+      setShowFeedback(false);
+      onRefresh();
+    } finally {
+      setSubmittingFeedback(false);
+    }
   };
 
   const isTriggerable = ['pending', 'assigned', 'rejected'].includes(task.status);
@@ -1203,21 +1232,57 @@ function TaskDetailModal({
         
         {/* Actions */}
         {task.status === 'needs_review' && (
-          <div className="flex justify-end gap-2 p-4 border-t border-portal-border">
-            <button
-              onClick={() => onStatusChange('rejected')}
-              className="flex items-center gap-1.5 px-4 py-2 text-xs text-red-400 border border-red-500/30 rounded-lg hover:bg-red-500/10"
-            >
-              <XCircle className="h-3.5 w-3.5" />
-              Request Changes
-            </button>
-            <button
-              onClick={() => onStatusChange('approved')}
-              className="flex items-center gap-1.5 px-4 py-2 text-xs bg-emerald-500 text-white rounded-lg hover:bg-emerald-600"
-            >
-              <CheckCircle className="h-3.5 w-3.5" />
-              Approve
-            </button>
+          <div className="p-4 border-t border-portal-border">
+            {showFeedback ? (
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-medium text-portal-muted mb-1">
+                    What changes are needed?
+                  </label>
+                  <textarea
+                    value={feedbackText}
+                    onChange={(e) => setFeedbackText(e.target.value)}
+                    placeholder="Describe the changes you want..."
+                    rows={3}
+                    autoFocus
+                    className="w-full bg-portal-bg border border-portal-border rounded-lg px-3 py-2 text-sm text-portal-text focus:outline-none focus:border-portal-accent/50 resize-none"
+                  />
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button
+                    onClick={() => { setShowFeedback(false); setFeedbackText(''); }}
+                    className="px-4 py-2 text-xs text-portal-muted hover:text-portal-text"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={submitFeedback}
+                    disabled={!feedbackText.trim() || submittingFeedback}
+                    className="flex items-center gap-1.5 px-4 py-2 text-xs bg-amber-500 text-white rounded-lg hover:bg-amber-600 disabled:opacity-50"
+                  >
+                    {submittingFeedback ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                    {submittingFeedback ? 'Sending...' : 'Send Feedback'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => setShowFeedback(true)}
+                  className="flex items-center gap-1.5 px-4 py-2 text-xs text-amber-400 border border-amber-500/30 rounded-lg hover:bg-amber-500/10"
+                >
+                  <MessageSquare className="h-3.5 w-3.5" />
+                  Request Changes
+                </button>
+                <button
+                  onClick={() => onStatusChange('approved')}
+                  className="flex items-center gap-1.5 px-4 py-2 text-xs bg-emerald-500 text-white rounded-lg hover:bg-emerald-600"
+                >
+                  <CheckCircle className="h-3.5 w-3.5" />
+                  Approve
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
