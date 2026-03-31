@@ -226,6 +226,52 @@ export default function AmonisPage() {
     }));
   };
 
+  // Handle paste for screenshots
+  const handlePaste = async (e: ClipboardEvent) => {
+    if (!showNewTask) return;
+    
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (!file) continue;
+
+        setUploadingScreenshot(true);
+        try {
+          const formData = new FormData();
+          formData.append('file', file);
+
+          const res = await fetch('/api/amonis/upload', {
+            method: 'POST',
+            headers: { 'x-csrf-token': user?.csrfToken || '' },
+            body: formData,
+          });
+
+          const data = await res.json();
+          if (data.ok && data.url) {
+            setNewTaskForm(prev => ({ ...prev, screenshots: [...prev.screenshots, data.url] }));
+          }
+        } catch (err) {
+          console.error('Paste upload failed:', err);
+        } finally {
+          setUploadingScreenshot(false);
+        }
+        break;
+      }
+    }
+  };
+
+  // Listen for paste events when modal is open
+  useEffect(() => {
+    if (showNewTask) {
+      document.addEventListener('paste', handlePaste);
+      return () => document.removeEventListener('paste', handlePaste);
+    }
+  }, [showNewTask, user?.csrfToken]);
+
   // Update task status
   const updateTaskStatus = async (taskId: string, status: string) => {
     await fetch(`/api/amonis/tasks/${taskId}`, {
