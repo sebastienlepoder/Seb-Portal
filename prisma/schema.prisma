@@ -324,6 +324,7 @@ model AmonisTask {
   description     String?   // detailed task description
   status          String    @default("pending") // pending | assigned | in_progress | review_design | review_devil | needs_review | approved | rejected | done
   priority        Int       @default(1) // 0=low, 1=normal, 2=high, 3=urgent
+  platforms       String    @default("both") // desktop | mobile | both
   
   // Work results
   workSummary     String?   // what was done (markdown)

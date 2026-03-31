@@ -69,6 +69,7 @@ type Task = {
   description: string | null;
   status: string;
   priority: number;
+  platforms: 'desktop' | 'mobile' | 'both';
   workSummary: string | null;
   filesChanged: string | null;
   screenshotBefore: string | null;
@@ -130,7 +131,7 @@ export default function AmonisPage() {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
   const [showNewTask, setShowNewTask] = useState(false);
-  const [newTaskForm, setNewTaskForm] = useState({ title: '', description: '', agentId: '', priority: 1, screenshots: [] as string[] });
+  const [newTaskForm, setNewTaskForm] = useState({ title: '', description: '', agentId: '', priority: 1, platforms: 'both' as 'desktop' | 'mobile' | 'both', screenshots: [] as string[] });
   const [uploadingScreenshot, setUploadingScreenshot] = useState(false);
   const [buildInProgress, setBuildInProgress] = useState(false);
   const [activeView, setActiveView] = useState<'board' | 'agents'>('board');
@@ -186,7 +187,7 @@ export default function AmonisPage() {
     });
     
     if (res.ok) {
-      setNewTaskForm({ title: '', description: '', agentId: '', priority: 1, screenshots: [] });
+      setNewTaskForm({ title: '', description: '', agentId: '', priority: 1, platforms: 'both', screenshots: [] });
       setShowNewTask(false);
       fetchData();
     }
@@ -541,6 +542,33 @@ export default function AmonisPage() {
                   </select>
                 </div>
               </div>
+
+              {/* Platform Selection */}
+              <div>
+                <label className="block text-xs font-medium text-portal-muted mb-2">Platform</label>
+                <div className="flex gap-3">
+                  {[
+                    { value: 'desktop', label: 'Desktop', icon: '🖥️' },
+                    { value: 'mobile', label: 'Mobile', icon: '📱' },
+                    { value: 'both', label: 'Both', icon: '🖥️📱' },
+                  ].map(option => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => setNewTaskForm({ ...newTaskForm, platforms: option.value as 'desktop' | 'mobile' | 'both' })}
+                      className={cn(
+                        'flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border transition-colors',
+                        newTaskForm.platforms === option.value
+                          ? 'bg-portal-accent/20 border-portal-accent text-portal-accent'
+                          : 'bg-portal-bg border-portal-border text-portal-muted hover:border-portal-accent/30'
+                      )}
+                    >
+                      <span>{option.icon}</span>
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
               
               {/* Screenshots */}
               <div>
@@ -701,9 +729,19 @@ function TaskCard({
             {statusConfig.label}
           </span>
         </div>
-        {task.screenshotAfter && (
-          <ImageIcon className="h-3.5 w-3.5 text-portal-muted" />
-        )}
+        <div className="flex items-center gap-1.5">
+          {task.platforms && task.platforms !== 'both' && (
+            <span className="text-[10px]" title={task.platforms === 'desktop' ? 'Desktop only' : 'Mobile only'}>
+              {task.platforms === 'desktop' ? '🖥️' : '📱'}
+            </span>
+          )}
+          {task.platforms === 'both' && (
+            <span className="text-[10px]" title="Desktop & Mobile">🖥️📱</span>
+          )}
+          {task.screenshotAfter && (
+            <ImageIcon className="h-3.5 w-3.5 text-portal-muted" />
+          )}
+        </div>
       </div>
     </div>
   );

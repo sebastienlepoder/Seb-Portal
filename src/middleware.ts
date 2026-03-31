@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 // Protect all routes except login, API auth, and static assets
-const PUBLIC_PATHS = ['/login', '/api/auth/login', '/api/webhook/urgent', '/api/todos/seed', '/api/todos/debug', '/api/icons/serve', '/api/debug', '/api/amonis/tasks/pending', '/api/amonis/tasks/update', '/api/amonis/tasks/trigger', '/_next', '/favicon.ico'];
+const PUBLIC_PATHS = ['/login', '/api/auth/login', '/api/webhook/urgent', '/api/todos/seed', '/api/todos/debug', '/api/icons/serve', '/api/debug', '/api/amonis/tasks/pending', '/api/amonis/tasks/update', '/api/amonis/tasks/trigger', '/api/amonis/agents/', '/_next', '/favicon.ico'];
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
