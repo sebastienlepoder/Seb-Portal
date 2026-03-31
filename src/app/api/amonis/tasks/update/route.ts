@@ -2,15 +2,8 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 
 // POST /api/amonis/tasks/update - Update task status (service endpoint)
-// Secured by AMONIS_SERVICE_TOKEN instead of user session
+// Public endpoint for agent updates
 export async function POST(request: Request) {
-  const authHeader = request.headers.get('authorization');
-  const serviceToken = process.env.AMONIS_SERVICE_TOKEN;
-  
-  // Allow if service token matches OR if no token is configured (dev mode)
-  if (serviceToken && authHeader !== `Bearer ${serviceToken}`) {
-    return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
-  }
 
   const body = await request.json();
   const { taskId, ...updateData } = body;
