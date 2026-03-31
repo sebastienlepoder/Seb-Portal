@@ -34,6 +34,7 @@ import {
   History,
   FileText,
   Brain,
+  Terminal,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -838,6 +839,34 @@ function BuildCard({ build }: { build: Build }) {
   );
 }
 
+function buildTaskPrompt(task: Task, agent?: Agent | null): string {
+  let prompt = `Task: ${task.title}`;
+  
+  if (task.description) {
+    prompt += `\n\nDescription: ${task.description}`;
+  }
+  
+  prompt += `\n\nPlatform: ${task.platforms || 'both'} (${
+    task.platforms === 'desktop' ? 'only modify desktop layout' :
+    task.platforms === 'mobile' ? 'only modify mobile layout' :
+    'modify both desktop and mobile layouts'
+  })`;
+  
+  if (agent) {
+    prompt += `\n\nYou are acting as the ${agent.name}.`;
+    if (agent.scope) {
+      prompt += ` Focus on: ${agent.scope}`;
+    }
+    if (agent.systemPrompt) {
+      prompt += `\n\nInstructions: ${agent.systemPrompt}`;
+    }
+  }
+  
+  prompt += `\n\nThe app runs at http://localhost:5173. When done, provide a summary of changes made.`;
+  
+  return prompt;
+}
+
 function TaskDetailModal({
   task,
   agents,
@@ -902,6 +931,13 @@ function TaskDetailModal({
     }
   };
 
+  const copyTerminalCommand = () => {
+    const prompt = buildTaskPrompt(task, agent);
+    const command = `cd ~/Documents/App\\ Development/amonis-finance/web && claude "${prompt.replace(/"/g, '\\"')}"`;
+    navigator.clipboard.writeText(command);
+    alert('Command copied! Paste in terminal to run Claude Code with this task.');
+  };
+
   const isTriggerable = ['pending', 'assigned', 'rejected'].includes(task.status);
   const isRunning = task.status === 'in_progress';
   
@@ -931,14 +967,24 @@ function TaskDetailModal({
           </div>
           <div className="flex items-center gap-2">
             {isTriggerable && (
-              <button
-                onClick={triggerTask}
-                disabled={triggering}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 disabled:opacity-50"
-              >
-                {triggering ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
-                {triggering ? 'Starting...' : 'Start Task'}
-              </button>
+              <>
+                <button
+                  onClick={copyTerminalCommand}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+                  title="Copy command to run Claude Code in terminal"
+                >
+                  <Terminal className="h-3.5 w-3.5" />
+                  Terminal
+                </button>
+                <button
+                  onClick={triggerTask}
+                  disabled={triggering}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 disabled:opacity-50"
+                >
+                  {triggering ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+                  {triggering ? 'Starting...' : 'Start Task'}
+                </button>
+              </>
             )}
             <button onClick={onClose} className="p-1 text-portal-muted hover:text-portal-text">
               <X className="h-5 w-5" />
