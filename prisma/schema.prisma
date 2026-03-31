@@ -285,20 +285,36 @@ model Todo {
 // ─── Amonis Finance Agent System ─────────────────────────────
 
 model AmonisAgent {
-  id          String   @id @default(uuid())
-  slug        String   @unique // budget, transactions, accounts, crypto, goals, settings, research, designer, devil
-  name        String
-  description String?
-  icon        String?  // emoji or icon name
-  color       String?  // accent color
-  scope       String?  // which files/folders this agent handles
-  status      String   @default("idle") // idle | working | waiting_review
-  enabled     Boolean  @default(true)
-  sortOrder   Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id           String   @id @default(uuid())
+  slug         String   @unique // budget, transactions, accounts, crypto, goals, settings, research, designer, devil
+  name         String
+  description  String?
+  systemPrompt String?  // customizable system prompt for this agent
+  icon         String?  // emoji or icon name
+  color        String?  // accent color
+  scope        String?  // which files/folders this agent handles
+  status       String   @default("idle") // idle | working | waiting_review
+  enabled      Boolean  @default(true)
+  sortOrder    Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   tasks AmonisTask[]
+  logs  AmonisAgentLog[]
+}
+
+model AmonisAgentLog {
+  id        String   @id @default(uuid())
+  agentId   String
+  taskId    String?
+  type      String   @default("info") // info | thinking | action | error
+  message   String
+  metadata  String?  // JSON for extra data
+  createdAt DateTime @default(now())
+
+  agent AmonisAgent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@index([agentId, createdAt])
 }
 
 model AmonisTask {

@@ -30,6 +30,10 @@ import {
   X,
   Send,
   Image as ImageIcon,
+  Save,
+  History,
+  FileText,
+  Brain,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -38,6 +42,7 @@ type Agent = {
   slug: string;
   name: string;
   description: string | null;
+  systemPrompt: string | null;
   icon: string | null;
   color: string | null;
   scope: string | null;
@@ -45,6 +50,16 @@ type Agent = {
   enabled: boolean;
   sortOrder: number;
   _count?: { tasks: number };
+};
+
+type AgentLog = {
+  id: string;
+  agentId: string;
+  taskId: string | null;
+  type: 'info' | 'thinking' | 'action' | 'error';
+  message: string;
+  metadata: string | null;
+  createdAt: string;
 };
 
 type Task = {
@@ -113,6 +128,7 @@ export default function AmonisPage() {
   const [builds, setBuilds] = useState<Build[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
   const [showNewTask, setShowNewTask] = useState(false);
   const [newTaskForm, setNewTaskForm] = useState({ title: '', description: '', agentId: '', priority: 1 });
   const [buildInProgress, setBuildInProgress] = useState(false);
@@ -356,6 +372,7 @@ export default function AmonisPage() {
                     key={agent.id}
                     agent={agent}
                     tasks={tasks.filter(t => t.agentId === agent.id)}
+                    onClick={() => setSelectedAgent(agent)}
                   />
                 ))}
               </div>
@@ -468,6 +485,17 @@ export default function AmonisPage() {
           onRefresh={fetchData}
         />
       )}
+
+      {/* Agent Detail Modal */}
+      {selectedAgent && (
+        <AgentDetailModal
+          agent={selectedAgent}
+          tasks={tasks.filter(t => t.agentId === selectedAgent.id)}
+          csrfToken={user?.csrfToken}
+          onClose={() => setSelectedAgent(null)}
+          onRefresh={fetchData}
+        />
+      )}
     </div>
   );
 }
@@ -552,12 +580,15 @@ function TaskCard({
   );
 }
 
-function AgentCard({ agent, tasks }: { agent: Agent; tasks: Task[] }) {
+function AgentCard({ agent, tasks, onClick }: { agent: Agent; tasks: Task[]; onClick: () => void }) {
   const activeTasks = tasks.filter(t => !['done', 'approved', 'rejected'].includes(t.status));
   const completedTasks = tasks.filter(t => ['done', 'approved'].includes(t.status));
   
   return (
-    <div className="bg-portal-card border border-portal-border rounded-xl p-4">
+    <div 
+      onClick={onClick}
+      className="bg-portal-card border border-portal-border rounded-xl p-4 cursor-pointer hover:border-portal-accent/30 transition-colors"
+    >
       <div className="flex items-center gap-3 mb-3">
         <div
           className="w-10 h-10 rounded-lg flex items-center justify-center text-white"
@@ -780,6 +811,264 @@ function TaskDetailModal({
             </button>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function AgentDetailModal({
+  agent,
+  tasks,
+  csrfToken,
+  onClose,
+  onRefresh,
+}: {
+  agent: Agent;
+  tasks: Task[];
+  csrfToken?: string;
+  onClose: () => void;
+  onRefresh: () => void;
+}) {
+  const [activeTab, setActiveTab] = useState<'overview' | 'prompt' | 'history' | 'logs'>('overview');
+  const [systemPrompt, setSystemPrompt] = useState(agent.systemPrompt || '');
+  const [saving, setSaving] = useState(false);
+  const [logs, setLogs] = useState<AgentLog[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
+
+  // Fetch logs when logs tab is selected
+  useEffect(() => {
+    if (activeTab === 'logs') {
+      setLogsLoading(true);
+      fetch(`/api/amonis/agents/${agent.id}/logs`)
+        .then(r => r.json())
+        .then(data => {
+          if (data.ok) setLogs(data.data);
+        })
+        .catch(() => {})
+        .finally(() => setLogsLoading(false));
+    }
+  }, [activeTab, agent.id]);
+
+  const savePrompt = async () => {
+    setSaving(true);
+    try {
+      await fetch(`/api/amonis/agents/${agent.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'x-csrf-token': csrfToken || '' },
+        body: JSON.stringify({ systemPrompt }),
+      });
+      onRefresh();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const activeTasks = tasks.filter(t => !['done', 'approved', 'rejected'].includes(t.status));
+  const completedTasks = tasks.filter(t => ['done', 'approved'].includes(t.status));
+  const recentTasks = [...tasks].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()).slice(0, 10);
+
+  return (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+      <div className="bg-portal-card border border-portal-border rounded-xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 border-b border-portal-border">
+          <div className="flex items-center gap-3">
+            <div
+              className="w-10 h-10 rounded-lg flex items-center justify-center text-white"
+              style={{ backgroundColor: agent.color || '#6366f1' }}
+            >
+              {AGENT_ICONS[agent.slug] || <Sparkles className="h-5 w-5" />}
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-portal-text">{agent.name}</h3>
+              <p className="text-xs text-portal-muted">{agent.description}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <div
+              className={cn(
+                'px-2 py-1 rounded text-[10px] font-medium',
+                agent.status === 'working' ? 'bg-amber-500/20 text-amber-400' :
+                agent.status === 'waiting_review' ? 'bg-orange-500/20 text-orange-400' : 'bg-gray-500/20 text-gray-400'
+              )}
+            >
+              {agent.status === 'working' ? 'Working' : agent.status === 'waiting_review' ? 'Waiting Review' : 'Idle'}
+            </div>
+            <button onClick={onClose} className="p-1 text-portal-muted hover:text-portal-text">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex border-b border-portal-border">
+          {[
+            { id: 'overview', label: 'Overview', icon: <LayoutDashboard className="h-3.5 w-3.5" /> },
+            { id: 'prompt', label: 'System Prompt', icon: <Brain className="h-3.5 w-3.5" /> },
+            { id: 'history', label: 'Task History', icon: <History className="h-3.5 w-3.5" /> },
+            { id: 'logs', label: 'Thinking Log', icon: <FileText className="h-3.5 w-3.5" /> },
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as typeof activeTab)}
+              className={cn(
+                'flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium border-b-2 -mb-px transition-colors',
+                activeTab === tab.id
+                  ? 'border-portal-accent text-portal-accent'
+                  : 'border-transparent text-portal-muted hover:text-portal-text'
+              )}
+            >
+              {tab.icon}
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-4">
+          {activeTab === 'overview' && (
+            <div className="space-y-4">
+              {/* Stats */}
+              <div className="grid grid-cols-3 gap-4">
+                <div className="bg-portal-bg rounded-lg p-3">
+                  <div className="text-2xl font-bold text-portal-text">{activeTasks.length}</div>
+                  <div className="text-xs text-portal-muted">Active Tasks</div>
+                </div>
+                <div className="bg-portal-bg rounded-lg p-3">
+                  <div className="text-2xl font-bold text-portal-text">{completedTasks.length}</div>
+                  <div className="text-xs text-portal-muted">Completed</div>
+                </div>
+                <div className="bg-portal-bg rounded-lg p-3">
+                  <div className="text-2xl font-bold text-portal-text">{tasks.length}</div>
+                  <div className="text-xs text-portal-muted">Total Tasks</div>
+                </div>
+              </div>
+
+              {/* Scope */}
+              {agent.scope && (
+                <div>
+                  <h4 className="text-xs font-medium text-portal-muted mb-2">Scope (Files/Folders)</h4>
+                  <div className="bg-portal-bg rounded-lg p-3 font-mono text-xs text-portal-text">
+                    {agent.scope}
+                  </div>
+                </div>
+              )}
+
+              {/* Active Tasks */}
+              {activeTasks.length > 0 && (
+                <div>
+                  <h4 className="text-xs font-medium text-portal-muted mb-2">Current Tasks</h4>
+                  <div className="space-y-2">
+                    {activeTasks.map(task => (
+                      <div key={task.id} className="bg-portal-bg rounded-lg p-3 flex items-center justify-between">
+                        <div>
+                          <p className="text-sm text-portal-text">{task.title}</p>
+                          <p className="text-xs text-portal-muted">
+                            {STATUS_CONFIG[task.status]?.label || task.status}
+                          </p>
+                        </div>
+                        <div className={cn('text-xs', STATUS_CONFIG[task.status]?.color)}>
+                          {STATUS_CONFIG[task.status]?.icon}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'prompt' && (
+            <div className="space-y-4">
+              <p className="text-xs text-portal-muted">
+                Customize this agent's behavior by editing its system prompt. This defines how the agent approaches tasks.
+              </p>
+              <textarea
+                value={systemPrompt}
+                onChange={(e) => setSystemPrompt(e.target.value)}
+                placeholder={`You are the ${agent.name}. Your role is to ${agent.description?.toLowerCase() || 'help with tasks'}...`}
+                rows={12}
+                className="w-full bg-portal-bg border border-portal-border rounded-lg px-3 py-2 text-sm text-portal-text font-mono focus:outline-none focus:border-portal-accent/50 resize-none"
+              />
+              <div className="flex justify-end">
+                <button
+                  onClick={savePrompt}
+                  disabled={saving}
+                  className="flex items-center gap-1.5 px-4 py-2 text-xs bg-portal-accent text-white rounded-lg hover:bg-portal-accent-dark disabled:opacity-50"
+                >
+                  <Save className="h-3.5 w-3.5" />
+                  {saving ? 'Saving...' : 'Save Prompt'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'history' && (
+            <div className="space-y-2">
+              {recentTasks.length === 0 ? (
+                <p className="text-sm text-portal-muted text-center py-8">No tasks yet</p>
+              ) : (
+                recentTasks.map(task => (
+                  <div key={task.id} className="bg-portal-bg rounded-lg p-3">
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-sm font-medium text-portal-text">{task.title}</p>
+                      <span className={cn('flex items-center gap-1 text-[10px]', STATUS_CONFIG[task.status]?.color)}>
+                        {STATUS_CONFIG[task.status]?.icon}
+                        {STATUS_CONFIG[task.status]?.label}
+                      </span>
+                    </div>
+                    <p className="text-xs text-portal-muted">
+                      {new Date(task.updatedAt).toLocaleDateString()} at {new Date(task.updatedAt).toLocaleTimeString()}
+                    </p>
+                    {task.workSummary && (
+                      <p className="text-xs text-portal-text mt-2 line-clamp-2">{task.workSummary}</p>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+
+          {activeTab === 'logs' && (
+            <div className="space-y-2">
+              {logsLoading ? (
+                <div className="flex justify-center py-8">
+                  <RefreshCw className="h-5 w-5 animate-spin text-portal-muted" />
+                </div>
+              ) : logs.length === 0 ? (
+                <p className="text-sm text-portal-muted text-center py-8">No logs yet. Logs will appear when the agent works on tasks.</p>
+              ) : (
+                logs.map(log => (
+                  <div
+                    key={log.id}
+                    className={cn(
+                      'rounded-lg p-3 text-xs',
+                      log.type === 'thinking' ? 'bg-purple-500/10 border border-purple-500/20' :
+                      log.type === 'action' ? 'bg-blue-500/10 border border-blue-500/20' :
+                      log.type === 'error' ? 'bg-red-500/10 border border-red-500/20' :
+                      'bg-portal-bg border border-portal-border'
+                    )}
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className={cn(
+                        'font-medium uppercase text-[10px]',
+                        log.type === 'thinking' ? 'text-purple-400' :
+                        log.type === 'action' ? 'text-blue-400' :
+                        log.type === 'error' ? 'text-red-400' : 'text-portal-muted'
+                      )}>
+                        {log.type}
+                      </span>
+                      <span className="text-portal-muted">
+                        {new Date(log.createdAt).toLocaleTimeString()}
+                      </span>
+                    </div>
+                    <p className="text-portal-text whitespace-pre-wrap">{log.message}</p>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
