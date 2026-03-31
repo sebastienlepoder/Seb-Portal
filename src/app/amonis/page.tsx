@@ -1231,7 +1231,7 @@ function TaskDetailModal({
         </div>
         
         {/* Actions */}
-        {task.status === 'needs_review' && (
+        {['needs_review', 'done', 'approved'].includes(task.status) && (
           <div className="p-4 border-t border-portal-border">
             {showFeedback ? (
               <div className="space-y-3">
@@ -1272,15 +1272,17 @@ function TaskDetailModal({
                   className="flex items-center gap-1.5 px-4 py-2 text-xs text-amber-400 border border-amber-500/30 rounded-lg hover:bg-amber-500/10"
                 >
                   <MessageSquare className="h-3.5 w-3.5" />
-                  Request Changes
+                  {task.status === 'needs_review' ? 'Request Changes' : 'Reopen with Changes'}
                 </button>
-                <button
-                  onClick={() => onStatusChange('approved')}
-                  className="flex items-center gap-1.5 px-4 py-2 text-xs bg-emerald-500 text-white rounded-lg hover:bg-emerald-600"
-                >
-                  <CheckCircle className="h-3.5 w-3.5" />
-                  Approve
-                </button>
+                {task.status === 'needs_review' && (
+                  <button
+                    onClick={() => onStatusChange('approved')}
+                    className="flex items-center gap-1.5 px-4 py-2 text-xs bg-emerald-500 text-white rounded-lg hover:bg-emerald-600"
+                  >
+                    <CheckCircle className="h-3.5 w-3.5" />
+                    Approve
+                  </button>
+                )}
               </div>
             )}
           </div>
