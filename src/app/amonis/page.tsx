@@ -36,6 +36,7 @@ import {
   Brain,
   Undo2,
   GitBranch,
+  Pencil,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -914,6 +915,15 @@ function TaskDetailModal({
   const [previewMode, setPreviewMode] = useState<'mobile' | 'desktop'>('mobile');
   const [previewTheme, setPreviewTheme] = useState<'light' | 'dark'>('dark');
   const [reverting, setReverting] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editForm, setEditForm] = useState({
+    title: task.title,
+    description: task.description || '',
+    agentId: task.agentId || '',
+    priority: task.priority,
+    platforms: task.platforms || 'both',
+  });
+  const [saving, setSaving] = useState(false);
 
   // Fetch logs for this task
   useEffect(() => {
@@ -998,6 +1008,28 @@ function TaskDetailModal({
     }
   };
 
+  const saveEdit = async () => {
+    setSaving(true);
+    try {
+      await fetch('/api/amonis/tasks/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          taskId: task.id,
+          title: editForm.title,
+          description: editForm.description,
+          agentId: editForm.agentId || null,
+          priority: editForm.priority,
+          platforms: editForm.platforms,
+        }),
+      });
+      setIsEditing(false);
+      onRefresh();
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const isTriggerable = ['pending', 'assigned', 'rejected'].includes(task.status);
   const isRunning = task.status === 'in_progress';
   
@@ -1026,8 +1058,15 @@ function TaskDetailModal({
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {isTriggerable && (
+            {isTriggerable && !isEditing && (
               <>
+                <button
+                  onClick={() => setIsEditing(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-portal-muted border border-portal-border rounded-lg hover:bg-portal-bg hover:text-portal-text"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                  Edit
+                </button>
                 <button
                   onClick={triggerTask}
                   disabled={triggering}
@@ -1035,6 +1074,33 @@ function TaskDetailModal({
                 >
                   {triggering ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
                   {triggering ? 'Starting...' : 'Start Task'}
+                </button>
+              </>
+            )}
+            {isEditing && (
+              <>
+                <button
+                  onClick={() => {
+                    setIsEditing(false);
+                    setEditForm({
+                      title: task.title,
+                      description: task.description || '',
+                      agentId: task.agentId || '',
+                      priority: task.priority,
+                      platforms: task.platforms || 'both',
+                    });
+                  }}
+                  className="px-3 py-1.5 text-xs text-portal-muted hover:text-portal-text"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={saveEdit}
+                  disabled={saving || !editForm.title.trim()}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 disabled:opacity-50"
+                >
+                  {saving ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                  {saving ? 'Saving...' : 'Save'}
                 </button>
               </>
             )}
@@ -1077,12 +1143,85 @@ function TaskDetailModal({
           <div className="flex-1 overflow-y-auto p-4 space-y-4 border-r border-portal-border">
             {activeTab === 'details' ? (
               <>
-                {task.description && (
-                  <div>
-                    <h4 className="text-xs font-medium text-portal-muted mb-1">Description</h4>
-                    <p className="text-sm text-portal-text whitespace-pre-wrap">{task.description}</p>
+                {isEditing ? (
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-xs font-medium text-portal-muted mb-1">Title</label>
+                      <input
+                        type="text"
+                        value={editForm.title}
+                        onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
+                        className="w-full bg-portal-bg border border-portal-border rounded-lg px-3 py-2 text-sm text-portal-text focus:outline-none focus:border-portal-accent/50"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-portal-muted mb-1">Description</label>
+                      <textarea
+                        value={editForm.description}
+                        onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                        rows={6}
+                        className="w-full bg-portal-bg border border-portal-border rounded-lg px-3 py-2 text-sm text-portal-text focus:outline-none focus:border-portal-accent/50 resize-none"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-medium text-portal-muted mb-1">Assign to Agent</label>
+                        <select
+                          value={editForm.agentId}
+                          onChange={(e) => setEditForm({ ...editForm, agentId: e.target.value })}
+                          className="w-full bg-portal-bg border border-portal-border rounded-lg px-3 py-2 text-sm text-portal-text focus:outline-none focus:border-portal-accent/50"
+                        >
+                          <option value="">Auto-assign</option>
+                          {agents.map(a => (
+                            <option key={a.id} value={a.id}>{a.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-portal-muted mb-1">Priority</label>
+                        <select
+                          value={editForm.priority}
+                          onChange={(e) => setEditForm({ ...editForm, priority: parseInt(e.target.value) })}
+                          className="w-full bg-portal-bg border border-portal-border rounded-lg px-3 py-2 text-sm text-portal-text focus:outline-none focus:border-portal-accent/50"
+                        >
+                          <option value={1}>Low</option>
+                          <option value={2}>Medium</option>
+                          <option value={3}>High</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-portal-muted mb-1">Platforms</label>
+                      <div className="flex gap-2">
+                        {[
+                          { value: 'mobile', label: 'Mobile' },
+                          { value: 'desktop', label: 'Desktop' },
+                          { value: 'both', label: 'Both' },
+                        ].map(option => (
+                          <button
+                            key={option.value}
+                            onClick={() => setEditForm({ ...editForm, platforms: option.value as 'desktop' | 'mobile' | 'both' })}
+                            className={cn(
+                              'px-3 py-1.5 text-xs rounded-lg border transition-colors',
+                              editForm.platforms === option.value
+                                ? 'bg-portal-accent/20 border-portal-accent text-portal-accent'
+                                : 'border-portal-border text-portal-muted hover:text-portal-text'
+                            )}
+                          >
+                            {option.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   </div>
-                )}
+                ) : (
+                  <>
+                    {task.description && (
+                      <div>
+                        <h4 className="text-xs font-medium text-portal-muted mb-1">Description</h4>
+                        <p className="text-sm text-portal-text whitespace-pre-wrap">{task.description}</p>
+                      </div>
+                    )}
 
                 {/* Progress indicator for running tasks */}
                 {isRunning && (
@@ -1200,7 +1339,9 @@ function TaskDetailModal({
                   <p className="text-sm text-portal-text">{task.devilNotes}</p>
                 </div>
               )}
-            </>
+                  </>
+                )}
+              </>
           ) : (
             /* Logs Tab */
             <div className="space-y-2">
