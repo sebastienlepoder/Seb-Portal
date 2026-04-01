@@ -4,6 +4,9 @@ import type { NextRequest } from 'next/server';
 // Protect all routes except login, API auth, and static assets
 const PUBLIC_PATHS = ['/login', '/api/auth/login', '/api/webhook/urgent', '/api/todos/seed', '/api/todos/debug', '/api/icons/serve', '/api/debug', '/api/amonis/tasks/pending', '/api/amonis/tasks/update', '/api/amonis/tasks/trigger', '/api/amonis/tasks/revert', '/api/amonis/agents/', '/_next', '/favicon.ico'];
 
+// API token for Amonis worker daemon
+const AMONIS_API_TOKEN = process.env.AMONIS_API_TOKEN || 'amonis-claw-2026';
+
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -19,6 +22,12 @@ export function middleware(request: NextRequest) {
 
   // Allow static files
   if (pathname.startsWith('/_next/') || pathname.match(/\.(ico|svg|png|jpg|css|js)$/)) {
+    return NextResponse.next();
+  }
+
+  // Check for Bearer token auth (for Amonis worker)
+  const authHeader = request.headers.get('authorization');
+  if (authHeader?.startsWith('Bearer ') && authHeader.slice(7) === AMONIS_API_TOKEN) {
     return NextResponse.next();
   }
 
