@@ -37,6 +37,8 @@ import {
   Undo2,
   GitBranch,
   Pencil,
+  Trash2,
+  Square,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -915,6 +917,7 @@ function TaskDetailModal({
   const [previewMode, setPreviewMode] = useState<'mobile' | 'desktop'>('mobile');
   const [previewTheme, setPreviewTheme] = useState<'light' | 'dark'>('dark');
   const [reverting, setReverting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState({
     title: task.title,
@@ -1030,6 +1033,32 @@ function TaskDetailModal({
     }
   };
 
+  const deleteTask = async () => {
+    if (!confirm('Delete this task? This cannot be undone.')) return;
+    setDeleting(true);
+    try {
+      await fetch(`/api/amonis/tasks/${task.id}`, { method: 'DELETE' });
+      onClose();
+      onRefresh();
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const stopTask = async () => {
+    if (!confirm('Stop this task? The agent will be interrupted.')) return;
+    try {
+      await fetch('/api/amonis/tasks/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskId: task.id, status: 'assigned' }),
+      });
+      onRefresh();
+    } catch (err) {
+      console.error('Failed to stop task:', err);
+    }
+  };
+
   const isTriggerable = ['pending', 'assigned', 'rejected'].includes(task.status);
   const isRunning = task.status === 'in_progress';
   
@@ -1061,6 +1090,14 @@ function TaskDetailModal({
             {isTriggerable && !isEditing && (
               <>
                 <button
+                  onClick={deleteTask}
+                  disabled={deleting}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-red-400 border border-red-500/30 rounded-lg hover:bg-red-500/10 disabled:opacity-50"
+                  title="Delete task"
+                >
+                  {deleting ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                </button>
+                <button
                   onClick={() => setIsEditing(true)}
                   className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-portal-muted border border-portal-border rounded-lg hover:bg-portal-bg hover:text-portal-text"
                 >
@@ -1074,6 +1111,17 @@ function TaskDetailModal({
                 >
                   {triggering ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
                   {triggering ? 'Starting...' : 'Start Task'}
+                </button>
+              </>
+            )}
+            {isRunning && (
+              <>
+                <button
+                  onClick={stopTask}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-red-400 border border-red-500/30 rounded-lg hover:bg-red-500/10"
+                >
+                  <Square className="h-3.5 w-3.5" />
+                  Stop
                 </button>
               </>
             )}
