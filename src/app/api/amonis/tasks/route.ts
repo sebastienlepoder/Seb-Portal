@@ -65,16 +65,13 @@ export async function POST(request: Request) {
       description: body.description,
       agentId,
       priority: body.priority || 1,
-      status: agentId ? 'assigned' : 'pending',
+      status: 'pending',  // Always start as pending (To Do)
       assignedAt: agentId ? new Date() : null,
     },
     include: { agent: true },
   });
 
-  // Auto-trigger agent if task was assigned and autoTrigger not disabled
-  if (agentId && body.autoTrigger !== false) {
-    triggerAgent(task.id).catch(console.error);
-  }
+  // Don't auto-trigger - user must click Start Task
 
   return NextResponse.json({ ok: true, data: task });
 }

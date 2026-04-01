@@ -651,7 +651,13 @@ export default function AmonisPage() {
           csrfToken={user?.csrfToken}
           onClose={() => setSelectedTask(null)}
           onStatusChange={(status) => updateTaskStatus(selectedTask.id, status)}
-          onRefresh={fetchData}
+          onRefresh={async () => {
+            await fetchData();
+            // Re-fetch the selected task to update modal state
+            const res = await fetch(`/api/amonis/tasks/${selectedTask.id}`);
+            const data = await res.json();
+            if (data.ok) setSelectedTask(data.data);
+          }}
           onCreateFollowUp={(parentTask) => {
             setNewTaskForm({
               title: `Follow-up: ${parentTask.title}`,
