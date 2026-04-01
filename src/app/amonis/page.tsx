@@ -37,7 +37,6 @@ import {
   Undo2,
   GitBranch,
   Pencil,
-  Square,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -916,7 +915,6 @@ function TaskDetailModal({
   const [previewMode, setPreviewMode] = useState<'mobile' | 'desktop'>('mobile');
   const [previewTheme, setPreviewTheme] = useState<'light' | 'dark'>('dark');
   const [reverting, setReverting] = useState(false);
-  const [stopping, setStopping] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState({
     title: task.title,
@@ -1032,24 +1030,6 @@ function TaskDetailModal({
     }
   };
 
-  const stopTask = async () => {
-    if (!confirm('Stop this task? The agent will be interrupted. Code may be in an incomplete state - you can revert changes if needed.')) return;
-    setStopping(true);
-    try {
-      await fetch('/api/amonis/tasks/update', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          taskId: task.id,
-          status: 'assigned',  // Reset to assigned so it can be restarted
-        }),
-      });
-      onRefresh();
-    } finally {
-      setStopping(false);
-    }
-  };
-
   const isTriggerable = ['pending', 'assigned', 'rejected'].includes(task.status);
   const isRunning = task.status === 'in_progress';
   
@@ -1121,27 +1101,6 @@ function TaskDetailModal({
                 >
                   {saving ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
                   {saving ? 'Saving...' : 'Save'}
-                </button>
-              </>
-            )}
-            {isRunning && (
-              <>
-                <button
-                  onClick={stopTask}
-                  disabled={stopping}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-red-400 border border-red-500/30 rounded-lg hover:bg-red-500/10 disabled:opacity-50"
-                >
-                  {stopping ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Square className="h-3.5 w-3.5" />}
-                  {stopping ? 'Stopping...' : 'Stop Task'}
-                </button>
-                <button
-                  onClick={revertChanges}
-                  disabled={reverting}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-amber-400 border border-amber-500/30 rounded-lg hover:bg-amber-500/10 disabled:opacity-50"
-                  title="Revert any code changes made so far"
-                >
-                  {reverting ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Undo2 className="h-3.5 w-3.5" />}
-                  Revert
                 </button>
               </>
             )}

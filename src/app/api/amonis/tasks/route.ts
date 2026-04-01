@@ -10,7 +10,6 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const status = searchParams.get('status');
   const agentId = searchParams.get('agentId');
-  const limit = searchParams.get('limit');
 
   const where: Record<string, unknown> = {};
   if (status) where.status = status;
@@ -20,15 +19,9 @@ export async function GET(request: Request) {
     where,
     orderBy: [{ priority: 'desc' }, { createdAt: 'desc' }],
     include: { agent: true },
-    ...(limit ? { take: parseInt(limit) } : {}),
   });
 
-  // Also fetch agents for the worker
-  const agents = await prisma.amonisAgent.findMany({
-    where: { enabled: true },
-  });
-
-  return NextResponse.json({ ok: true, data: tasks, agents });
+  return NextResponse.json({ ok: true, data: tasks });
 }
 
 // POST /api/amonis/tasks - Create a new task

@@ -1,10 +1,7 @@
 import { getIronSession, type IronSession } from 'iron-session';
-import { cookies, headers } from 'next/headers';
+import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import type { SessionData, SessionUser } from '@/types';
-
-// API token for the Amonis worker (service account)
-const AMONIS_API_TOKEN = process.env.AMONIS_API_TOKEN || 'amonis-claw-2026';
 
 const SESSION_OPTIONS = {
   password: process.env.AUTH_SECRET || 'CHANGE_ME_GENERATE_A_RANDOM_64_CHAR_HEX_STRING_AT_LEAST_32',
@@ -66,24 +63,6 @@ export async function getApiSession(): Promise<IronSession<SessionData>> {
 }
 
 export async function getApiUser(): Promise<SessionUser | null> {
-  // Check for Bearer token first (for worker/API access)
-  const headersList = await headers();
-  const authHeader = headersList.get('authorization');
-  
-  if (authHeader?.startsWith('Bearer ')) {
-    const token = authHeader.slice(7);
-    if (token === AMONIS_API_TOKEN) {
-      // Return a service account user for API token auth
-      return {
-        id: 'amonis-worker',
-        email: 'worker@amonis.local',
-        displayName: 'Amonis Worker',
-        role: 'admin',
-      };
-    }
-  }
-  
-  // Fall back to session auth
   const session = await getSession();
   return session.user ?? null;
 }
