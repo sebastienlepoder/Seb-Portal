@@ -34,13 +34,13 @@ export async function POST(request: Request) {
   // Auto-assign agent if not specified
   let agentId = body.agentId || null;
   
-  if (!agentId && body.title) {
-    // Simple keyword-based auto-assignment
-    const title = body.title.toLowerCase();
+  if (!agentId && (body.title || body.description)) {
+    // Simple keyword-based auto-assignment - check both title AND description
+    const searchText = `${body.title || ''} ${body.description || ''}`.toLowerCase();
     const agents = await prisma.amonisAgent.findMany({ where: { enabled: true } });
     
     const keywords: Record<string, string[]> = {
-      budget: ['budget', 'pie chart', 'donut', '50/30/20', 'envelope', 'spending'],
+      budget: ['budget', 'pie chart', 'donut', '50/30/20', 'envelope', 'spending', 'wizard', 'kpi'],
       transactions: ['transaction', 'expense', 'categorize', 'split', 'merchant'],
       accounts: ['account', 'bank', 'plaid', 'link', 'balance', 'institution'],
       crypto: ['crypto', 'bitcoin', 'ethereum', 'coin', 'portfolio', 'wallet'],
@@ -49,7 +49,7 @@ export async function POST(request: Request) {
     };
     
     for (const [slug, words] of Object.entries(keywords)) {
-      if (words.some(w => title.includes(w))) {
+      if (words.some(w => searchText.includes(w))) {
         const agent = agents.find(a => a.slug === slug);
         if (agent) {
           agentId = agent.id;
