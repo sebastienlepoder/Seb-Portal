@@ -77,7 +77,7 @@ export async function getApiUser(): Promise<SessionUser | null> {
       return {
         id: 'amonis-worker',
         email: 'worker@amonis.local',
-        name: 'Amonis Worker',
+        displayName: 'Amonis Worker',
         role: 'admin',
       };
     }
