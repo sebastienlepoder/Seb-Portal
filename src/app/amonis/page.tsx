@@ -1516,7 +1516,7 @@ function TaskDetailModal({
                     <div className="absolute top-3 left-1/2 -translate-x-1/2 w-24 h-6 bg-black rounded-b-2xl z-10" />
                     <div 
                       className={cn(
-                        'w-full h-full rounded-[2.25rem] overflow-hidden',
+                        'w-full h-full rounded-[2.25rem] overflow-hidden pt-6',
                         previewTheme === 'light' ? 'bg-white' : 'bg-gray-900'
                       )}
                     >
@@ -1528,7 +1528,7 @@ function TaskDetailModal({
                           transform: 'scale(0.67)',
                           transformOrigin: 'top left',
                           width: '150%',
-                          height: '150%',
+                          height: '156%',
                         }}
                       />
                     </div>
