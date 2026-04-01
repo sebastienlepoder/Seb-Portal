@@ -76,14 +76,12 @@ export async function POST(request: Request) {
       }
       
       message += `\n\nTask ID: ${task.id}`;
-      message += `\nAPI Endpoint: https://portal.lepoder.com/api/amonis`;
-      message += `\nAuth Header: Authorization: Bearer amonis-claw-2026`;
-      message += `\n\nPost logs to: POST /api/amonis/agents/${task.agentId}/logs with { taskId, type: "action"|"info"|"error", message }`;
-      message += `\n\nWhen done, update via: POST /api/amonis/tasks/update with:
-- taskId: "${task.id}"
-- status: "needs_review"
-- workSummary: brief description of changes
-- filesChanged: JSON array of modified files`;
+      message += `\n\n## IMPORTANT - Completion Instructions`;
+      message += `\nWhen you finish the task, your final message should include:`;
+      message += `\n- A brief summary of what you did`;
+      message += `\n- List of files changed (if any)`;
+      message += `\n\nDo NOT use curl or exec commands to call APIs. Just complete the work and report back in plain text.`;
+      message += `\nThe portal will handle status updates based on your completion.`;
 
       // Use OpenClaw's tools/invoke HTTP API to spawn an isolated session
       const response = await fetch(`${openclawUrl}/tools/invoke`, {
