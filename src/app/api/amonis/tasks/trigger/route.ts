@@ -85,18 +85,21 @@ export async function POST(request: Request) {
 - workSummary: brief description of changes
 - filesChanged: JSON array of modified files`;
 
-      // Use OpenClaw's session spawn API to run this in an isolated session
-      const response = await fetch(`${openclawUrl}/api/sessions/spawn`, {
+      // Use OpenClaw's tools/invoke HTTP API to spawn an isolated session
+      const response = await fetch(`${openclawUrl}/tools/invoke`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${openclawToken}`,
         },
         body: JSON.stringify({
-          task: message,
-          mode: 'run', // One-shot execution
-          label: `amonis-task-${task.id}`,
-          runTimeoutSeconds: 600, // 10 minute timeout
+          tool: 'sessions_spawn',
+          args: {
+            task: message,
+            mode: 'run', // One-shot execution
+            label: `amonis-task-${task.id}`,
+            runTimeoutSeconds: 600, // 10 minute timeout
+          },
         }),
       });
 
