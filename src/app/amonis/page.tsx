@@ -178,9 +178,9 @@ export default function AmonisPage() {
     }
   }, [authLoading, user]);
 
-  // Create task
-  const createTask = async () => {
-    if (!newTaskForm.description.trim()) return;
+  // Create task - returns task ID if successful
+  const createTask = async (andStart = false): Promise<string | null> => {
+    if (!newTaskForm.description.trim()) return null;
     
     // Build description with screenshots
     const fullDescription = newTaskForm.screenshots.length > 0
@@ -198,10 +198,24 @@ export default function AmonisPage() {
     });
     
     if (res.ok) {
+      const data = await res.json();
+      const taskId = data.data?.id;
+      
+      // If "Create & Start", immediately set status to in_progress
+      if (andStart && taskId) {
+        await fetch(`/api/amonis/tasks/${taskId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', 'x-csrf-token': user?.csrfToken || '' },
+          body: JSON.stringify({ status: 'in_progress' }),
+        });
+      }
+      
       setNewTaskForm({ title: '', description: '', agentId: '', priority: 1, platforms: 'both', screenshots: [] });
       setShowNewTask(false);
       fetchData();
+      return taskId;
     }
+    return null;
   };
 
   const handleScreenshotUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -624,20 +638,29 @@ export default function AmonisPage() {
                 </div>
               </div>
             </div>
-            <div className="flex justify-end gap-2 p-4 border-t border-portal-border">
+            <div className="flex justify-between items-center p-4 border-t border-portal-border">
               <button
                 onClick={() => setShowNewTask(false)}
                 className="px-4 py-2 text-xs text-portal-text bg-portal-card border border-portal-border rounded-lg hover:bg-portal-card-hover"
               >
                 Cancel
               </button>
-              <button
-                onClick={createTask}
-                className="flex items-center gap-1.5 px-4 py-2 text-xs bg-portal-accent text-white rounded-lg hover:bg-portal-accent-dark"
-              >
-                <Send className="h-3.5 w-3.5" />
-                Create Task
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => createTask(false)}
+                  className="flex items-center gap-1.5 px-4 py-2 text-xs bg-portal-accent text-white rounded-lg hover:bg-portal-accent-dark"
+                >
+                  <Send className="h-3.5 w-3.5" />
+                  Create Task
+                </button>
+                <button
+                  onClick={() => createTask(true)}
+                  className="flex items-center gap-1.5 px-4 py-2 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700"
+                >
+                  <Play className="h-3.5 w-3.5" />
+                  Create & Start
+                </button>
+              </div>
             </div>
           </div>
         </div>
