@@ -265,7 +265,7 @@ export default function TodosPage() {
                   <option value={1}>Medium</option>
                   <option value={2}>High</option>
                 </select>
-                <div className="flex gap-2 ml-auto">
+                <div className="flex items-center justify-between flex-1">
                   <button
                     type="button"
                     onClick={() => setShowAddForm(false)}
@@ -273,12 +273,39 @@ export default function TodosPage() {
                   >
                     Cancel
                   </button>
-                  <button
-                    type="submit"
-                    className="px-3 py-1.5 text-sm bg-portal-accent hover:bg-portal-accent-dark text-white rounded-lg transition-colors"
-                  >
-                    Add
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      type="submit"
+                      className="px-3 py-1.5 text-sm bg-portal-accent hover:bg-portal-accent-dark text-white rounded-lg transition-colors"
+                    >
+                      Create Task
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async (e) => {
+                        e.preventDefault();
+                        if (!newTodo.trim()) return;
+                        const res = await fetch('/api/todos', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            title: newTodo,
+                            category: newCategory,
+                            priority: newPriority,
+                          }),
+                        });
+                        if ((await res.json()).ok) {
+                          setNewTodo('');
+                          setShowAddForm(false);
+                          fetchTodos();
+                          // TODO: Navigate to task detail or start task
+                        }
+                      }}
+                      className="px-3 py-1.5 text-sm bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
+                    >
+                      Create & Start
+                    </button>
+                  </div>
                 </div>
               </div>
             </form>
