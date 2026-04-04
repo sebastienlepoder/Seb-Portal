@@ -171,6 +171,15 @@ export default function AmonisPage() {
     if (user) fetchData();
   }, [user, fetchData]);
 
+  // Auto-refresh task list while any tasks are running
+  useEffect(() => {
+    if (!user) return;
+    const hasRunning = tasks.some(t => ['in_progress', 'assigned'].includes(t.status));
+    if (!hasRunning) return;
+    const interval = setInterval(fetchData, 10000);
+    return () => clearInterval(interval);
+  }, [user, tasks, fetchData]);
+
   // Redirect to login
   useEffect(() => {
     if (!authLoading && !user) {
@@ -201,12 +210,12 @@ export default function AmonisPage() {
       const data = await res.json();
       const taskId = data.data?.id;
       
-      // If "Create & Start", immediately set status to in_progress
+      // If "Create & Start", use trigger endpoint which also spawns the OpenClaw agent
       if (andStart && taskId) {
-        await fetch(`/api/amonis/tasks/${taskId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json', 'x-csrf-token': user?.csrfToken || '' },
-          body: JSON.stringify({ status: 'in_progress' }),
+        await fetch('/api/amonis/tasks/trigger', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ taskId }),
         });
       }
       
@@ -973,7 +982,7 @@ function TaskDetailModal({
 
   // Auto-refresh logs when task is in progress
   useEffect(() => {
-    if (task.status === 'in_progress' && activeTab === 'logs') {
+    if (task.status === 'in_progress' && activeTab === 'logs' && task.agentId) {
       const interval = setInterval(() => {
         fetch(`/api/amonis/agents/${task.agentId}/logs?taskId=${task.id}`)
           .then(r => r.json())
