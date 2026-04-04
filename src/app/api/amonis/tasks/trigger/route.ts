@@ -1,11 +1,109 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 
-// Force dynamic - don't pre-render at build time
 export const dynamic = 'force-dynamic';
 
-// POST /api/amonis/tasks/trigger - Manually trigger a task to start
-// This is a public endpoint (no auth required) for the agent to call
+async function runClaudeAgent(
+  taskId: string,
+  agentId: string,
+  systemPrompt: string | null,
+  userMessage: string,
+) {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    await prisma.amonisAgentLog.create({
+      data: { agentId, taskId, type: 'error', message: 'ANTHROPIC_API_KEY not configured' },
+    });
+    await prisma.amonisTask.update({ where: { id: taskId }, data: { status: 'assigned' } });
+    await prisma.amonisAgent.update({ where: { id: agentId }, data: { status: 'idle' } });
+    return;
+  }
+
+  try {
+    const { default: Anthropic } = await import('@anthropic-ai/sdk');
+    const anthropic = new Anthropic({ apiKey });
+
+    await prisma.amonisAgentLog.create({
+      data: { agentId, taskId, type: 'info', message: 'Claude agent starting...' },
+    });
+
+    const stream = anthropic.messages.stream({
+      model: 'claude-sonnet-4-5',
+      max_tokens: 8096,
+      system:
+        systemPrompt ||
+        'You are a software engineer working on a mobile finance app. Analyze the task and provide a detailed plan and implementation summary.',
+      messages: [{ role: 'user', content: userMessage }],
+    });
+
+    let buffer = '';
+    let fullResponse = '';
+
+    for await (const chunk of stream) {
+      if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
+        buffer += chunk.delta.text;
+        fullResponse += chunk.delta.text;
+
+        // Flush buffer to DB on paragraph breaks or when it gets large
+        if (buffer.includes('\n\n') || buffer.length > 400) {
+          const parts = buffer.split('\n\n');
+          for (let i = 0; i < parts.length - 1; i++) {
+            const part = parts[i]!.trim();
+            if (part) {
+              await prisma.amonisAgentLog.create({
+                data: { agentId, taskId, type: 'thinking', message: part },
+              });
+            }
+          }
+          buffer = parts[parts.length - 1] || '';
+        }
+      }
+    }
+
+    // Flush remaining buffer
+    if (buffer.trim()) {
+      await prisma.amonisAgentLog.create({
+        data: { agentId, taskId, type: 'thinking', message: buffer.trim() },
+      });
+    }
+
+    // Mark task ready for review
+    await prisma.amonisTask.update({
+      where: { id: taskId },
+      data: {
+        status: 'needs_review',
+        workSummary: fullResponse.slice(0, 5000),
+      },
+    });
+
+    await prisma.amonisAgent.update({
+      where: { id: agentId },
+      data: { status: 'waiting_review' },
+    });
+
+    await prisma.amonisAgentLog.create({
+      data: { agentId, taskId, type: 'info', message: 'Task complete. Ready for review.' },
+    });
+  } catch (e) {
+    console.error('Claude agent error:', e);
+    try {
+      await prisma.amonisAgentLog.create({
+        data: {
+          agentId,
+          taskId,
+          type: 'error',
+          message: `Agent error: ${(e as Error).message}`,
+        },
+      });
+      await prisma.amonisTask.update({ where: { id: taskId }, data: { status: 'assigned' } });
+      await prisma.amonisAgent.update({ where: { id: agentId }, data: { status: 'idle' } });
+    } catch {
+      // ignore secondary errors
+    }
+  }
+}
+
+// POST /api/amonis/tasks/trigger - Trigger a task to start running via Claude API
 export async function POST(request: Request) {
   const body = await request.json();
   const { taskId } = body;
@@ -26,106 +124,41 @@ export async function POST(request: Request) {
   // Update status to in_progress
   await prisma.amonisTask.update({
     where: { id: taskId },
-    data: { 
-      status: 'in_progress', 
-      startedAt: new Date(),
-    },
+    data: { status: 'in_progress', startedAt: new Date() },
   });
 
-  // Log the trigger
   if (task.agentId) {
     await prisma.amonisAgentLog.create({
-      data: {
-        agentId: task.agentId,
-        taskId,
-        type: 'info',
-        message: 'Task manually triggered by user',
-      },
+      data: { agentId: task.agentId, taskId, type: 'info', message: 'Task triggered by user' },
     });
-
-    // Update agent status to working
     await prisma.amonisAgent.update({
       where: { id: task.agentId },
       data: { status: 'working' },
     });
   }
 
-  // Trigger OpenClaw immediately via internal API
-  let triggered = false;
-  const openclawUrl = process.env.OPENCLAW_API_URL; // e.g., http://localhost:18789 or https://gateway.openclaw.ai
-  const openclawToken = process.env.OPENCLAW_API_TOKEN;
-  
-  if (openclawUrl && openclawToken) {
-    try {
-      // Build the message for the agent
-      const agent = task.agent;
-      let message = `[Amonis Task - IMMEDIATE] Work on: "${task.title}"`;
-      
-      if (task.description) {
-        message += `\n\nDescription: ${task.description}`;
-      }
-      
-      if (agent) {
-        message += `\n\nAgent: ${agent.name}`;
-        if (agent.scope) {
-          message += `\nScope: ${agent.scope}`;
-        }
-        if (agent.systemPrompt) {
-          message += `\n\nAgent Instructions:\n${agent.systemPrompt}`;
-        }
-      }
-      
-      message += `\n\nTask ID: ${task.id}`;
-      message += `\n\n## IMPORTANT - Completion Instructions`;
-      message += `\nWhen you finish the task, your final message should include:`;
-      message += `\n- A brief summary of what you did`;
-      message += `\n- List of files changed (if any)`;
-      message += `\n\nDo NOT use curl or exec commands to call APIs. Just complete the work and report back in plain text.`;
-      message += `\nThe portal will handle status updates based on your completion.`;
-
-      // Use OpenClaw's tools/invoke HTTP API to spawn an isolated session
-      const response = await fetch(`${openclawUrl}/tools/invoke`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${openclawToken}`,
-        },
-        body: JSON.stringify({
-          tool: 'sessions_spawn',
-          args: {
-            task: message,
-            mode: 'run', // One-shot execution
-            label: `amonis-task-${task.id}`,
-            runTimeoutSeconds: 600, // 10 minute timeout
-          },
-        }),
-      });
-
-      if (response.ok) {
-        triggered = true;
-        
-        // Log that we kicked off the work
-        await prisma.amonisAgentLog.create({
-          data: {
-            agentId: task.agentId!,
-            taskId,
-            type: 'info',
-            message: 'OpenClaw agent session spawned for immediate work',
-          },
-        });
-      } else {
-        const errorText = await response.text();
-        console.error('Failed to spawn OpenClaw session:', errorText);
-      }
-    } catch (e) {
-      console.error('Error triggering OpenClaw:', e);
-    }
+  // Build the prompt for Claude
+  const agent = task.agent;
+  let userMessage = `Work on this task: "${task.title}"`;
+  if (task.description) {
+    userMessage += `\n\nDescription:\n${task.description}`;
   }
-  
-  return NextResponse.json({ 
-    ok: true, 
-    message: triggered ? 'Task triggered. Agent is working now.' : 'Task marked in progress. Waiting for agent poll.',
-    triggered,
-    task: { id: task.id, title: task.title, agent: task.agent?.name },
+  if (agent?.scope) {
+    userMessage += `\n\nYour area of responsibility: ${agent.scope}`;
+  }
+  userMessage += `\n\nProvide a detailed analysis and work summary: what changes need to be made, which files are affected, and any implementation notes. Be specific about file paths and code changes.`;
+
+  if (task.agentId) {
+    // Fire and forget — Claude runs in the background, writing logs to the DB
+    void runClaudeAgent(taskId, task.agentId, agent?.systemPrompt ?? null, userMessage);
+  }
+
+  return NextResponse.json({
+    ok: true,
+    message: task.agentId
+      ? 'Task triggered. Claude agent is working.'
+      : 'Task marked in progress. No agent assigned.',
+    triggered: !!task.agentId,
+    task: { id: task.id, title: task.title, agent: agent?.name },
   });
 }
