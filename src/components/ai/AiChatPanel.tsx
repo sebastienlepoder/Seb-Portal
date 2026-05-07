@@ -20,7 +20,7 @@ interface AiChatPanelProps {
 }
 
 export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
-  const [provider, setProvider] = useState<AiProvider>('openai');
+  const provider: AiProvider = 'anthropic';
   const [messages, setMessages] = useState<AiMessage[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -99,34 +99,12 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
         <LauncherMode />
       ) : (
         <>
-          {/* Provider Tabs */}
-          <div className="flex border-b border-portal-border">
-            {(['openai', 'anthropic'] as AiProvider[]).map((p) => (
-              <button
-                key={p}
-                onClick={() => {
-                  setProvider(p);
-                  setMessages([]);
-                  setThreadId(undefined);
-                }}
-                className={cn(
-                  'flex-1 py-2 text-xs font-medium transition-colors',
-                  provider === p
-                    ? 'text-portal-accent border-b-2 border-portal-accent'
-                    : 'text-portal-muted hover:text-portal-text'
-                )}
-              >
-                {p === 'openai' ? 'ChatGPT' : 'Claude'}
-              </button>
-            ))}
-          </div>
-
           {/* Messages */}
           <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-3">
             {messages.length === 0 && (
               <div className="text-center text-portal-muted text-sm py-8">
                 <Bot className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                <p>Start a conversation with {provider === 'openai' ? 'ChatGPT' : 'Claude'}</p>
+                <p>Start a conversation with Claude</p>
               </div>
             )}
             {messages.map((msg, i) => (
@@ -191,7 +169,6 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
 
 function LauncherMode() {
   const launchers = [
-    { name: 'ChatGPT', url: 'https://chatgpt.com', icon: '🤖' },
     { name: 'Claude', url: 'https://claude.ai', icon: '🧠' },
   ];
 
