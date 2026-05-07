@@ -5,7 +5,7 @@
 
 import { writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
-import Anthropic from '@anthropic-ai/sdk';
+import { getAnthropicClient, ANTHROPIC_MODELS } from '@/lib/anthropic';
 
 const ICON_DIR = join(process.cwd(), 'public', 'icons', 'generated');
 
@@ -24,14 +24,12 @@ export interface AiIconResult {
 }
 
 export async function generateIconWithAI(req: AiIconRequest): Promise<AiIconResult> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
+  const client = getAnthropicClient();
+  if (!client) {
     return { success: false, error: 'ANTHROPIC_API_KEY not configured' };
   }
 
   try {
-    const client = new Anthropic({ apiKey });
-
     const prompt = `Generate a simple, modern SVG icon for a service/app called "${req.name}".
 ${req.description ? `Description: ${req.description}` : ''}
 ${req.category ? `Category: ${req.category}` : ''}
@@ -47,7 +45,7 @@ Requirements:
 Return ONLY the SVG code, nothing else. No markdown, no explanation.`;
 
     const response = await client.messages.create({
-      model: 'claude-3-haiku-20240307',
+      model: ANTHROPIC_MODELS.haiku,
       max_tokens: 1500,
       messages: [{ role: 'user', content: prompt }],
     });
