@@ -44,14 +44,14 @@ export default function ReportsPage() {
 
   if (loading || !user) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-portal-bg">
+      <div className="min-h-dvh flex items-center justify-center bg-portal-bg">
         <div className="animate-spin h-8 w-8 border-2 border-portal-accent border-t-transparent rounded-full" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-portal-bg p-6">
+    <div className="min-h-dvh bg-portal-bg p-6">
       <div className="max-w-5xl mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">

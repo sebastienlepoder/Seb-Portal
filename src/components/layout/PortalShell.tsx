@@ -30,7 +30,7 @@ export function PortalShell({ children, activeItem }: PortalShellProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   return (
-    <div className="h-screen bg-portal-bg flex overflow-hidden">
+    <div className="h-dvh bg-portal-bg flex overflow-hidden">
       {/* ── Sidebar ─────────────────────────────────────────── */}
       <aside
         className={cn(

@@ -84,14 +84,14 @@ export default function AiPage() {
 
   if (loading || !user) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-portal-bg">
+      <div className="min-h-dvh flex items-center justify-center bg-portal-bg">
         <div className="animate-spin h-8 w-8 border-2 border-portal-accent border-t-transparent rounded-full" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-portal-bg flex flex-col">
+    <div className="min-h-dvh bg-portal-bg flex flex-col">
       {/* Header */}
       <div className="border-b border-portal-border bg-portal-card">
         <div className="max-w-6xl mx-auto flex items-center gap-3 px-4 py-3">

@@ -131,7 +131,7 @@ export default function MailPage() {
 
   if (authLoading || !user) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-portal-bg">
+      <div className="min-h-dvh flex items-center justify-center bg-portal-bg">
         <div className="animate-spin h-8 w-8 border-2 border-blue-500 border-t-transparent rounded-full" />
       </div>
     );
@@ -146,7 +146,7 @@ export default function MailPage() {
   ];
 
   return (
-    <div className="h-screen bg-portal-bg flex overflow-hidden">
+    <div className="h-dvh bg-portal-bg flex overflow-hidden">
       {/* Portal Sidebar */}
       <MainSidebar user={user} onLogout={logout} />
 
