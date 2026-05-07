@@ -21,6 +21,7 @@ import {
   Cloud,
   CheckSquare,
   Sparkles,
+  HardDrive,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -57,6 +58,7 @@ export default function MainSidebar({
   const isTailscale = pathname === '/tailscale';
   const isRemote = pathname === "/remote";
   const isCoolify = pathname === "/coolify";
+  const isLocal = pathname === "/local";
   const isTodos = pathname === "/todos";
   const isInsights = pathname === "/insights";
   const isAmonis = pathname === "/amonis";
@@ -194,6 +196,13 @@ export default function MainSidebar({
             active={isCoolify}
             label="VPS Servers"
             icon={<Cloud className="h-3.5 w-3.5" />}
+          />
+          <SidebarLink
+            collapsed={collapsed}
+            href="/local"
+            active={isLocal}
+            label="Local Services"
+            icon={<HardDrive className="h-3.5 w-3.5" />}
           />
           <SidebarLink
             collapsed={collapsed}
