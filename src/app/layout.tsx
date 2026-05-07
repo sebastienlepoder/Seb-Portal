@@ -17,7 +17,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className="dark">
-      <body className="bg-portal-bg text-portal-text font-sans antialiased min-h-screen overflow-x-hidden">
+      <body className="bg-portal-bg text-portal-text font-sans antialiased min-h-dvh overflow-x-hidden">
         <ClientProviders>
           {children}
         </ClientProviders>

@@ -58,7 +58,7 @@ export default function SettingsPage() {
 
   if (loading || !user) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-portal-bg">
+      <div className="min-h-dvh flex items-center justify-center bg-portal-bg">
         <div className="animate-spin h-8 w-8 border-2 border-portal-accent border-t-transparent rounded-full" />
       </div>
     );

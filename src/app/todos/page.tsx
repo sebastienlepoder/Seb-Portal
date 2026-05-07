@@ -132,14 +132,14 @@ export default function TodosPage() {
 
   if (authLoading || !user) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-portal-bg">
+      <div className="min-h-dvh flex items-center justify-center bg-portal-bg">
         <div className="animate-spin h-8 w-8 border-2 border-portal-accent border-t-transparent rounded-full" />
       </div>
     );
   }
 
   return (
-    <div className="h-screen bg-portal-bg flex overflow-hidden">
+    <div className="h-dvh bg-portal-bg flex overflow-hidden">
       <MainSidebar user={user} onLogout={logout} />
 
       <div className="flex-1 flex flex-col overflow-hidden">

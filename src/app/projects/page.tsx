@@ -66,14 +66,14 @@ export default function ProjectsPage() {
 
   if (loading || !user) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-portal-bg">
+      <div className="min-h-dvh flex items-center justify-center bg-portal-bg">
         <div className="animate-spin h-8 w-8 border-2 border-portal-accent border-t-transparent rounded-full" />
       </div>
     );
   }
 
   return (
-    <div className="h-screen bg-portal-bg flex overflow-hidden">
+    <div className="h-dvh bg-portal-bg flex overflow-hidden">
       <MainSidebar user={user} onLogout={handleLogout} />
       
       <div className="flex-1 overflow-y-auto p-6">

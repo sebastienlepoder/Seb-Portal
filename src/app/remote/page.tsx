@@ -124,7 +124,7 @@ export default function RemotePage() {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-portal-bg">
+      <div className="min-h-dvh flex items-center justify-center bg-portal-bg">
         <div className="animate-spin h-8 w-8 border-2 border-portal-accent border-t-transparent rounded-full" />
       </div>
     );
@@ -135,7 +135,7 @@ export default function RemotePage() {
   const guacBaseUrl = process.env.NEXT_PUBLIC_GUACAMOLE_URL || 'http://187.77.214.29:8090/guacamole';
 
   return (
-    <div className="h-screen bg-portal-bg flex overflow-hidden">
+    <div className="h-dvh bg-portal-bg flex overflow-hidden">
       <MainSidebar
         user={user}
         onLogout={logout}
