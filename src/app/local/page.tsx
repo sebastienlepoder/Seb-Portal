@@ -70,6 +70,23 @@ export default function LocalServicesPage() {
     refetchServices();
   };
 
+  // Flip the flags that put a service on the local list. The service remains
+  // in the database; it just stops matching this page's filter (and only if
+  // its URL is no longer a local hostname).
+  const handleRemoveFromLocal = async (service: ServiceData) => {
+    if (!confirm(
+      `Remove "${service.name}" from Local Services?\n\n` +
+      `This turns off the "Requires VPN" flag and sets type to "external". ` +
+      `If the URL is still a local hostname (e.g. .local, 192.168.x.x), the ` +
+      `service will still appear here — edit the URL to fully remove it.`
+    )) return;
+    await apiCall(`/api/services/${service.id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ requiresVPN: false, type: 'external' }),
+    });
+    refetchServices();
+  };
+
   const handleAiSuggest = async (url: string) => {
     const data = await apiCall('/api/ai/suggest', {
       method: 'POST',
@@ -297,6 +314,7 @@ export default function LocalServicesPage() {
                           onEdit={() => setEditingService(service)}
                           onDelete={() => handleDelete(service.id)}
                           onRegenerateIcon={() => handleRegenerateIcon(service.id)}
+                          onRemoveFromLocal={() => handleRemoveFromLocal(service)}
                         />
                         <p className="mt-1 px-1 text-[10px] font-mono text-portal-muted truncate">
                           {getHostname(service.url)}
