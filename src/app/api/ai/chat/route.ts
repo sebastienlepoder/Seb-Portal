@@ -3,6 +3,7 @@ import { requireApiAuth } from '@/lib/auth';
 import { checkRateLimit, aiChatLimiter } from '@/lib/rate-limit';
 import { auditLog, getClientIp } from '@/lib/audit';
 import prisma from '@/lib/db';
+import { getAnthropicClient, ANTHROPIC_MODELS } from '@/lib/anthropic';
 import type { AiProvider, AiMessage } from '@/types';
 
 export async function POST(request: Request) {
@@ -51,19 +52,17 @@ export async function POST(request: Request) {
       });
       reply = completion.choices[0]?.message?.content || 'No response';
     } else if (provider === 'anthropic') {
-      const apiKey = process.env.ANTHROPIC_API_KEY;
-      if (!apiKey) {
+      const anthropic = getAnthropicClient();
+      if (!anthropic) {
         return NextResponse.json(
           { ok: false, error: 'Anthropic API key not configured' },
           { status: 503 }
         );
       }
-      const Anthropic = (await import('@anthropic-ai/sdk')).default;
-      const anthropic = new Anthropic({ apiKey });
       const systemMsg = messages.find((m) => m.role === 'system');
       const userMsgs = messages.filter((m) => m.role !== 'system');
       const completion = await anthropic.messages.create({
-        model: 'claude-sonnet-4-20250514',
+        model: ANTHROPIC_MODELS.sonnet,
         max_tokens: Math.min(maxTokens, 4096),
         system: systemMsg?.content || undefined,
         messages: userMsgs.map((m) => ({

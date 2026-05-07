@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { getAnthropicClient, ANTHROPIC_MODELS } from '@/lib/anthropic';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,8 +10,8 @@ async function runClaudeAgent(
   systemPrompt: string | null,
   userMessage: string,
 ) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
+  const anthropic = getAnthropicClient();
+  if (!anthropic) {
     await prisma.amonisAgentLog.create({
       data: { agentId, taskId, type: 'error', message: 'ANTHROPIC_API_KEY not configured' },
     });
@@ -20,15 +21,12 @@ async function runClaudeAgent(
   }
 
   try {
-    const { default: Anthropic } = await import('@anthropic-ai/sdk');
-    const anthropic = new Anthropic({ apiKey });
-
     await prisma.amonisAgentLog.create({
       data: { agentId, taskId, type: 'info', message: 'Claude agent starting...' },
     });
 
     const stream = anthropic.messages.stream({
-      model: 'claude-sonnet-4-5',
+      model: ANTHROPIC_MODELS.sonnet,
       max_tokens: 8096,
       system:
         systemPrompt ||

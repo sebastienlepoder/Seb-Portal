@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireApiAdmin } from '@/lib/auth';
+import { getAnthropicClient, ANTHROPIC_MODELS } from '@/lib/anthropic';
 
 /**
  * AI-assisted link creator: given a URL or description, suggests
@@ -23,7 +24,7 @@ export async function POST(request: Request) {
 
     // Try OpenAI first, then Anthropic
     const openaiKey = process.env.OPENAI_API_KEY;
-    const anthropicKey = process.env.ANTHROPIC_API_KEY;
+    const anthropic = getAnthropicClient();
 
     const prompt = `Given this service URL and/or description, suggest the following fields for a portal dashboard tile. Return JSON only.
 
@@ -53,11 +54,9 @@ Return:
         response_format: { type: 'json_object' },
       });
       suggestion = resp.choices[0]?.message?.content || null;
-    } else if (anthropicKey) {
-      const Anthropic = (await import('@anthropic-ai/sdk')).default;
-      const anthropic = new Anthropic({ apiKey: anthropicKey });
+    } else if (anthropic) {
       const resp = await anthropic.messages.create({
-        model: 'claude-haiku-4-5-20251001',
+        model: ANTHROPIC_MODELS.haiku,
         max_tokens: 500,
         messages: [{ role: 'user', content: prompt }],
       });
