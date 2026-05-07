@@ -110,6 +110,27 @@ export default function TailscalePage() {
   const [error, setError] = useState<string | null>(null);
   const [settingExitNode, setSettingExitNode] = useState<string | null>(null);
   const [expandedDevice, setExpandedDevice] = useState<string | null>(null);
+  // Manual override for "This device" — set by user, persisted in localStorage,
+  // beats both server IP match and client OS heuristic.
+  const [manualSelfId, setManualSelfId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setManualSelfId(window.localStorage.getItem('tailscale.selfDeviceId'));
+    }
+  }, []);
+
+  const pinAsSelf = (deviceId: string) => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem('tailscale.selfDeviceId', deviceId);
+    setManualSelfId(deviceId);
+  };
+
+  const clearSelfPin = () => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.removeItem('tailscale.selfDeviceId');
+    setManualSelfId(null);
+  };
 
   const fetchData = async () => {
     try {
@@ -179,14 +200,17 @@ export default function TailscalePage() {
   const isAdmin = user.role === 'admin';
   const serverDevices = data ? [data.self, ...(data.peers || [])].filter(Boolean) as Device[] : [];
 
-  // Client-side "this device" detection. The server tries to identify self by
-  // matching the request IP against device Tailscale IPs — that only works
-  // when the portal is reached via Tailscale (e.g. http://100.x.y.z:3000),
-  // not via the public domain. Fall back to detecting the browser's OS and,
-  // if exactly one device matches, mark it as self.
+  // Determine which device gets the "This device" badge. Priority:
+  //   1. Manual pin (user clicked "This is my device") — wins over everything.
+  //   2. Server IP match (works when reaching the portal via Tailscale).
+  //   3. Browser OS heuristic — exactly one device must match the user-agent.
+  // If none apply, no device is marked self (honest "we don't know").
   const allDevices: Device[] = (() => {
-    if (typeof window === 'undefined') return serverDevices;
+    if (manualSelfId) {
+      return serverDevices.map((d) => ({ ...d, isSelf: d.id === manualSelfId }));
+    }
     if (serverDevices.some((d) => d.isSelf)) return serverDevices;
+    if (typeof window === 'undefined') return serverDevices;
 
     const ua = navigator.userAgent.toLowerCase();
     const platform = (navigator.platform || '').toLowerCase();
@@ -353,6 +377,9 @@ export default function TailscalePage() {
                           : undefined
                       }
                       settingExitNode={settingExitNode === device.id}
+                      isManualSelf={manualSelfId === device.id}
+                      onPinAsSelf={() => pinAsSelf(device.id)}
+                      onClearSelfPin={clearSelfPin}
                     />
                   ))}
                 </div>
@@ -372,6 +399,9 @@ function DeviceAccordion({
   isAdmin,
   onSetExitNode,
   settingExitNode,
+  isManualSelf,
+  onPinAsSelf,
+  onClearSelfPin,
 }: {
   device: Device;
   isExpanded: boolean;
@@ -379,6 +409,9 @@ function DeviceAccordion({
   isAdmin: boolean;
   onSetExitNode?: () => void;
   settingExitNode?: boolean;
+  isManualSelf?: boolean;
+  onPinAsSelf?: () => void;
+  onClearSelfPin?: () => void;
 }) {
   return (
     <div className={cn(device.isSelf && 'bg-blue-500/5')}>
@@ -551,25 +584,49 @@ function DeviceAccordion({
           </div>
 
           {/* Actions */}
-          {isAdmin && onSetExitNode && (
-            <div className="mt-4 pt-4 border-t border-portal-border/50">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onSetExitNode();
-                }}
-                disabled={settingExitNode}
-                className="px-4 py-2 bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 rounded-lg text-sm transition-colors"
-              >
-                {settingExitNode ? (
-                  <span className="flex items-center gap-2">
-                    <RefreshCw className="h-4 w-4 animate-spin" />
-                    Setting exit node...
-                  </span>
-                ) : (
-                  'Use as Exit Node'
-                )}
-              </button>
+          {(onPinAsSelf || (isAdmin && onSetExitNode)) && (
+            <div className="mt-4 pt-4 border-t border-portal-border/50 flex flex-wrap gap-2">
+              {isAdmin && onSetExitNode && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSetExitNode();
+                  }}
+                  disabled={settingExitNode}
+                  className="px-4 py-2 bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 rounded-lg text-sm transition-colors"
+                >
+                  {settingExitNode ? (
+                    <span className="flex items-center gap-2">
+                      <RefreshCw className="h-4 w-4 animate-spin" />
+                      Setting exit node...
+                    </span>
+                  ) : (
+                    'Use as Exit Node'
+                  )}
+                </button>
+              )}
+              {onPinAsSelf && !isManualSelf && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onPinAsSelf();
+                  }}
+                  className="px-4 py-2 bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 rounded-lg text-sm transition-colors"
+                >
+                  This is my device
+                </button>
+              )}
+              {onClearSelfPin && isManualSelf && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onClearSelfPin();
+                  }}
+                  className="px-4 py-2 bg-portal-bg text-portal-muted hover:text-portal-text rounded-lg text-sm transition-colors"
+                >
+                  Clear "this device" pin
+                </button>
+              )}
             </div>
           )}
         </div>
