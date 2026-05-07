@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
-import { useAuth, useServices, useFavorites, useStatuses } from '@/hooks/usePortal';
+import { useAuth, useServices, useFavorites, useStatuses, useApiCall } from '@/hooks/usePortal';
 import { ServiceTile } from '@/components/dashboard/ServiceTile';
+import { ServiceEditorModal } from '@/components/dashboard/ServiceEditorModal';
 import { VpnBanner } from '@/components/ui/VpnBadge';
 import { IframeModal } from '@/components/dashboard/IframeModal';
 import MainSidebar from '@/components/layout/MainSidebar';
@@ -50,8 +51,32 @@ export default function LocalServicesPage() {
   const { services, loading: svcLoading, refetch: refetchServices } = useServices();
   const { favoriteIds, toggleFavorite } = useFavorites(user?.csrfToken);
   const { statuses, vpnStatus, refetch: refetchStatuses } = useStatuses();
+  const apiCall = useApiCall(user?.csrfToken);
   const [search, setSearch] = useState('');
   const [iframeModal, setIframeModal] = useState<{ url: string; title: string } | null>(null);
+  const [editingService, setEditingService] = useState<ServiceData | null>(null);
+
+  const handleDelete = async (svcId: string) => {
+    if (!confirm('Delete this service?')) return;
+    await apiCall(`/api/services/${svcId}`, { method: 'DELETE' });
+    refetchServices();
+  };
+
+  const handleRegenerateIcon = async (svcId: string) => {
+    await apiCall('/api/icons/regenerate', {
+      method: 'POST',
+      body: JSON.stringify({ serviceId: svcId }),
+    });
+    refetchServices();
+  };
+
+  const handleAiSuggest = async (url: string) => {
+    const data = await apiCall('/api/ai/suggest', {
+      method: 'POST',
+      body: JSON.stringify({ url }),
+    });
+    return data?.ok ? (data.data as Record<string, unknown>) : null;
+  };
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -269,6 +294,9 @@ export default function LocalServicesPage() {
                           csrfToken={user.csrfToken}
                           onToggleFavorite={() => toggleFavorite(service.id)}
                           onOpenService={() => openService(service)}
+                          onEdit={() => setEditingService(service)}
+                          onDelete={() => handleDelete(service.id)}
+                          onRegenerateIcon={() => handleRegenerateIcon(service.id)}
                         />
                         <p className="mt-1 px-1 text-[10px] font-mono text-portal-muted truncate">
                           {getHostname(service.url)}
@@ -288,6 +316,16 @@ export default function LocalServicesPage() {
           url={iframeModal.url}
           title={iframeModal.title}
           onClose={() => setIframeModal(null)}
+        />
+      )}
+
+      {editingService && (
+        <ServiceEditorModal
+          service={editingService}
+          csrfToken={user.csrfToken}
+          onClose={() => setEditingService(null)}
+          onSaved={() => { setEditingService(null); refetchServices(); }}
+          onAiSuggest={handleAiSuggest}
         />
       )}
     </div>
