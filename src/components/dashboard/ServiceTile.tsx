@@ -7,11 +7,8 @@ import type { StatusColor } from '@/types';
 import type { ServiceData } from '@/hooks/usePortal';
 import {
   Star,
-  ExternalLink,
-  Copy,
   MoreHorizontal,
   Globe,
-  Shield,
   Pencil,
   Trash2,
   RefreshCw,
@@ -125,26 +122,6 @@ export function ServiceTile({
           title="Toggle favorite"
         >
           <Star className={cn('h-3.5 w-3.5', isFavorite && 'fill-amber-400')} />
-        </button>
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            window.open(service.url, '_blank');
-          }}
-          className="p-1.5 rounded-md text-portal-muted hover:bg-portal-border hover:text-portal-text transition-colors"
-          title="Open in new tab"
-        >
-          <ExternalLink className="h-3.5 w-3.5" />
-        </button>
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            navigator.clipboard.writeText(service.url);
-          }}
-          className="p-1.5 rounded-md text-portal-muted hover:bg-portal-border hover:text-portal-text transition-colors"
-          title="Copy URL"
-        >
-          <Copy className="h-3.5 w-3.5" />
         </button>
 
         {isAdmin && (

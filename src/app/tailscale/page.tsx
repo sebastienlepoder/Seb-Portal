@@ -177,7 +177,33 @@ export default function TailscalePage() {
   }
 
   const isAdmin = user.role === 'admin';
-  const allDevices = data ? [data.self, ...(data.peers || [])].filter(Boolean) as Device[] : [];
+  const serverDevices = data ? [data.self, ...(data.peers || [])].filter(Boolean) as Device[] : [];
+
+  // Client-side "this device" detection. The server tries to identify self by
+  // matching the request IP against device Tailscale IPs — that only works
+  // when the portal is reached via Tailscale (e.g. http://100.x.y.z:3000),
+  // not via the public domain. Fall back to detecting the browser's OS and,
+  // if exactly one device matches, mark it as self.
+  const allDevices: Device[] = (() => {
+    if (typeof window === 'undefined') return serverDevices;
+    if (serverDevices.some((d) => d.isSelf)) return serverDevices;
+
+    const ua = navigator.userAgent.toLowerCase();
+    const platform = (navigator.platform || '').toLowerCase();
+    let browserOs: string | null = null;
+    if (/iphone|ipad|ipod/.test(ua)) browserOs = 'ios';
+    else if (/android/.test(ua)) browserOs = 'android';
+    else if (/mac/.test(platform) || /macintosh|mac os x/.test(ua)) browserOs = 'macos';
+    else if (/win/.test(platform) || /windows/.test(ua)) browserOs = 'windows';
+    else if (/linux/.test(platform) || /linux/.test(ua)) browserOs = 'linux';
+    if (!browserOs) return serverDevices;
+
+    const matches = serverDevices.filter((d) => (d.os || '').toLowerCase().includes(browserOs!));
+    if (matches.length !== 1) return serverDevices;
+
+    const selfId = matches[0]!.id;
+    return serverDevices.map((d) => ({ ...d, isSelf: d.id === selfId }));
+  })();
 
   return (
     <div className="h-screen bg-portal-bg flex overflow-hidden">
