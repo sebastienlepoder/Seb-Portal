@@ -10,6 +10,20 @@ import {
   SimplifiedDevice,
 } from '@/lib/tailscale';
 
+// Extract the request's originating client IP (the Tailscale IP, when the user
+// is reaching the portal via Tailscale). Used to identify "this device" in
+// Control Plane mode where the Tailscale API can't tell us.
+function getClientIp(req: NextRequest): string | undefined {
+  const xff = req.headers.get('x-forwarded-for');
+  if (xff) {
+    const first = xff.split(',')[0]?.trim();
+    if (first) return first;
+  }
+  const xri = req.headers.get('x-real-ip');
+  if (xri) return xri.trim();
+  return req.ip;
+}
+
 // GET /api/tailscale - Get Tailscale status and devices
 export async function GET(req: NextRequest) {
   try {
@@ -19,6 +33,7 @@ export async function GET(req: NextRequest) {
     }
 
     const connectionMode = getConnectionMode();
+    const clientIp = getClientIp(req);
 
     // Check if Tailscale is available
     if (!isTailscaleAvailable()) {
@@ -38,6 +53,11 @@ export async function GET(req: NextRequest) {
     switch (action) {
       case 'status': {
         const status = await getStatus();
+        // In Control Plane mode status.Self is a placeholder — resolve from clientIp.
+        const devices = await getDevices(clientIp);
+        const ips = devices.self?.ips?.length ? devices.self.ips : status.TailscaleIPs;
+        const hostname = devices.self?.hostname || status.Self?.HostName;
+        const dnsName = devices.self?.dnsName || status.Self?.DNSName?.replace(/\.$/, '');
         return NextResponse.json({
           ok: true,
           data: {
@@ -46,9 +66,9 @@ export async function GET(req: NextRequest) {
             connected: status.BackendState === 'Running',
             state: status.BackendState,
             version: status.Version,
-            ips: status.TailscaleIPs,
-            hostname: status.Self?.HostName,
-            dnsName: status.Self?.DNSName?.replace(/\.$/, ''),
+            ips,
+            hostname,
+            dnsName,
             tailnet: status.CurrentTailnet?.Name || status.MagicDNSSuffix,
             exitNode: status.ExitNodeStatus ? {
               id: status.ExitNodeStatus.ID,
@@ -61,7 +81,7 @@ export async function GET(req: NextRequest) {
       }
 
       case 'devices': {
-        const devices = await getDevices();
+        const devices = await getDevices(clientIp);
         return NextResponse.json({
           ok: true,
           data: { ...devices, connectionMode },
@@ -71,9 +91,14 @@ export async function GET(req: NextRequest) {
       case 'full': {
         const [status, devices] = await Promise.all([
           getStatus(),
-          getDevices(),
+          getDevices(clientIp),
         ]);
-        
+
+        // Prefer the resolved self (from clientIp matching in Control Plane mode)
+        // over status.Self, which is empty/placeholder in that mode.
+        const ips = devices.self?.ips?.length ? devices.self.ips : status.TailscaleIPs;
+        const hostname = devices.self?.hostname || status.Self?.HostName;
+
         return NextResponse.json({
           ok: true,
           data: {
@@ -82,8 +107,8 @@ export async function GET(req: NextRequest) {
             connected: status.BackendState === 'Running',
             state: status.BackendState,
             version: status.Version,
-            ips: status.TailscaleIPs,
-            hostname: status.Self?.HostName,
+            ips,
+            hostname,
             ...devices,
             tailnet: status.CurrentTailnet?.Name || status.MagicDNSSuffix,
           },

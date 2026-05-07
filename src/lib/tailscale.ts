@@ -291,22 +291,25 @@ export async function getStatus(): Promise<TailscaleStatus> {
     case 'control': {
       const response = await controlPlaneRequest<ControlPlaneDevicesResponse>('GET', '/devices');
       const devices = response.devices || [];
-      const firstDevice = devices[0];
-      
-      const self: TailscaleDevice = firstDevice ? adaptControlPlaneDevice(firstDevice) : {
-        ID: '', PublicKey: '', HostName: 'Unknown', DNSName: '', OS: '', UserID: 0,
+
+      // Control Plane API returns ALL tailnet devices but doesn't tell us which
+      // one is "current" — an API key is tied to a tailnet, not a node. Put
+      // everything in Peer; the route layer identifies "self" from the request's
+      // client IP (which equals the user's Tailscale IP when accessed via Tailscale).
+      const peers: Record<string, TailscaleDevice> = {};
+      devices.forEach(d => { peers[d.nodeId] = adaptControlPlaneDevice(d); });
+
+      const self: TailscaleDevice = {
+        ID: '', PublicKey: '', HostName: '', DNSName: '', OS: '', UserID: 0,
         TailscaleIPs: [], Addrs: null, CurAddr: '', Relay: '', RxBytes: 0, TxBytes: 0,
         Created: '', LastSeen: '', LastHandshake: '', Online: false,
         ExitNode: false, ExitNodeOption: false, Active: false,
       };
 
-      const peers: Record<string, TailscaleDevice> = {};
-      devices.slice(1).forEach(d => { peers[d.nodeId] = adaptControlPlaneDevice(d); });
-
       return {
         Version: 'Control API',
         BackendState: 'Running',
-        TailscaleIPs: self.TailscaleIPs,
+        TailscaleIPs: [],
         Self: self,
         Peer: peers,
         MagicDNSSuffix: TAILSCALE_TAILNET || '',
@@ -340,10 +343,13 @@ export interface SimplifiedDevice {
   tags?: string[];
 }
 
-// Get all devices
-export async function getDevices(): Promise<{ self: SimplifiedDevice | null; peers: SimplifiedDevice[]; exitNode: SimplifiedDevice | null }> {
+// Get all devices.
+// `clientIp` is the Tailscale IP of the device making the request — when set,
+// it's used to identify "self" in Control Plane mode (where the API can't tell
+// us). Pass `undefined` for socket/web modes; status.Self is reliable there.
+export async function getDevices(clientIp?: string): Promise<{ self: SimplifiedDevice | null; peers: SimplifiedDevice[]; exitNode: SimplifiedDevice | null }> {
   const status = await getStatus();
-  
+
   const mapDevice = (device: TailscaleDevice, isSelf: boolean = false): SimplifiedDevice => ({
     id: device.ID,
     hostname: device.HostName,
@@ -360,9 +366,35 @@ export async function getDevices(): Promise<{ self: SimplifiedDevice | null; pee
     tags: device.Tags,
   });
 
-  const self = status.Self ? mapDevice(status.Self, true) : null;
-  const peers = Object.values(status.Peer || {}).map(p => mapDevice(p, false));
-  const exitNode = status.ExitNodeStatus ? peers.find(p => p.id === status.ExitNodeStatus?.ID) || null : null;
+  // Trust status.Self when it has a real ID (socket / web modes).
+  // Otherwise (Control Plane mode) match the client's Tailscale IP against the device list.
+  let resolvedSelf: TailscaleDevice | null = null;
+  let others: TailscaleDevice[];
+
+  if (status.Self?.ID) {
+    resolvedSelf = status.Self;
+    others = Object.values(status.Peer || {});
+  } else {
+    const all = Object.values(status.Peer || {});
+    if (clientIp) {
+      const match = all.find(d => d.TailscaleIPs?.includes(clientIp));
+      if (match) {
+        resolvedSelf = match;
+        others = all.filter(d => d !== match);
+      } else {
+        others = all;
+      }
+    } else {
+      others = all;
+    }
+  }
+
+  const self = resolvedSelf ? mapDevice(resolvedSelf, true) : null;
+  const peers = others.map(p => mapDevice(p, false));
+  const exitNodeId = status.ExitNodeStatus?.ID;
+  const exitNode = exitNodeId
+    ? [self, ...peers].find(p => p && p.id === exitNodeId) || null
+    : null;
 
   return { self, peers, exitNode };
 }
