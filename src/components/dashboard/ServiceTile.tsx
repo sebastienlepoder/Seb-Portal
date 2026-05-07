@@ -12,6 +12,7 @@ import {
   Pencil,
   Trash2,
   RefreshCw,
+  HardDriveDownload,
 } from 'lucide-react';
 
 interface ServiceTileProps {
@@ -26,6 +27,9 @@ interface ServiceTileProps {
   onEdit?: () => void;
   onDelete?: () => void;
   onRegenerateIcon?: () => void;
+  /** When passed (Local Services page), shows a 'Remove from local services'
+   * menu item that flips the service's local flags. */
+  onRemoveFromLocal?: () => void;
 }
 
 export function ServiceTile({
@@ -39,6 +43,7 @@ export function ServiceTile({
   onEdit,
   onDelete,
   onRegenerateIcon,
+  onRemoveFromLocal,
 }: ServiceTileProps) {
   const [showMenu, setShowMenu] = useState(false);
   const vpnBlocked = service.requiresVPN && !vpnConnected;
@@ -157,6 +162,18 @@ export function ServiceTile({
                 >
                   <RefreshCw className="h-3 w-3" /> Regenerate icon
                 </button>
+                {onRemoveFromLocal && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onRemoveFromLocal();
+                      setShowMenu(false);
+                    }}
+                    className="w-full text-left px-3 py-1.5 text-xs text-portal-text hover:bg-portal-card-hover flex items-center gap-2"
+                  >
+                    <HardDriveDownload className="h-3 w-3" /> Remove from local services
+                  </button>
+                )}
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
