@@ -1,5 +1,6 @@
 import { spawn } from 'child_process';
 import * as fs from 'fs/promises';
+import { constants as fsConstants } from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { logger } from './logger';
@@ -17,6 +18,8 @@ interface RunOptions {
   taskId: string;
   /** When true, log stdout/stderr to TaskLog as info/stdout. Defaults true. */
   log?: boolean;
+  /** Hard kill after this many ms. Default: no timeout. */
+  timeoutMs?: number;
 }
 
 interface RunResult {
@@ -34,6 +37,26 @@ export function run(cmd: string, args: string[], opts: RunOptions): Promise<RunR
     });
     let stdout = '';
     let stderr = '';
+    let timedOut = false;
+    const timer =
+      opts.timeoutMs !== undefined && opts.timeoutMs > 0
+        ? setTimeout(() => {
+            timedOut = true;
+            try {
+              child.kill('SIGTERM');
+            } catch {
+              /* ignore */
+            }
+            // SIGKILL after a grace period if still alive
+            setTimeout(() => {
+              try {
+                child.kill('SIGKILL');
+              } catch {
+                /* ignore */
+              }
+            }, 1000);
+          }, opts.timeoutMs)
+        : null;
     child.stdout.on('data', (d) => {
       const s = d.toString();
       stdout += s;
@@ -45,11 +68,16 @@ export function run(cmd: string, args: string[], opts: RunOptions): Promise<RunR
       if (opts.log !== false) void logger.stderr(opts.taskId, s.trimEnd());
     });
     child.on('error', (e) => {
+      if (timer) clearTimeout(timer);
       void logger.error(opts.taskId, `spawn error: ${e.message}`);
       resolve({ code: -1, stdout, stderr: stderr + '\n' + e.message });
     });
     child.on('close', (code) => {
-      resolve({ code: code ?? -1, stdout, stderr });
+      if (timer) clearTimeout(timer);
+      const finalStderr = timedOut
+        ? stderr + `\n[killed after ${opts.timeoutMs}ms timeout]`
+        : stderr;
+      resolve({ code: timedOut ? 124 : code ?? -1, stdout, stderr: finalStderr });
     });
   });
 }
@@ -61,6 +89,41 @@ function cloneUrl(owner: string, name: string, token: string | undefined): strin
   return `https://github.com/${owner}/${name}.git`;
 }
 
+/**
+ * Resolve the workdir to use for a repo. Priority:
+ *   1. presetPath if provided (project-level override)
+ *   2. WORKER_CLONES_DIR / <owner>__<name> if the dir is writable — this
+ *      persists between tasks so node_modules is reused
+ *   3. tmp dir as a last-resort fallback (used in local dev when the
+ *      compose-managed volume isn't available)
+ *
+ * Returns { workdir, persistent } where `persistent` tells callers whether
+ * the directory should be preserved on cleanup.
+ */
+async function resolveWorkdir(params: {
+  workerId: string;
+  owner: string;
+  name: string;
+  presetPath?: string | null;
+}): Promise<{ workdir: string; persistent: boolean }> {
+  const { workerId, owner, name, presetPath } = params;
+  if (presetPath) return { workdir: presetPath, persistent: true };
+
+  const baseDir = process.env.WORKER_CLONES_DIR || '/app/worker-clones';
+  try {
+    await fs.mkdir(baseDir, { recursive: true });
+    await fs.access(baseDir, fsConstants.W_OK);
+    return {
+      workdir: path.join(baseDir, `${owner}__${name}`),
+      persistent: true,
+    };
+  } catch {
+    // Fall back to tmp (e.g. local dev without the compose volume mount)
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), `portal-worker-${workerId}-`));
+    return { workdir: tmp, persistent: false };
+  }
+}
+
 export async function cloneRepo(params: {
   taskId: string;
   workerId: string;
@@ -68,13 +131,16 @@ export async function cloneRepo(params: {
   name: string;
   baseBranch: string;
   token?: string;
-  /** If set, clone into this path instead of a temp dir. */
+  /** If set, clone into this path instead of the resolved default. */
   presetPath?: string | null;
 }): Promise<CloneResult> {
   const { taskId, workerId, owner, name, baseBranch, token, presetPath } = params;
-  const workdir =
-    presetPath ??
-    (await fs.mkdtemp(path.join(os.tmpdir(), `portal-worker-${workerId}-`)));
+  const { workdir, persistent } = await resolveWorkdir({
+    workerId,
+    owner,
+    name,
+    presetPath,
+  });
 
   // If the dir already has a checkout (preset path), do a fetch+checkout
   // instead of a fresh clone.
@@ -126,8 +192,10 @@ export async function cloneRepo(params: {
     baseBranch,
     workBranch,
     cleanup: async () => {
-      // Only clean up temp dirs we created
-      if (!presetPath) {
+      // Only clean up tmp dirs we created. Persistent paths (preset or
+      // volume-managed) stay so the next task can reuse the checkout +
+      // node_modules.
+      if (!persistent) {
         try {
           await fs.rm(workdir, { recursive: true, force: true });
         } catch {
@@ -136,6 +204,94 @@ export async function cloneRepo(params: {
       }
     },
   };
+}
+
+/**
+ * Make sure node_modules is present and reasonably current in `workdir`.
+ *
+ * Strategy:
+ *   - If there's no package.json, do nothing (not a Node project).
+ *   - If node_modules exists AND its mtime ≥ package-lock.json mtime,
+ *     skip — the install is already current.
+ *   - Otherwise run `npm ci` (when there's a lockfile) or `npm install`.
+ *     Either runs the project's `postinstall` hook, which on this repo
+ *     handles `prisma generate`.
+ *
+ * This lets the agent run `tsc --noEmit`, `npm test`, lint, etc. inside
+ * its run_bash tool without hitting "Cannot find module" errors. The
+ * install runs at the worker level (outside the agent's per-call 60s
+ * timeout) so we get to use a longer hard cap.
+ *
+ * Throws on install failure — the task continues anyway (the executor
+ * decides whether the missing deps are fatal or just a warning).
+ */
+export async function ensureNodeModules(params: {
+  taskId: string;
+  workdir: string;
+  /** Hard timeout for the install in ms. Default 5 min. */
+  timeoutMs?: number;
+}): Promise<{ installed: boolean; skipped: boolean; reason?: string }> {
+  const { taskId, workdir, timeoutMs = 5 * 60 * 1000 } = params;
+  const pkgFile = path.join(workdir, 'package.json');
+  const lockFile = path.join(workdir, 'package-lock.json');
+  const nodeModules = path.join(workdir, 'node_modules');
+
+  try {
+    await fs.access(pkgFile);
+  } catch {
+    return { installed: false, skipped: true, reason: 'no package.json' };
+  }
+
+  const lockMtime = await statMtime(lockFile);
+  const nmMtime = await statMtime(nodeModules);
+
+  if (nmMtime > 0 && (lockMtime === 0 || nmMtime >= lockMtime)) {
+    await logger.info(taskId, 'node_modules is current — skipping install');
+    return { installed: false, skipped: true, reason: 'up-to-date' };
+  }
+
+  const useCi = lockMtime > 0;
+  const cmd = useCi ? 'npm ci' : 'npm install';
+  await logger.info(
+    taskId,
+    `Installing dependencies with \`${cmd}\` (timeout ${Math.round(timeoutMs / 1000)}s)…`
+  );
+  const start = Date.now();
+  const res = await run(
+    'npm',
+    [
+      useCi ? 'ci' : 'install',
+      '--no-audit',
+      '--no-fund',
+      '--prefer-offline',
+    ],
+    { cwd: workdir, taskId, log: false, timeoutMs }
+  );
+  const elapsed = ((Date.now() - start) / 1000).toFixed(1);
+
+  if (res.code !== 0) {
+    const tail = res.stderr.length > 800 ? '…' + res.stderr.slice(-800) : res.stderr;
+    throw new Error(`${cmd} failed after ${elapsed}s (exit ${res.code}): ${tail}`);
+  }
+
+  // Touch the directory so the mtime reflects "just installed" — keeps the
+  // skip-if-fresh check working on subsequent tasks.
+  try {
+    const now = new Date();
+    await fs.utimes(nodeModules, now, now);
+  } catch {
+    /* best-effort */
+  }
+  await logger.info(taskId, `Dependencies installed in ${elapsed}s`);
+  return { installed: true, skipped: false };
+}
+
+async function statMtime(p: string): Promise<number> {
+  try {
+    return (await fs.stat(p)).mtimeMs;
+  } catch {
+    return 0;
+  }
 }
 
 export async function commitAll(params: {
