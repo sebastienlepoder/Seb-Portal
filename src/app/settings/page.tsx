@@ -180,7 +180,6 @@ export default function SettingsPage() {
           </div>
         </section>
       </div>
-    </div>
 
         {/* Export / Import Section */}
         {user?.role?.toLowerCase() === 'admin' && (
@@ -243,7 +242,6 @@ export default function SettingsPage() {
             </div>
           </section>
         )}
-      </div>
       </div>
     </div>
   );
