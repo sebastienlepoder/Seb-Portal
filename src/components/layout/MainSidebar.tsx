@@ -93,7 +93,6 @@ const NAV_GROUPS: NavGroup[] = [
         accent: true,
       },
       { href: '/insights', label: 'Insights', icon: <TrendingUp className="h-3.5 w-3.5" /> },
-      { href: '/ai', label: 'AI Hub', icon: <BrainCircuit className="h-3.5 w-3.5" /> },
       {
         href: '/agents',
         label: 'Agents',
@@ -149,6 +148,7 @@ export default function MainSidebar({ user, onLogout }: MainSidebarProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const isDashboard = pathname === '/dashboard' || pathname === '/';
+  const isAiHub = pathname === '/ai' || pathname.startsWith('/ai/');
 
   // Accordion: at most one group expanded at a time. Default opens the group
   // containing the current page; user toggles persist via localStorage.
@@ -256,6 +256,13 @@ export default function MainSidebar({ user, onLogout }: MainSidebarProps) {
             active={isDashboard}
             label="Dashboard"
             icon={<LayoutGrid className="h-3.5 w-3.5" />}
+          />
+          <SidebarLink
+            collapsed={collapsed}
+            href="/ai"
+            active={isAiHub}
+            label="AI Hub"
+            icon={<BrainCircuit className="h-3.5 w-3.5" />}
           />
 
           {/* Grouped nav (accordion: one open at a time) */}
