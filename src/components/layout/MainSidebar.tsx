@@ -14,7 +14,6 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
-  Star,
   Menu,
   X,
   Wifi,
@@ -38,12 +37,6 @@ interface MainSidebarProps {
     role: 'admin' | 'user';
   };
   onLogout: () => void;
-  /** For dashboard: highlight a section filter */
-  activeSection?: string;
-  onSectionChange?: (section: string) => void;
-  /** Dynamic sections from services (dashboard only) */
-  sections?: string[];
-  favoritesCount?: number;
 }
 
 interface NavItem {
@@ -135,14 +128,7 @@ function findGroupContainingPath(pathname: string): string | null {
   return null;
 }
 
-export default function MainSidebar({
-  user,
-  onLogout,
-  activeSection,
-  onSectionChange,
-  sections = [],
-  favoritesCount = 0,
-}: MainSidebarProps) {
+export default function MainSidebar({ user, onLogout }: MainSidebarProps) {
   const pathname = usePathname() || '';
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -255,56 +241,13 @@ export default function MainSidebar({
 
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto py-2">
-          {/* Top: Dashboard or its filter buttons */}
-          {isDashboard && onSectionChange ? (
-            <>
-              <SidebarButton
-                collapsed={collapsed}
-                active={activeSection === 'all'}
-                onClick={() => onSectionChange('all')}
-                label="All Services"
-                icon={<LayoutGrid className="h-3.5 w-3.5" />}
-              />
-              <SidebarButton
-                collapsed={collapsed}
-                active={activeSection === 'favorites'}
-                onClick={() => onSectionChange('favorites')}
-                label="Favorites"
-                icon={<Star className="h-3.5 w-3.5" />}
-                badge={!collapsed ? favoritesCount || undefined : undefined}
-              />
-              {/* Dynamic dashboard sections */}
-              {sections.length > 0 && (
-                <>
-                  {!collapsed && (
-                    <div className="px-3 pt-3 pb-1">
-                      <div className="text-[10px] font-semibold text-portal-muted uppercase tracking-wider">
-                        Sections
-                      </div>
-                    </div>
-                  )}
-                  {collapsed && <div className="border-t border-portal-border mx-2 mt-2 mb-1" />}
-                  {sections.map((s) => (
-                    <SidebarButton
-                      key={s}
-                      collapsed={collapsed}
-                      active={activeSection === s}
-                      onClick={() => onSectionChange(s)}
-                      label={s}
-                    />
-                  ))}
-                </>
-              )}
-            </>
-          ) : (
-            <SidebarLink
-              collapsed={collapsed}
-              href="/dashboard"
-              active={isDashboard}
-              label="Dashboard"
-              icon={<LayoutGrid className="h-3.5 w-3.5" />}
-            />
-          )}
+          <SidebarLink
+            collapsed={collapsed}
+            href="/dashboard"
+            active={isDashboard}
+            label="Dashboard"
+            icon={<LayoutGrid className="h-3.5 w-3.5" />}
+          />
 
           {/* Grouped nav */}
           {visibleGroups.map((group, idx) => {
@@ -392,57 +335,6 @@ export default function MainSidebar({
         />
       )}
     </>
-  );
-}
-
-function SidebarButton({
-  active,
-  onClick,
-  label,
-  icon,
-  badge,
-  collapsed,
-}: {
-  active?: boolean;
-  onClick: () => void;
-  label: string;
-  icon?: React.ReactNode;
-  badge?: number;
-  collapsed?: boolean;
-}) {
-  if (collapsed) {
-    return (
-      <button
-        onClick={onClick}
-        title={label}
-        className={cn(
-          'w-full flex items-center justify-center p-2 rounded-lg transition-colors',
-          active
-            ? 'bg-portal-accent/10 text-portal-accent'
-            : 'text-portal-muted hover:text-portal-text hover:bg-portal-card-hover'
-        )}
-      >
-        {icon}
-      </button>
-    );
-  }
-
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        'w-full flex items-center gap-2 px-3 py-2 mx-2 rounded-lg text-xs transition-colors',
-        active
-          ? 'bg-portal-accent/10 text-portal-accent font-medium'
-          : 'text-portal-text-dim hover:text-portal-text hover:bg-portal-card-hover'
-      )}
-    >
-      {icon}
-      <span className="flex-1 text-left truncate">{label}</span>
-      {badge !== undefined && (
-        <span className="text-[10px] bg-portal-border px-1.5 py-0.5 rounded">{badge}</span>
-      )}
-    </button>
   );
 }
 

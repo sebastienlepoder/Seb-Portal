@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth, useApiCall } from '@/hooks/usePortal';
+import MainSidebar from '@/components/layout/MainSidebar';
 import { cn } from '@/lib/utils';
 import {
   Plus,
@@ -39,7 +40,7 @@ interface Service {
 }
 
 export default function AdminServicesPage() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, logout } = useAuth();
   const apiCall = useApiCall(user?.csrfToken);
   const [services, setServices] = useState<Service[]>([]);
   const [editing, setEditing] = useState<Service | null>(null);
@@ -89,8 +90,10 @@ export default function AdminServicesPage() {
   }
 
   return (
-    <div className="min-h-dvh bg-portal-bg p-6">
-      <div className="max-w-6xl mx-auto">
+    <div className="h-dvh bg-portal-bg flex overflow-hidden">
+      <MainSidebar user={user} onLogout={logout} />
+      <div className="flex-1 min-w-0 overflow-y-auto p-4 sm:p-6">
+        <div className="max-w-6xl mx-auto">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center gap-4 mb-6">
           <div className="flex items-center gap-3 pl-10 sm:pl-0">
@@ -200,6 +203,8 @@ export default function AdminServicesPage() {
           onAiSuggest={aiSuggest}
         />
       )}
+        </div>
+      </div>
     </div>
   );
 }

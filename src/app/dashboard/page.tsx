@@ -138,14 +138,7 @@ export default function DashboardPage() {
 
   return (
     <div className="h-dvh bg-portal-bg flex overflow-hidden">
-      <MainSidebar
-        user={user}
-        onLogout={logout}
-        activeSection={activeSection}
-        onSectionChange={setActiveSection}
-        sections={sections}
-        favoritesCount={favorites.length}
-      />
+      <MainSidebar user={user} onLogout={logout} />
 
       {/* Main content */}
       <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
@@ -205,6 +198,54 @@ export default function DashboardPage() {
           {/* Dashboard content — hidden while iframe is open */}
           <div className={cn('flex-1 overflow-y-auto p-4 lg:p-6', iframeModal && 'hidden')}>
             <VpnBanner status={vpnStatus} />
+
+            {/* Filter chips */}
+            <div className="flex flex-wrap items-center gap-2 mb-6">
+              <button
+                onClick={() => setActiveSection('all')}
+                className={cn(
+                  'flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-full transition-colors',
+                  activeSection === 'all'
+                    ? 'bg-portal-accent text-white'
+                    : 'bg-portal-card border border-portal-border text-portal-muted hover:text-portal-text'
+                )}
+              >
+                <Layers className="h-3.5 w-3.5" />
+                All Services
+              </button>
+              <button
+                onClick={() => setActiveSection('favorites')}
+                className={cn(
+                  'flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-full transition-colors',
+                  activeSection === 'favorites'
+                    ? 'bg-portal-accent text-white'
+                    : 'bg-portal-card border border-portal-border text-portal-muted hover:text-portal-text'
+                )}
+              >
+                <Star className="h-3.5 w-3.5" />
+                Favorites
+                {favorites.length > 0 && (
+                  <span className="text-[10px] opacity-70">({favorites.length})</span>
+                )}
+              </button>
+              {sections.length > 0 && (
+                <div className="h-5 w-px bg-portal-border mx-1" />
+              )}
+              {sections.map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setActiveSection(s)}
+                  className={cn(
+                    'px-3 py-1.5 text-xs rounded-full transition-colors',
+                    activeSection === s
+                      ? 'bg-portal-accent text-white'
+                      : 'bg-portal-card border border-portal-border text-portal-muted hover:text-portal-text'
+                  )}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
 
             {/* Widgets Row */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
