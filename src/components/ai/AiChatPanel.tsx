@@ -13,6 +13,8 @@ import {
   Trash2,
   Pencil,
   Check,
+  PanelLeftOpen,
+  PanelLeftClose,
 } from 'lucide-react';
 import Link from 'next/link';
 import { cn, formatRelativeTime } from '@/lib/utils';
@@ -38,6 +40,11 @@ interface PendingQuestion {
 }
 
 const STORAGE_KEY = 'ai-hub:active-thread';
+const SIDEBAR_WIDTH_KEY = 'ai-hub:sidebar-width';
+const SIDEBAR_MIN = 200;
+const SIDEBAR_MAX = 560;
+const SIDEBAR_DEFAULT = 260;
+const CHAT_MIN = 320;
 
 export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
   const provider: AiProvider = 'anthropic';
@@ -54,6 +61,75 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
   const [renameSaving, setRenameSaving] = useState(false);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Resizable sidebar state
+  const [sidebarWidth, setSidebarWidth] = useState<number>(SIDEBAR_DEFAULT);
+  const [isResizing, setIsResizing] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+
+  // Track viewport for mobile drawer behavior
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(max-width: 767px)');
+    setIsMobile(mq.matches);
+    const onChange = (e: MediaQueryListEvent) => {
+      setIsMobile(e.matches);
+      if (!e.matches) setMobileSidebarOpen(false);
+    };
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+
+  // Load saved sidebar width
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const stored = window.localStorage.getItem(SIDEBAR_WIDTH_KEY);
+    if (stored) {
+      const n = Number(stored);
+      if (Number.isFinite(n) && n >= SIDEBAR_MIN && n <= SIDEBAR_MAX) {
+        setSidebarWidth(n);
+      }
+    }
+  }, []);
+
+  // Persist sidebar width
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth));
+  }, [sidebarWidth]);
+
+  // Drag-to-resize listeners
+  useEffect(() => {
+    if (!isResizing) return;
+    const onMove = (clientX: number) => {
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const x = clientX - rect.left;
+      const max = Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, rect.width - CHAT_MIN));
+      setSidebarWidth(Math.max(SIDEBAR_MIN, Math.min(max, x)));
+    };
+    const onMouseMove = (e: MouseEvent) => onMove(e.clientX);
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.touches[0]) onMove(e.touches[0].clientX);
+    };
+    const stop = () => setIsResizing(false);
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', stop);
+    window.addEventListener('touchmove', onTouchMove);
+    window.addEventListener('touchend', stop);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', stop);
+      window.removeEventListener('touchmove', onTouchMove);
+      window.removeEventListener('touchend', stop);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [isResizing]);
 
   // Auto-scroll on new messages
   useEffect(() => {
@@ -110,6 +186,7 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
       }
     } finally {
       setLoadingThread(false);
+      if (isMobile) setMobileSidebarOpen(false);
     }
   }
 
@@ -118,6 +195,7 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
     setThreadId(undefined);
     if (typeof window !== 'undefined') window.localStorage.removeItem(STORAGE_KEY);
     setInput('');
+    if (isMobile) setMobileSidebarOpen(false);
   }
 
   async function deleteThread(id: string, e: React.MouseEvent) {
@@ -240,18 +318,58 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
 
   const activeThread = threadId ? threads.find((t) => t.id === threadId) : undefined;
 
+  const onResizeKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      setSidebarWidth((w) => Math.max(SIDEBAR_MIN, w - 16));
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      setSidebarWidth((w) => Math.min(SIDEBAR_MAX, w + 16));
+    }
+  };
+
   return (
-    <div className="flex h-full bg-portal-bg border-l border-portal-border">
+    <div ref={containerRef} className="flex h-full bg-portal-bg relative">
+      {/* Mobile drawer backdrop */}
+      {isMobile && mobileSidebarOpen && (
+        <button
+          type="button"
+          aria-label="Close conversations"
+          onClick={() => setMobileSidebarOpen(false)}
+          className="fixed inset-0 bg-black/50 z-30 cursor-pointer"
+        />
+      )}
+
       {/* Thread sidebar */}
-      <div className="w-60 shrink-0 border-r border-portal-border flex flex-col bg-portal-card/30">
-        <div className="p-2 border-b border-portal-border">
+      <aside
+        style={!isMobile ? { width: `${sidebarWidth}px` } : undefined}
+        className={cn(
+          'shrink-0 border-r border-portal-border flex flex-col bg-portal-card/30',
+          isMobile && [
+            'fixed inset-y-0 left-0 z-40 w-[80vw] max-w-xs bg-portal-card shadow-2xl transition-transform duration-200',
+            mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full',
+          ],
+        )}
+        aria-label="Conversation list"
+      >
+        <div className="p-2 border-b border-portal-border flex items-center gap-2">
           <button
             onClick={newChat}
-            className="w-full flex items-center gap-2 px-3 py-2 bg-portal-accent hover:bg-portal-accent/80 text-white rounded-lg text-sm transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
+            className="flex-1 flex items-center gap-2 px-3 py-2 bg-portal-accent hover:bg-portal-accent/80 text-white rounded-lg text-sm transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
           >
             <Plus className="h-4 w-4" />
             New chat
           </button>
+          {isMobile && (
+            <button
+              type="button"
+              onClick={() => setMobileSidebarOpen(false)}
+              aria-label="Close conversations"
+              className="p-2 text-portal-muted hover:text-portal-text rounded-lg hover:bg-portal-card-hover transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
         </div>
         <div className="flex-1 overflow-y-auto p-1">
           {threads.length === 0 ? (
@@ -368,13 +486,56 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
             })
           )}
         </div>
-      </div>
+      </aside>
+
+      {/* Resize handle (desktop only) */}
+      {!isMobile && (
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize conversation list"
+          aria-valuenow={sidebarWidth}
+          aria-valuemin={SIDEBAR_MIN}
+          aria-valuemax={SIDEBAR_MAX}
+          tabIndex={0}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            setIsResizing(true);
+          }}
+          onTouchStart={() => setIsResizing(true)}
+          onKeyDown={onResizeKeyDown}
+          onDoubleClick={() => setSidebarWidth(SIDEBAR_DEFAULT)}
+          title="Drag to resize · Double-click to reset"
+          className={cn(
+            'group relative w-1 shrink-0 cursor-col-resize bg-portal-border hover:bg-portal-accent/50 transition-colors focus:outline-none focus:bg-portal-accent',
+            isResizing && 'bg-portal-accent',
+          )}
+        >
+          {/* Wider hit area for easier grabbing */}
+          <span aria-hidden="true" className="absolute inset-y-0 -left-1 -right-1" />
+        </div>
+      )}
 
       {/* Chat panel */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
-        <div className="flex items-center justify-between p-3 border-b border-portal-border">
+        <div className="flex items-center justify-between p-3 border-b border-portal-border gap-2">
           <div className="flex items-center gap-2 min-w-0">
+            {isMobile && (
+              <button
+                type="button"
+                onClick={() => setMobileSidebarOpen((o) => !o)}
+                aria-label={mobileSidebarOpen ? 'Hide conversations' : 'Show conversations'}
+                aria-expanded={mobileSidebarOpen}
+                className="p-1.5 text-portal-muted hover:text-portal-text rounded-lg hover:bg-portal-card-hover transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
+              >
+                {mobileSidebarOpen ? (
+                  <PanelLeftClose className="h-4 w-4" />
+                ) : (
+                  <PanelLeftOpen className="h-4 w-4" />
+                )}
+              </button>
+            )}
             <Sparkles className="h-4 w-4 text-portal-accent shrink-0" />
             {activeThread && renamingId === activeThread.id ? (
               <span className="text-sm font-semibold text-portal-text truncate">
@@ -406,118 +567,124 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
         </div>
 
         {/* Messages */}
-        <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-3">
-          {loadingThread ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-5 w-5 animate-spin text-portal-accent" />
-            </div>
-          ) : messages.length === 0 ? (
-            <div className="text-center text-portal-muted text-sm py-8">
-              <Bot className="h-8 w-8 mx-auto mb-2 opacity-50" />
-              <p>Start a conversation with Claude</p>
-              <p className="text-xs mt-1 text-portal-muted">
-                Or ask me to dispatch a task to one of your agents.
-              </p>
-            </div>
-          ) : (
-            messages.map((msg, i) => (
-              <div
-                key={i}
-                className={cn(
-                  'flex gap-2',
-                  msg.role === 'user' ? 'justify-end' : 'justify-start'
-                )}
-              >
-                {msg.role === 'assistant' && (
-                  <Bot className="h-5 w-5 text-portal-accent flex-shrink-0 mt-1" />
-                )}
+        <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 lg:px-8">
+          <div className="mx-auto w-full max-w-4xl space-y-3">
+            {loadingThread ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-5 w-5 animate-spin text-portal-accent" />
+              </div>
+            ) : messages.length === 0 ? (
+              <div className="text-center text-portal-muted text-sm py-12">
+                <Bot className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                <p>Start a conversation with Claude</p>
+                <p className="text-xs mt-1 text-portal-muted">
+                  Or ask me to dispatch a task to one of your agents.
+                </p>
+              </div>
+            ) : (
+              messages.map((msg, i) => (
                 <div
+                  key={i}
                   className={cn(
-                    'max-w-[80%] rounded-lg px-3 py-2 text-sm',
-                    msg.role === 'user'
-                      ? 'bg-portal-accent text-white'
-                      : 'bg-portal-card border border-portal-border text-portal-text'
+                    'flex gap-2',
+                    msg.role === 'user' ? 'justify-end' : 'justify-start'
                   )}
                 >
-                  <pre className="whitespace-pre-wrap font-sans">{msg.content}</pre>
+                  {msg.role === 'assistant' && (
+                    <Bot className="h-5 w-5 text-portal-accent flex-shrink-0 mt-1" />
+                  )}
+                  <div
+                    className={cn(
+                      'max-w-[85%] rounded-lg px-3 py-2 text-sm',
+                      msg.role === 'user'
+                        ? 'bg-portal-accent text-white'
+                        : 'bg-portal-card border border-portal-border text-portal-text'
+                    )}
+                  >
+                    <pre className="whitespace-pre-wrap font-sans">{msg.content}</pre>
+                  </div>
+                  {msg.role === 'user' && (
+                    <User className="h-5 w-5 text-portal-muted flex-shrink-0 mt-1" />
+                  )}
                 </div>
-                {msg.role === 'user' && (
-                  <User className="h-5 w-5 text-portal-muted flex-shrink-0 mt-1" />
-                )}
+              ))
+            )}
+            {loading && (
+              <div className="flex gap-2 items-center text-portal-muted text-sm">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Thinking...</span>
               </div>
-            ))
-          )}
-          {loading && (
-            <div className="flex gap-2 items-center text-portal-muted text-sm">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              <span>Thinking...</span>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         {/* Tool event chips (last response only) */}
         {lastToolEvents.length > 0 && !pendingQuestion && (
-          <div className="px-3 pb-1 flex flex-wrap gap-1">
-            {lastToolEvents.map((ev, i) => {
-              const isDispatch = ev === 'dispatch_to_project';
-              return (
-                <span
-                  key={i}
-                  className={cn(
-                    'inline-flex items-center gap-1 text-[10px] rounded-full px-2 py-0.5 border',
-                    isDispatch
-                      ? 'bg-portal-accent/10 text-portal-accent border-portal-accent/30'
-                      : 'bg-portal-card border-portal-border text-portal-muted'
-                  )}
-                >
-                  {isDispatch && '✓'} {ev}
-                  {isDispatch && (
-                    <Link
-                      href="/agents"
-                      className="ml-1 underline hover:text-portal-text"
-                      title="View task on the Agents page"
-                    >
-                      view
-                    </Link>
-                  )}
-                </span>
-              );
-            })}
+          <div className="px-4 sm:px-6 lg:px-8 pb-1">
+            <div className="mx-auto w-full max-w-4xl flex flex-wrap gap-1">
+              {lastToolEvents.map((ev, i) => {
+                const isDispatch = ev === 'dispatch_to_project';
+                return (
+                  <span
+                    key={i}
+                    className={cn(
+                      'inline-flex items-center gap-1 text-[10px] rounded-full px-2 py-0.5 border',
+                      isDispatch
+                        ? 'bg-portal-accent/10 text-portal-accent border-portal-accent/30'
+                        : 'bg-portal-card border-portal-border text-portal-muted'
+                    )}
+                  >
+                    {isDispatch && <Check className="h-2.5 w-2.5" />} {ev}
+                    {isDispatch && (
+                      <Link
+                        href="/agents"
+                        className="ml-1 underline hover:text-portal-text"
+                        title="View task on the Agents page"
+                      >
+                        view
+                      </Link>
+                    )}
+                  </span>
+                );
+              })}
+            </div>
           </div>
         )}
 
         {/* Pending question buttons */}
         {pendingQuestion && (
-          <div className="px-3 pb-2 space-y-1">
-            <div className="text-[10px] uppercase tracking-wider text-portal-muted px-1">
-              Pick an option:
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {pendingQuestion.options.map((opt, i) => (
+          <div className="px-4 sm:px-6 lg:px-8 pb-2">
+            <div className="mx-auto w-full max-w-4xl space-y-1">
+              <div className="text-[10px] uppercase tracking-wider text-portal-muted px-1">
+                Pick an option:
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {pendingQuestion.options.map((opt, i) => (
+                  <button
+                    key={i}
+                    onClick={() => sendText(opt)}
+                    disabled={loading}
+                    className="text-xs px-3 py-1.5 bg-portal-accent/10 border border-portal-accent/30 text-portal-accent hover:bg-portal-accent/20 rounded-md transition-colors disabled:opacity-50 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
+                  >
+                    {opt}
+                  </button>
+                ))}
                 <button
-                  key={i}
-                  onClick={() => sendText(opt)}
+                  onClick={() => setPendingQuestion(null)}
                   disabled={loading}
-                  className="text-xs px-3 py-1.5 bg-portal-accent/10 border border-portal-accent/30 text-portal-accent hover:bg-portal-accent/20 rounded-md transition-colors disabled:opacity-50 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
+                  className="text-xs px-3 py-1.5 bg-portal-card border border-portal-border text-portal-muted hover:text-portal-text rounded-md transition-colors disabled:opacity-50 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
+                  title="Or type your own answer below"
                 >
-                  {opt}
+                  None of these
                 </button>
-              ))}
-              <button
-                onClick={() => setPendingQuestion(null)}
-                disabled={loading}
-                className="text-xs px-3 py-1.5 bg-portal-card border border-portal-border text-portal-muted hover:text-portal-text rounded-md transition-colors disabled:opacity-50 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
-                title="Or type your own answer below"
-              >
-                None of these
-              </button>
+              </div>
             </div>
           </div>
         )}
 
         {/* Input */}
-        <div className="p-3 border-t border-portal-border">
-          <div className="flex gap-2">
+        <div className="px-4 py-3 sm:px-6 lg:px-8 border-t border-portal-border">
+          <div className="mx-auto w-full max-w-4xl flex gap-2">
             <label htmlFor="ai-chat-input" className="sr-only">
               Message
             </label>
@@ -532,13 +699,13 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
                   ? 'Pick an option above, or type a custom answer…'
                   : 'Ask anything, or dispatch a task…'
               }
-              className="flex-1 bg-portal-card border border-portal-border rounded-lg px-3 py-2 text-sm text-portal-text placeholder:text-portal-muted focus:outline-none focus:ring-2 focus:ring-portal-accent focus:border-portal-accent/50"
+              className="flex-1 min-w-0 bg-portal-card border border-portal-border rounded-lg px-3 py-2 text-sm text-portal-text placeholder:text-portal-muted focus:outline-none focus:ring-2 focus:ring-portal-accent focus:border-portal-accent/50"
             />
             <button
               onClick={sendMessage}
               disabled={loading || !input.trim()}
               aria-label="Send message"
-              className="px-3 py-2 bg-portal-accent hover:bg-portal-accent/80 text-white rounded-lg transition-colors disabled:opacity-50 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
+              className="px-4 py-2 bg-portal-accent hover:bg-portal-accent/80 text-white rounded-lg transition-colors disabled:opacity-50 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent shrink-0"
             >
               <Send className="h-4 w-4" />
             </button>
