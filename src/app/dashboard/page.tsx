@@ -20,7 +20,6 @@ import type { StatusColor } from '@/types';
 import {
   Settings,
   BarChart3,
-  Sparkles,
   Menu,
   X,
   Star,
@@ -160,20 +159,6 @@ export default function DashboardPage() {
                 title="MCP Tools"
               >
                 <Wrench className="h-4 w-4" />
-              </button>
-
-              {/* AI toggle */}
-              <button
-                onClick={() => setShowAiPanel(!showAiPanel)}
-                className={cn(
-                  'p-2 rounded-lg transition-colors',
-                  showAiPanel
-                    ? 'bg-portal-accent/10 text-portal-accent'
-                    : 'text-portal-muted hover:text-portal-text hover:bg-portal-card'
-                )}
-                title="AI Hub"
-              >
-                <Sparkles className="h-4 w-4" />
               </button>
 
               {/* User */}
