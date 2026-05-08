@@ -11,7 +11,8 @@ import {
   Plus,
   MessageSquare,
   Trash2,
-  ExternalLink,
+  Pencil,
+  Check,
 } from 'lucide-react';
 import Link from 'next/link';
 import { cn, formatRelativeTime } from '@/lib/utils';
@@ -48,12 +49,24 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
   const [loadingThread, setLoadingThread] = useState(false);
   const [pendingQuestion, setPendingQuestion] = useState<PendingQuestion | null>(null);
   const [lastToolEvents, setLastToolEvents] = useState<string[]>([]);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [renameSaving, setRenameSaving] = useState(false);
+  const renameInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll on new messages
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages]);
+
+  // Focus and select rename input when entering rename mode
+  useEffect(() => {
+    if (renamingId && renameInputRef.current) {
+      renameInputRef.current.focus();
+      renameInputRef.current.select();
+    }
+  }, [renamingId]);
 
   // Load thread list
   const fetchThreads = useCallback(() => {
@@ -120,6 +133,51 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
     }
   }
 
+  function startRename(t: ThreadSummary, e: React.MouseEvent) {
+    e.stopPropagation();
+    setRenamingId(t.id);
+    setRenameValue(t.title ?? '');
+  }
+
+  function cancelRename() {
+    setRenamingId(null);
+    setRenameValue('');
+  }
+
+  async function commitRename(id: string) {
+    const original = threads.find((t) => t.id === id)?.title ?? '';
+    const next = renameValue.trim();
+    if (next === original.trim()) {
+      cancelRename();
+      return;
+    }
+    setRenameSaving(true);
+    // Optimistic update
+    setThreads((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, title: next || null } : t))
+    );
+    try {
+      const res = await fetch(`/api/ai/threads/${id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
+        },
+        body: JSON.stringify({ title: next }),
+      });
+      if (!res.ok) {
+        // Revert on failure
+        fetchThreads();
+      }
+    } catch {
+      fetchThreads();
+    } finally {
+      setRenameSaving(false);
+      setRenamingId(null);
+      setRenameValue('');
+    }
+  }
+
   /** Send `text` as a user message. Used both by the input field and by
    *  the multi-choice question buttons. */
   async function sendText(text: string) {
@@ -180,6 +238,8 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
 
   const sendMessage = () => sendText(input);
 
+  const activeThread = threadId ? threads.find((t) => t.id === threadId) : undefined;
+
   return (
     <div className="flex h-full bg-portal-bg border-l border-portal-border">
       {/* Thread sidebar */}
@@ -187,7 +247,7 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
         <div className="p-2 border-b border-portal-border">
           <button
             onClick={newChat}
-            className="w-full flex items-center gap-2 px-3 py-2 bg-portal-accent hover:bg-portal-accent/80 text-white rounded-lg text-sm transition-colors"
+            className="w-full flex items-center gap-2 px-3 py-2 bg-portal-accent hover:bg-portal-accent/80 text-white rounded-lg text-sm transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
           >
             <Plus className="h-4 w-4" />
             New chat
@@ -203,35 +263,107 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
           ) : (
             threads.map((t) => {
               const isActive = t.id === threadId;
+              const isRenaming = renamingId === t.id;
               return (
-                <button
+                <div
                   key={t.id}
-                  onClick={() => loadThread(t.id)}
+                  onClick={() => !isRenaming && loadThread(t.id)}
                   className={cn(
                     'group w-full flex items-start gap-2 px-2 py-2 rounded-md text-left transition-colors',
+                    !isRenaming && 'cursor-pointer',
                     isActive
                       ? 'bg-portal-accent/10 text-portal-accent'
                       : 'text-portal-text-dim hover:text-portal-text hover:bg-portal-card-hover'
                   )}
-                  title={t.title ?? 'Untitled'}
+                  title={isRenaming ? undefined : t.title ?? 'Untitled'}
                 >
                   <MessageSquare className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                   <div className="flex-1 min-w-0">
-                    <div className="text-xs font-medium truncate">
-                      {t.title ?? 'Untitled'}
-                    </div>
-                    <div className="text-[10px] text-portal-muted">
-                      {t.messageCount} msg · {formatRelativeTime(t.updatedAt)}
-                    </div>
+                    {isRenaming ? (
+                      <>
+                        <label htmlFor={`rename-${t.id}`} className="sr-only">
+                          Rename conversation
+                        </label>
+                        <input
+                          ref={renameInputRef}
+                          id={`rename-${t.id}`}
+                          value={renameValue}
+                          onChange={(e) => setRenameValue(e.target.value)}
+                          onClick={(e) => e.stopPropagation()}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              void commitRename(t.id);
+                            } else if (e.key === 'Escape') {
+                              e.preventDefault();
+                              cancelRename();
+                            }
+                          }}
+                          onBlur={() => {
+                            if (!renameSaving) void commitRename(t.id);
+                          }}
+                          maxLength={200}
+                          disabled={renameSaving}
+                          placeholder="Conversation name"
+                          className="w-full bg-portal-bg border border-portal-accent/50 rounded px-1.5 py-0.5 text-xs text-portal-text focus:outline-none focus:ring-2 focus:ring-portal-accent disabled:opacity-60"
+                        />
+                      </>
+                    ) : (
+                      <>
+                        <div className="text-xs font-medium truncate">
+                          {t.title ?? 'Untitled'}
+                        </div>
+                        <div className="text-[10px] text-portal-muted">
+                          {t.messageCount} msg · {formatRelativeTime(t.updatedAt)}
+                        </div>
+                      </>
+                    )}
                   </div>
-                  <span
-                    onClick={(e) => deleteThread(t.id, e)}
-                    className="opacity-0 group-hover:opacity-100 p-0.5 text-portal-muted hover:text-red-300 rounded transition-opacity"
-                    title="Delete conversation"
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </span>
-                </button>
+                  {isRenaming ? (
+                    <button
+                      type="button"
+                      onMouseDown={(e) => {
+                        // Prevent blur from firing before click
+                        e.preventDefault();
+                      }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void commitRename(t.id);
+                      }}
+                      disabled={renameSaving}
+                      aria-label="Save name"
+                      title="Save"
+                      className="p-0.5 text-portal-accent hover:text-portal-text rounded transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent disabled:opacity-50"
+                    >
+                      {renameSaving ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <Check className="h-3 w-3" />
+                      )}
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                      <button
+                        type="button"
+                        onClick={(e) => startRename(t, e)}
+                        aria-label="Rename conversation"
+                        title="Rename conversation"
+                        className="p-0.5 text-portal-muted hover:text-portal-text rounded transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
+                      >
+                        <Pencil className="h-3 w-3" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => deleteThread(t.id, e)}
+                        aria-label="Delete conversation"
+                        title="Delete conversation"
+                        className="p-0.5 text-portal-muted hover:text-red-300 rounded transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    </div>
+                  )}
+                </div>
               );
             })
           )}
@@ -242,14 +374,32 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
         <div className="flex items-center justify-between p-3 border-b border-portal-border">
-          <div className="flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-portal-accent" />
-            <span className="text-sm font-semibold text-portal-text">
-              {threadId ? threads.find((t) => t.id === threadId)?.title ?? 'AI Hub' : 'AI Hub'}
-            </span>
+          <div className="flex items-center gap-2 min-w-0">
+            <Sparkles className="h-4 w-4 text-portal-accent shrink-0" />
+            {activeThread && renamingId === activeThread.id ? (
+              <span className="text-sm font-semibold text-portal-text truncate">
+                {renameValue || 'Untitled'}
+              </span>
+            ) : activeThread ? (
+              <button
+                type="button"
+                onClick={() => startRename(activeThread, { stopPropagation: () => {} } as React.MouseEvent)}
+                className="group flex items-center gap-1.5 min-w-0 text-sm font-semibold text-portal-text hover:text-portal-accent transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent rounded px-1 -mx-1"
+                title="Click to rename"
+              >
+                <span className="truncate">{activeThread.title ?? 'Untitled'}</span>
+                <Pencil className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+              </button>
+            ) : (
+              <span className="text-sm font-semibold text-portal-text">AI Hub</span>
+            )}
           </div>
           {onClose && (
-            <button onClick={onClose} className="p-1 text-portal-muted hover:text-portal-text">
+            <button
+              onClick={onClose}
+              aria-label="Close panel"
+              className="p-1 text-portal-muted hover:text-portal-text cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent rounded transition-colors"
+            >
               <X className="h-4 w-4" />
             </button>
           )}
@@ -348,7 +498,7 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
                   key={i}
                   onClick={() => sendText(opt)}
                   disabled={loading}
-                  className="text-xs px-3 py-1.5 bg-portal-accent/10 border border-portal-accent/30 text-portal-accent hover:bg-portal-accent/20 rounded-md transition-colors disabled:opacity-50"
+                  className="text-xs px-3 py-1.5 bg-portal-accent/10 border border-portal-accent/30 text-portal-accent hover:bg-portal-accent/20 rounded-md transition-colors disabled:opacity-50 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
                 >
                   {opt}
                 </button>
@@ -356,7 +506,7 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
               <button
                 onClick={() => setPendingQuestion(null)}
                 disabled={loading}
-                className="text-xs px-3 py-1.5 bg-portal-card border border-portal-border text-portal-muted hover:text-portal-text rounded-md transition-colors disabled:opacity-50"
+                className="text-xs px-3 py-1.5 bg-portal-card border border-portal-border text-portal-muted hover:text-portal-text rounded-md transition-colors disabled:opacity-50 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
                 title="Or type your own answer below"
               >
                 None of these
@@ -368,7 +518,11 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
         {/* Input */}
         <div className="p-3 border-t border-portal-border">
           <div className="flex gap-2">
+            <label htmlFor="ai-chat-input" className="sr-only">
+              Message
+            </label>
             <input
+              id="ai-chat-input"
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -378,12 +532,13 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
                   ? 'Pick an option above, or type a custom answer…'
                   : 'Ask anything, or dispatch a task…'
               }
-              className="flex-1 bg-portal-card border border-portal-border rounded-lg px-3 py-2 text-sm text-portal-text placeholder:text-portal-muted focus:outline-none focus:border-portal-accent/50"
+              className="flex-1 bg-portal-card border border-portal-border rounded-lg px-3 py-2 text-sm text-portal-text placeholder:text-portal-muted focus:outline-none focus:ring-2 focus:ring-portal-accent focus:border-portal-accent/50"
             />
             <button
               onClick={sendMessage}
               disabled={loading || !input.trim()}
-              className="px-3 py-2 bg-portal-accent hover:bg-portal-accent/80 text-white rounded-lg transition-colors disabled:opacity-50"
+              aria-label="Send message"
+              className="px-3 py-2 bg-portal-accent hover:bg-portal-accent/80 text-white rounded-lg transition-colors disabled:opacity-50 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
             >
               <Send className="h-4 w-4" />
             </button>
