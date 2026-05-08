@@ -370,14 +370,7 @@ export default function AmonisPage() {
 
   return (
     <div className="h-dvh bg-portal-bg flex overflow-hidden">
-      <MainSidebar
-        user={user}
-        onLogout={logout}
-        activeSection="amonis"
-        onSectionChange={() => {}}
-        sections={[]}
-        favoritesCount={0}
-      />
+      <MainSidebar user={user} onLogout={logout} />
 
       <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
         {/* Header */}

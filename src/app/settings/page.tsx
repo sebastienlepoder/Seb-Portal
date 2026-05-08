@@ -4,10 +4,10 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/usePortal';
 import { Shield, Key, QrCode, Check, X, Loader2, Download, Upload } from 'lucide-react';
 import { UpdatePanel } from '@/components/admin/UpdatePanel';
-import { PortalShell } from '@/components/layout/PortalShell';
+import MainSidebar from '@/components/layout/MainSidebar';
 
 export default function SettingsPage() {
-  const { user, loading } = useAuth();
+  const { user, loading, logout } = useAuth();
   const [totpSetup, setTotpSetup] = useState<{
     secret: string;
     qrDataUrl: string;
@@ -65,8 +65,9 @@ export default function SettingsPage() {
   }
 
   return (
-    <PortalShell activeItem="settings">
-    <div className="p-6">
+    <div className="h-dvh bg-portal-bg flex overflow-hidden">
+      <MainSidebar user={user!} onLogout={logout} />
+      <div className="flex-1 min-w-0 overflow-y-auto p-6">
       <div className="max-w-2xl mx-auto">
         <h1 className="text-xl font-bold text-portal-text mb-6">Settings</h1>
 
@@ -242,7 +243,9 @@ export default function SettingsPage() {
             </div>
           </section>
         )}
-    </PortalShell>
+      </div>
+      </div>
+    </div>
   );
 }
 
