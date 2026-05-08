@@ -10,7 +10,6 @@ import {
   Search,
   Download,
   Save,
-  ExternalLink,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -25,12 +24,10 @@ interface AiNote {
 
 export default function AiPage() {
   const { user, loading, logout } = useAuth();
-  const [tab, setTab] = useState<'chat' | 'notes' | 'iframe'>('chat');
+  const [tab, setTab] = useState<'chat' | 'notes'>('chat');
   const [notes, setNotes] = useState<AiNote[]>([]);
   const [noteSearch, setNoteSearch] = useState('');
   const [newNote, setNewNote] = useState(false);
-  const [iframeUrl, setIframeUrl] = useState<string | null>(null);
-  const [iframeBlocked, setIframeBlocked] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) window.location.href = '/login';
@@ -69,14 +66,6 @@ export default function AiPage() {
     a.click();
   };
 
-  const tryIframe = (url: string) => {
-    setIframeUrl(url);
-    setIframeBlocked(false);
-    setTimeout(() => {
-      if (iframeUrl) setIframeBlocked(true);
-    }, 5000);
-  };
-
   if (loading || !user) {
     return (
       <div className="min-h-dvh flex items-center justify-center bg-portal-bg">
@@ -97,7 +86,7 @@ export default function AiPage() {
             <h1 className="text-lg font-semibold text-portal-text">AI Hub</h1>
 
             <div className="flex ml-auto gap-1">
-              {(['chat', 'notes', 'iframe'] as const).map((t) => (
+              {(['chat', 'notes'] as const).map((t) => (
                 <button
                   key={t}
                   onClick={() => setTab(t)}
@@ -108,7 +97,7 @@ export default function AiPage() {
                       : 'text-portal-muted hover:text-portal-text hover:bg-portal-card-hover'
                   )}
                 >
-                  {t === 'chat' ? 'API Chat' : t === 'notes' ? 'Notes' : 'Iframe'}
+                  {t === 'chat' ? 'API Chat' : 'Notes'}
                 </button>
               ))}
             </div>
@@ -170,60 +159,6 @@ export default function AiPage() {
                   </div>
                 ))}
               </div>
-            </div>
-          )}
-
-          {tab === 'iframe' && (
-            <div className="w-full p-4 overflow-y-auto">
-              <div className="max-w-2xl mx-auto mb-4 space-y-2">
-                <p className="text-xs text-portal-muted">Try embedding ChatGPT or Claude (most will block iframe). Fallback: opens in new tab.</p>
-                <div className="flex gap-2 flex-wrap">
-                  <button
-                    onClick={() => tryIframe('https://chatgpt.com')}
-                    className="flex items-center gap-1.5 px-3 py-2 text-xs bg-portal-card border border-portal-border text-portal-text rounded-lg hover:bg-portal-card-hover transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
-                  >
-                    Try ChatGPT Iframe
-                  </button>
-                  <button
-                    onClick={() => tryIframe('https://claude.ai')}
-                    className="flex items-center gap-1.5 px-3 py-2 text-xs bg-portal-card border border-portal-border text-portal-text rounded-lg hover:bg-portal-card-hover transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
-                  >
-                    Try Claude Iframe
-                  </button>
-                  <a
-                    href="https://chatgpt.com"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-1.5 px-3 py-2 text-xs bg-portal-accent text-white rounded-lg hover:bg-portal-accent/90 transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
-                  >
-                    <ExternalLink className="h-3.5 w-3.5" /> Open ChatGPT
-                  </a>
-                  <a
-                    href="https://claude.ai"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-1.5 px-3 py-2 text-xs bg-portal-accent text-white rounded-lg hover:bg-portal-accent/90 transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
-                  >
-                    <ExternalLink className="h-3.5 w-3.5" /> Open Claude
-                  </a>
-                </div>
-              </div>
-              {iframeUrl && (
-                <div className="border border-portal-border rounded-lg overflow-hidden" style={{ height: 'calc(100vh - 200px)' }}>
-                  <iframe
-                    src={iframeUrl}
-                    title="AI service"
-                    className="w-full h-full border-0"
-                    onError={() => setIframeBlocked(true)}
-                    sandbox="allow-same-origin allow-scripts allow-forms allow-popups"
-                  />
-                </div>
-              )}
-              {iframeBlocked && (
-                <div className="mt-4 bg-amber-500/10 border border-amber-500/20 rounded-lg p-3 text-sm text-amber-400">
-                  This site blocks iframe embedding. Use the &quot;Open&quot; buttons above or switch to API Chat mode.
-                </div>
-              )}
             </div>
           )}
         </div>
