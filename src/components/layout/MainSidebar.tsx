@@ -46,6 +46,7 @@ interface NavItem {
   icon: React.ReactNode;
   /** Custom active matcher; defaults to exact pathname equality. */
   match?: (pathname: string) => boolean;
+  accent?: boolean;
 }
 
 interface NavGroup {
@@ -89,6 +90,7 @@ const NAV_GROUPS: NavGroup[] = [
         href: '/amonis',
         label: 'Amonis Finance',
         icon: <Briefcase className="h-3.5 w-3.5" />,
+        accent: true,
       },
       { href: '/insights', label: 'Insights', icon: <TrendingUp className="h-3.5 w-3.5" /> },
       {
@@ -308,6 +310,7 @@ export default function MainSidebar({ user, onLogout }: MainSidebarProps) {
                         active={isItemActive(item, pathname)}
                         label={item.label}
                         icon={item.icon}
+                        accent={item.accent}
                       />
                     ))}
                   </div>
@@ -362,12 +365,14 @@ function SidebarLink({
   label,
   icon,
   collapsed,
+  accent,
 }: {
   href: string;
   active?: boolean;
   label: string;
   icon?: React.ReactNode;
   collapsed?: boolean;
+  accent?: boolean;
 }) {
   if (collapsed) {
     return (
@@ -378,7 +383,9 @@ function SidebarLink({
           'w-full flex items-center justify-center p-2 rounded-lg transition-colors duration-200 cursor-pointer',
           active
             ? 'bg-portal-accent/10 text-portal-accent'
-            : 'text-portal-muted hover:text-portal-text hover:bg-portal-card-hover'
+            : accent
+              ? 'text-portal-accent bg-portal-accent/10 hover:bg-portal-accent/20'
+              : 'text-portal-muted hover:text-portal-text hover:bg-portal-card-hover'
         )}
       >
         {icon}
@@ -393,7 +400,9 @@ function SidebarLink({
         'flex items-center gap-2 px-3 py-2 mx-2 rounded-lg text-xs transition-colors duration-200 cursor-pointer',
         active
           ? 'bg-portal-accent/10 text-portal-accent font-medium'
-          : 'text-portal-text-dim hover:text-portal-text hover:bg-portal-card-hover'
+          : accent
+            ? 'text-portal-accent bg-portal-accent/10 hover:bg-portal-accent/20 border border-portal-accent/20'
+            : 'text-portal-text-dim hover:text-portal-text hover:bg-portal-card-hover'
       )}
     >
       {icon}
