@@ -55,10 +55,43 @@ services:
       - ./config:/app/config:ro
     command: sh -lc "node ./node_modules/prisma/build/index.js db push || npx prisma db push"
 
+  # ─── Agent Dispatch Worker ──────────────────────────────────
+  # Polls the Task table, runs headless Claude against cloned repos,
+  # commits/pushes/opens PRs. Shares the SQLite database with the portal.
+  portal-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: lepoder-portal-worker
+    restart: unless-stopped
+    depends_on:
+      portal:
+        condition: service_started
+    volumes:
+      # Shared SQLite database (read-write)
+      - portal-data:/app/data
+      # Persistent clones (so subsequent runs reuse fetches)
+      - portal-worker-clones:/app/worker-clones
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=file:/app/data/portal.db
+      - WORKER_ID=portal-worker-1
+      - WORKER_POLL_INTERVAL_MS=5000
+      - WORKER_TIMEOUT_MS=300000
+      - WORKER_MAX_ITERATIONS=40
+      - WORKER_CONCURRENCY=1
+      # ANTHROPIC_API_KEY, ANTHROPIC_BASE_URL, GITHUB_TOKEN come from .env
+    networks:
+      - portal-net
+    command: sh -lc "npx tsx worker/index.ts"
+
 volumes:
   portal-data:
     driver: local
   portal-icons:
+    driver: local
+  portal-worker-clones:
     driver: local
 
 networks:

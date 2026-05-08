@@ -10,7 +10,9 @@
     "db:generate": "npx prisma generate",
     "db:push": "npx prisma db push",
     "db:migrate": "npx prisma migrate dev",
-    "db:seed": "npx tsx scripts/seed.ts",
+    "db:seed": "npx tsx scripts/seed.ts && npx tsx scripts/seed-agents.ts",
+    "db:seed:agents": "npx tsx scripts/seed-agents.ts",
+    "worker": "npx tsx worker/index.ts",
     "backup": "npx tsx scripts/backup.ts",
     "postinstall": "npx prisma generate"
   },

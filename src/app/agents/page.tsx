@@ -1,0 +1,842 @@
+'use client';
+
+import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useAuth } from '@/hooks/usePortal';
+import MainSidebar from '@/components/layout/MainSidebar';
+import { cn, formatRelativeTime } from '@/lib/utils';
+import {
+  Bot,
+  Briefcase,
+  Cpu,
+  ExternalLink,
+  Loader2,
+  Plus,
+  RotateCcw,
+  Send,
+  Settings,
+  StopCircle,
+  X,
+} from 'lucide-react';
+import type {
+  AgentSummary,
+  ProjectSummary,
+  TaskDTO,
+  TaskLogDTO,
+  TaskPriority,
+} from '@/types/agents';
+
+interface AgentListItem extends AgentSummary {
+  description: string | null;
+  inFlightTaskCount: number;
+}
+
+const STATUS_LABEL: Record<TaskDTO['status'], string> = {
+  pending: 'Pending',
+  queued: 'Queued',
+  in_progress: 'In progress',
+  completed: 'Completed',
+  failed: 'Failed',
+  cancelled: 'Cancelled',
+};
+
+const STATUS_CLASS: Record<TaskDTO['status'], string> = {
+  pending: 'bg-gray-500/10 text-gray-300 border-gray-500/30',
+  queued: 'bg-blue-500/10 text-blue-300 border-blue-500/30',
+  in_progress: 'bg-yellow-500/10 text-yellow-300 border-yellow-500/30',
+  completed: 'bg-green-500/10 text-green-300 border-green-500/30',
+  failed: 'bg-red-500/10 text-red-300 border-red-500/30',
+  cancelled: 'bg-zinc-500/10 text-zinc-400 border-zinc-500/30',
+};
+
+const PRIORITY_CLASS: Record<TaskPriority, string> = {
+  low: 'text-gray-400',
+  normal: 'text-blue-300',
+  high: 'text-orange-300',
+  urgent: 'text-red-300',
+};
+
+const TERMINAL: TaskDTO['status'][] = ['completed', 'failed', 'cancelled'];
+
+export default function AgentsPage() {
+  const { user, loading: authLoading } = useAuth();
+  const [agents, setAgents] = useState<AgentListItem[]>([]);
+  const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  const [tasks, setTasks] = useState<TaskDTO[]>([]);
+  const [statusFilter, setStatusFilter] = useState<'active' | 'all'>('active');
+  const [showDispatcher, setShowDispatcher] = useState(false);
+  const [openTaskId, setOpenTaskId] = useState<string | null>(null);
+  const [openTaskDetail, setOpenTaskDetail] = useState<
+    (TaskDTO & { logs: TaskLogDTO[] }) | null
+  >(null);
+
+  const handleLogout = () => {
+    fetch('/api/auth/logout', { method: 'POST' }).then(() => {
+      window.location.href = '/login';
+    });
+  };
+
+  // Initial loaders
+  useEffect(() => {
+    if (!authLoading && !user) window.location.href = '/login';
+  }, [authLoading, user]);
+
+  const fetchAgents = useCallback(() => {
+    fetch('/api/ai-hub/agents')
+      .then((r) => r.json())
+      .then((d) => d.ok && setAgents(d.data))
+      .catch(() => {});
+  }, []);
+
+  const fetchProjects = useCallback(() => {
+    fetch('/api/ai-hub/projects')
+      .then((r) => r.json())
+      .then((d) => d.ok && setProjects(d.data))
+      .catch(() => {});
+  }, []);
+
+  const fetchTasks = useCallback(() => {
+    const url =
+      statusFilter === 'active'
+        ? '/api/ai-hub/tasks?status=pending,queued,in_progress&limit=200'
+        : '/api/ai-hub/tasks?limit=200';
+    fetch(url)
+      .then((r) => r.json())
+      .then((d) => d.ok && setTasks(d.data))
+      .catch(() => {});
+  }, [statusFilter]);
+
+  useEffect(() => {
+    if (!user) return;
+    fetchAgents();
+    fetchProjects();
+    fetchTasks();
+  }, [user, fetchAgents, fetchProjects, fetchTasks]);
+
+  // Polling: every 2s while at least one task is in flight, otherwise 5s.
+  useEffect(() => {
+    if (!user) return;
+    const anyInFlight = tasks.some((t) => !TERMINAL.includes(t.status));
+    const interval = anyInFlight ? 2000 : 5000;
+    const id = setInterval(() => {
+      fetchTasks();
+      fetchAgents();
+    }, interval);
+    return () => clearInterval(id);
+  }, [user, tasks, fetchTasks, fetchAgents]);
+
+  // When a task detail modal is open, refresh that task too.
+  useEffect(() => {
+    if (!openTaskId) {
+      setOpenTaskDetail(null);
+      return;
+    }
+    let cancelled = false;
+    const load = () => {
+      fetch(`/api/ai-hub/tasks/${openTaskId}`)
+        .then((r) => r.json())
+        .then((d) => {
+          if (!cancelled && d.ok) setOpenTaskDetail(d.data);
+        })
+        .catch(() => {});
+    };
+    load();
+    const id = setInterval(load, 2000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [openTaskId]);
+
+  const stats = useMemo(() => {
+    const counts: Record<TaskDTO['status'], number> = {
+      pending: 0,
+      queued: 0,
+      in_progress: 0,
+      completed: 0,
+      failed: 0,
+      cancelled: 0,
+    };
+    for (const t of tasks) counts[t.status]++;
+    return counts;
+  }, [tasks]);
+
+  if (authLoading || !user) {
+    return (
+      <div className="min-h-dvh flex items-center justify-center bg-portal-bg">
+        <Loader2 className="h-6 w-6 animate-spin text-portal-accent" />
+      </div>
+    );
+  }
+
+  const csrfToken = (user as { csrfToken?: string }).csrfToken;
+
+  return (
+    <div className="h-dvh bg-portal-bg flex overflow-hidden">
+      <MainSidebar user={user} onLogout={handleLogout} />
+
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-7xl mx-auto p-6">
+          {/* Header */}
+          <div className="flex items-start justify-between mb-6 gap-4 flex-wrap">
+            <div className="pl-12 sm:pl-0">
+              <h1 className="text-2xl font-bold text-portal-text flex items-center gap-2">
+                <Bot className="h-6 w-6 text-portal-accent" />
+                Agents
+              </h1>
+              <p className="text-sm text-portal-muted">
+                Dispatch development tasks to specialized AI workers
+              </p>
+            </div>
+            <div className="flex items-center gap-2 ml-auto">
+              <button
+                onClick={() => setShowDispatcher(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-portal-accent hover:bg-portal-accent/80 text-white rounded-lg transition-colors text-sm"
+              >
+                <Send className="h-4 w-4" />
+                New task
+              </button>
+              {user.role === 'admin' && (
+                <a
+                  href="/admin/agents"
+                  className="flex items-center gap-2 px-3 py-2 bg-portal-card border border-portal-border hover:border-portal-accent/50 text-portal-text rounded-lg transition-colors text-sm"
+                  title="Manage agents"
+                >
+                  <Settings className="h-4 w-4" />
+                </a>
+              )}
+            </div>
+          </div>
+
+          {/* Stat strip */}
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-2 mb-6 text-xs">
+            {(
+              [
+                ['pending', 'Pending'],
+                ['queued', 'Queued'],
+                ['in_progress', 'In progress'],
+                ['completed', 'Completed'],
+                ['failed', 'Failed'],
+                ['cancelled', 'Cancelled'],
+              ] as const
+            ).map(([k, label]) => (
+              <div
+                key={k}
+                className={cn(
+                  'rounded-lg border px-3 py-2 flex items-baseline justify-between',
+                  STATUS_CLASS[k]
+                )}
+              >
+                <span>{label}</span>
+                <span className="font-mono text-base">{stats[k]}</span>
+              </div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+            {/* Agents column */}
+            <section className="lg:col-span-4">
+              <div className="bg-portal-card border border-portal-border rounded-xl">
+                <div className="px-4 py-3 border-b border-portal-border flex items-center justify-between">
+                  <h2 className="text-sm font-semibold text-portal-text flex items-center gap-2">
+                    <Cpu className="h-4 w-4 text-portal-accent" /> Agents
+                  </h2>
+                  <span className="text-xs text-portal-muted">{agents.length} active</span>
+                </div>
+                <div className="divide-y divide-portal-border max-h-[70vh] overflow-y-auto">
+                  {agents.length === 0 ? (
+                    <div className="p-4 text-sm text-portal-muted">
+                      No active agents. {user.role === 'admin' ? 'Create one in Admin → Agents.' : ''}
+                    </div>
+                  ) : (
+                    agents.map((a) => (
+                      <div key={a.id} className="p-3">
+                        <div className="flex items-start gap-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-medium text-portal-text truncate">
+                                {a.name}
+                              </span>
+                              <span className="text-[10px] uppercase tracking-wider text-portal-accent">
+                                {a.role}
+                              </span>
+                            </div>
+                            {a.description && (
+                              <p className="text-xs text-portal-muted mt-1 line-clamp-2">
+                                {a.description}
+                              </p>
+                            )}
+                            <div className="flex flex-wrap gap-1 mt-2">
+                              {a.expertise.slice(0, 6).map((tag) => (
+                                <span
+                                  key={tag}
+                                  className="text-[10px] bg-portal-bg border border-portal-border text-portal-muted rounded px-1.5 py-0.5"
+                                >
+                                  {tag}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                          <div
+                            className={cn(
+                              'shrink-0 text-[10px] rounded-full px-2 py-0.5 border',
+                              a.inFlightTaskCount > 0
+                                ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-300'
+                                : 'bg-green-500/10 border-green-500/30 text-green-300'
+                            )}
+                          >
+                            {a.inFlightTaskCount > 0
+                              ? `${a.inFlightTaskCount} working`
+                              : 'idle'}
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </section>
+
+            {/* Task queue column */}
+            <section className="lg:col-span-8">
+              <div className="bg-portal-card border border-portal-border rounded-xl">
+                <div className="px-4 py-3 border-b border-portal-border flex items-center justify-between">
+                  <h2 className="text-sm font-semibold text-portal-text flex items-center gap-2">
+                    <Briefcase className="h-4 w-4 text-portal-accent" /> Task queue
+                  </h2>
+                  <div className="flex gap-1 text-xs">
+                    <FilterBtn
+                      active={statusFilter === 'active'}
+                      onClick={() => setStatusFilter('active')}
+                    >
+                      Active
+                    </FilterBtn>
+                    <FilterBtn
+                      active={statusFilter === 'all'}
+                      onClick={() => setStatusFilter('all')}
+                    >
+                      All
+                    </FilterBtn>
+                  </div>
+                </div>
+                <div className="divide-y divide-portal-border max-h-[70vh] overflow-y-auto">
+                  {tasks.length === 0 ? (
+                    <div className="p-6 text-center text-sm text-portal-muted">
+                      No tasks {statusFilter === 'active' ? 'in flight' : 'yet'}.{' '}
+                      <button
+                        onClick={() => setShowDispatcher(true)}
+                        className="text-portal-accent hover:underline"
+                      >
+                        Dispatch one →
+                      </button>
+                    </div>
+                  ) : (
+                    tasks.map((t) => (
+                      <button
+                        key={t.id}
+                        onClick={() => setOpenTaskId(t.id)}
+                        className="w-full text-left p-3 hover:bg-portal-card-hover/50 transition-colors"
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className="text-lg shrink-0 mt-0.5">{t.project.icon ?? '📦'}</div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-sm font-medium text-portal-text truncate">
+                                {t.title}
+                              </span>
+                              <span
+                                className={cn(
+                                  'text-[10px] rounded-full px-2 py-0.5 border',
+                                  STATUS_CLASS[t.status]
+                                )}
+                              >
+                                {STATUS_LABEL[t.status]}
+                              </span>
+                              <span className={cn('text-[10px] font-medium', PRIORITY_CLASS[t.priority])}>
+                                {t.priority}
+                              </span>
+                            </div>
+                            <div className="text-xs text-portal-muted mt-1 truncate">
+                              {t.project.name}
+                              {t.agentProfile ? ` · ${t.agentProfile.name} (${t.agentProfile.role})` : ''}
+                            </div>
+                            <div className="text-xs text-portal-muted mt-0.5">
+                              {formatRelativeTime(t.createdAt)}
+                              {t.workerStartedAt && ` · started ${formatRelativeTime(t.workerStartedAt)}`}
+                              {t.completedAt && ` · finished ${formatRelativeTime(t.completedAt)}`}
+                            </div>
+                          </div>
+                          {t.status === 'in_progress' && (
+                            <Loader2 className="h-4 w-4 animate-spin text-yellow-300 shrink-0 mt-1" />
+                          )}
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+
+      {showDispatcher && (
+        <DispatcherModal
+          onClose={() => setShowDispatcher(false)}
+          projects={projects}
+          agents={agents}
+          csrfToken={csrfToken}
+          onDispatched={(taskId) => {
+            setShowDispatcher(false);
+            fetchTasks();
+            setOpenTaskId(taskId);
+          }}
+        />
+      )}
+
+      {openTaskId && (
+        <TaskDetailModal
+          taskId={openTaskId}
+          detail={openTaskDetail}
+          agents={agents}
+          csrfToken={csrfToken}
+          onClose={() => setOpenTaskId(null)}
+          onChanged={fetchTasks}
+        />
+      )}
+    </div>
+  );
+}
+
+function FilterBtn({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        'px-2.5 py-1 rounded border transition-colors',
+        active
+          ? 'bg-portal-accent/10 text-portal-accent border-portal-accent/30'
+          : 'bg-portal-bg border-portal-border text-portal-muted hover:text-portal-text'
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+function DispatcherModal({
+  projects,
+  agents,
+  csrfToken,
+  onClose,
+  onDispatched,
+}: {
+  projects: ProjectSummary[];
+  agents: AgentListItem[];
+  csrfToken: string | undefined;
+  onClose: () => void;
+  onDispatched: (taskId: string) => void;
+}) {
+  const [projectName, setProjectName] = useState(projects[0]?.slug ?? '');
+  const [agentSlug, setAgentSlug] = useState<string>(''); // empty = auto
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [priority, setPriority] = useState<TaskPriority>('normal');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit() {
+    if (!title.trim() || !description.trim() || !projectName) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/ai-hub/dispatch-task', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
+        },
+        body: JSON.stringify({
+          project_name: projectName,
+          task_title: title.trim(),
+          task_description: description.trim(),
+          agent_role: agentSlug || null,
+          priority,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        setError(data.error || `Dispatch failed (${res.status})`);
+        setSubmitting(false);
+        return;
+      }
+      onDispatched(data.taskId);
+    } catch (e) {
+      setError((e as Error).message);
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <ModalShell onClose={onClose} title="Dispatch a new task">
+      <div className="space-y-3">
+        <Field label="Project">
+          <select
+            value={projectName}
+            onChange={(e) => setProjectName(e.target.value)}
+            className="w-full bg-portal-bg border border-portal-border rounded-md px-3 py-2 text-sm text-portal-text"
+          >
+            {projects.length === 0 ? (
+              <option value="">— no projects configured —</option>
+            ) : (
+              projects.map((p) => (
+                <option key={p.id} value={p.slug}>
+                  {p.icon ?? '📦'} {p.name}
+                </option>
+              ))
+            )}
+          </select>
+        </Field>
+
+        <Field label="Agent (optional — auto-match if empty)">
+          <select
+            value={agentSlug}
+            onChange={(e) => setAgentSlug(e.target.value)}
+            className="w-full bg-portal-bg border border-portal-border rounded-md px-3 py-2 text-sm text-portal-text"
+          >
+            <option value="">— auto —</option>
+            {agents.map((a) => (
+              <option key={a.id} value={a.slug}>
+                {a.name} · {a.role}
+              </option>
+            ))}
+          </select>
+        </Field>
+
+        <Field label="Title">
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="e.g. Add search bar to dashboard"
+            className="w-full bg-portal-bg border border-portal-border rounded-md px-3 py-2 text-sm text-portal-text"
+          />
+        </Field>
+
+        <Field label="Description">
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Detailed instructions for the agent…"
+            rows={6}
+            className="w-full bg-portal-bg border border-portal-border rounded-md px-3 py-2 text-sm text-portal-text font-mono resize-y"
+          />
+        </Field>
+
+        <Field label="Priority">
+          <div className="flex gap-1">
+            {(['low', 'normal', 'high', 'urgent'] as TaskPriority[]).map((p) => (
+              <button
+                key={p}
+                onClick={() => setPriority(p)}
+                className={cn(
+                  'flex-1 px-3 py-1.5 rounded border text-xs',
+                  priority === p
+                    ? 'bg-portal-accent/10 border-portal-accent/40 text-portal-accent'
+                    : 'bg-portal-bg border-portal-border text-portal-muted'
+                )}
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+        </Field>
+
+        {error && (
+          <div className="bg-red-500/10 border border-red-500/30 text-red-300 text-xs rounded-md px-3 py-2">
+            {error}
+          </div>
+        )}
+
+        <div className="flex justify-end gap-2 pt-2">
+          <button
+            onClick={onClose}
+            className="px-3 py-2 text-sm text-portal-muted hover:text-portal-text"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={submit}
+            disabled={submitting || !title.trim() || !description.trim() || !projectName}
+            className="px-4 py-2 bg-portal-accent hover:bg-portal-accent/80 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-md text-sm flex items-center gap-2"
+          >
+            {submitting ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Send className="h-4 w-4" />
+            )}
+            Dispatch
+          </button>
+        </div>
+      </div>
+    </ModalShell>
+  );
+}
+
+function TaskDetailModal({
+  taskId,
+  detail,
+  agents,
+  csrfToken,
+  onClose,
+  onChanged,
+}: {
+  taskId: string;
+  detail: (TaskDTO & { logs: TaskLogDTO[] }) | null;
+  agents: AgentListItem[];
+  csrfToken: string | undefined;
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function callPatch(body: Record<string, unknown>) {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/ai-hub/tasks/${taskId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
+        },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        setError(data.error || `Failed (${res.status})`);
+      }
+      onChanged();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const isTerminal = detail ? TERMINAL.includes(detail.status) : false;
+  const isInFlight = detail?.status === 'in_progress';
+
+  return (
+    <ModalShell onClose={onClose} title={detail?.title ?? 'Loading task…'} wide>
+      {!detail ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-5 w-5 animate-spin text-portal-accent" />
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span
+              className={cn(
+                'text-[10px] rounded-full px-2 py-0.5 border',
+                STATUS_CLASS[detail.status]
+              )}
+            >
+              {STATUS_LABEL[detail.status]}
+            </span>
+            <span className={cn('text-[10px] font-medium', PRIORITY_CLASS[detail.priority])}>
+              {detail.priority} priority
+            </span>
+            <span className="text-xs text-portal-muted">
+              {detail.project.icon ?? '📦'} {detail.project.name}
+            </span>
+            {detail.agentProfile && (
+              <span className="text-xs text-portal-muted">
+                · {detail.agentProfile.name} ({detail.agentProfile.role})
+              </span>
+            )}
+          </div>
+
+          <div className="bg-portal-bg border border-portal-border rounded-md p-3 text-sm text-portal-text whitespace-pre-wrap">
+            {detail.description}
+          </div>
+
+          {detail.resultUrl && (
+            <a
+              href={detail.resultUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 text-sm text-portal-accent hover:underline"
+            >
+              <ExternalLink className="h-4 w-4" />
+              {detail.resultType === 'pr'
+                ? 'View pull request'
+                : detail.resultType === 'commit'
+                  ? 'View commit'
+                  : 'View result'}
+            </a>
+          )}
+
+          {detail.resultSummary && (
+            <div className="bg-green-500/5 border border-green-500/20 rounded-md p-3 text-sm text-portal-text whitespace-pre-wrap">
+              {detail.resultSummary}
+            </div>
+          )}
+
+          {detail.errorMessage && (
+            <div className="bg-red-500/10 border border-red-500/30 rounded-md p-3 text-sm text-red-300 whitespace-pre-wrap">
+              <strong>Error:</strong> {detail.errorMessage}
+            </div>
+          )}
+
+          {/* Logs */}
+          <div>
+            <h3 className="text-xs uppercase tracking-wider text-portal-muted mb-1">Logs</h3>
+            <div className="bg-black/40 border border-portal-border rounded-md p-2 max-h-72 overflow-y-auto font-mono text-[11px]">
+              {detail.logs.length === 0 ? (
+                <div className="text-portal-muted">No logs yet.</div>
+              ) : (
+                detail.logs.map((l) => (
+                  <div
+                    key={l.id}
+                    className={cn(
+                      'whitespace-pre-wrap',
+                      l.level === 'error'
+                        ? 'text-red-300'
+                        : l.level === 'warn'
+                          ? 'text-yellow-300'
+                          : l.level === 'stderr'
+                            ? 'text-orange-300'
+                            : 'text-portal-text'
+                    )}
+                  >
+                    <span className="text-portal-muted">
+                      [{new Date(l.createdAt).toLocaleTimeString()}]
+                    </span>{' '}
+                    {l.message}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {error && (
+            <div className="bg-red-500/10 border border-red-500/30 text-red-300 text-xs rounded-md px-3 py-2">
+              {error}
+            </div>
+          )}
+
+          {/* Action row */}
+          <div className="flex items-center gap-2 pt-2 border-t border-portal-border">
+            {!isTerminal && (
+              <button
+                onClick={() => callPatch({ action: 'cancel' })}
+                disabled={busy}
+                className="flex items-center gap-1 px-3 py-1.5 bg-red-500/10 border border-red-500/30 text-red-300 hover:bg-red-500/20 rounded-md text-xs disabled:opacity-50"
+              >
+                <StopCircle className="h-3.5 w-3.5" />
+                Cancel
+              </button>
+            )}
+            {!isInFlight && !isTerminal && (
+              <>
+                <select
+                  onChange={(e) => {
+                    if (e.target.value)
+                      callPatch({ action: 'reassign', agentProfileId: e.target.value });
+                  }}
+                  defaultValue=""
+                  disabled={busy}
+                  className="bg-portal-bg border border-portal-border rounded-md px-2 py-1.5 text-xs text-portal-text"
+                >
+                  <option value="">Reassign to…</option>
+                  {agents.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name} · {a.role}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  onChange={(e) => {
+                    if (e.target.value)
+                      callPatch({ action: 'reprioritize', priority: e.target.value });
+                  }}
+                  defaultValue=""
+                  disabled={busy}
+                  className="bg-portal-bg border border-portal-border rounded-md px-2 py-1.5 text-xs text-portal-text"
+                >
+                  <option value="">Change priority…</option>
+                  {(['low', 'normal', 'high', 'urgent'] as TaskPriority[]).map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
+            {detail.status === 'failed' && (
+              <span className="text-xs text-portal-muted ml-auto inline-flex items-center gap-1">
+                <RotateCcw className="h-3 w-3" /> Re-dispatch by clicking <Plus className="h-3 w-3" /> New task above
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+    </ModalShell>
+  );
+}
+
+function ModalShell({
+  title,
+  onClose,
+  wide,
+  children,
+}: {
+  title: string;
+  onClose: () => void;
+  wide?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className={cn(
+          'bg-portal-card border border-portal-border rounded-xl shadow-xl w-full overflow-hidden',
+          wide ? 'max-w-3xl' : 'max-w-lg'
+        )}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-4 py-3 border-b border-portal-border">
+          <h2 className="text-sm font-semibold text-portal-text truncate">{title}</h2>
+          <button
+            onClick={onClose}
+            className="p-1 text-portal-muted hover:text-portal-text rounded-md"
+            aria-label="Close"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="p-4 max-h-[80vh] overflow-y-auto">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="block">
+      <span className="text-xs font-medium text-portal-muted block mb-1">{label}</span>
+      {children}
+    </label>
+  );
+}

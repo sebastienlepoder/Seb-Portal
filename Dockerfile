@@ -46,6 +46,18 @@ COPY --from=builder --chown=nextjs:nodejs /app/.version ./.version
 # ✅ Stable fix: include full node_modules so Prisma CLI works (c12/empathic/etc.)
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules ./node_modules
 
+# Worker source (run via tsx). The Next.js standalone bundle doesn't include
+# `src/` or `worker/`, but the worker container needs both. They're tiny
+# compared to node_modules.
+COPY --from=builder --chown=nextjs:nodejs /app/src ./src
+COPY --from=builder --chown=nextjs:nodejs /app/worker ./worker
+COPY --from=builder --chown=nextjs:nodejs /app/scripts ./scripts
+COPY --from=builder --chown=nextjs:nodejs /app/tsconfig.json ./tsconfig.json
+COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
+
+# git is required by the worker for clone/commit/push
+RUN apk add --no-cache git
+
 # Create runtime-only directories (small — fast chown)
 RUN mkdir -p /app/data /app/public/icons/generated \
   && chown -R nextjs:nodejs /app/data /app/public/icons
