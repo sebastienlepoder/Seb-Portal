@@ -42,10 +42,40 @@ DATABASE_URL="file:./dev.db" npm run worker
 ## Files
 
 - `index.ts` — main poll loop, task locking, stale-task reaping, graceful shutdown
-- `task-executor.ts` — per-task orchestration (clone → agent → commit/PR → record)
+- `task-executor.ts` — per-task orchestration (clone → install deps → agent → commit/PR → record)
 - `claude-agent.ts` — Anthropic SDK tool-use loop with `read_file`, `write_file`, `list_directory`, `run_bash`, `finish` tools
-- `git-handler.ts` — `git clone`, `git commit`, `git push`, GitHub REST PR creation
+- `git-handler.ts` — `git clone`, `git commit`, `git push`, GitHub REST PR creation, `ensureNodeModules`
 - `logger.ts` — structured logging to both stdout and the `TaskLog` table
+
+## Persistent clones + dependency install
+
+The worker keeps clones across tasks under
+`${WORKER_CLONES_DIR:-/app/worker-clones}/<owner>__<repo>/`. On Coolify
+this maps to the `portal-worker-clones` named volume. Benefits:
+
+- Subsequent tasks against the same repo reuse the existing checkout
+  (just `git fetch` + `reset --hard` to the base branch)
+- `node_modules/` survives between tasks, so `npm install` only runs on
+  first dispatch + when `package-lock.json` changes
+
+Right after clone, the worker runs `ensureNodeModules`, which:
+
+1. Skips if there's no `package.json` (not a Node project)
+2. Skips if `node_modules` exists and is newer than `package-lock.json`
+3. Otherwise runs `npm ci` (lockfile present) or `npm install`, with
+   `--no-audit --no-fund --prefer-offline`, capped at
+   `WORKER_NPM_INSTALL_TIMEOUT_MS` (default 5 min)
+
+This gives the agent working `tsc`, `eslint`, `next build`, and any
+project test runner inside its `run_bash` tool. Without it the agent
+sees "Cannot find module" everywhere and gives up on verification.
+
+To disable for a particular setup (e.g. a non-Node repo or a really
+slow first install you want to handle out-of-band), set
+`WORKER_SKIP_NPM_INSTALL=true`.
+
+If the install fails, the worker logs a `warn` and continues — the
+agent can still make code changes, just without local verification.
 
 ## Notes on the headless agent
 

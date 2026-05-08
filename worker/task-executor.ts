@@ -1,11 +1,21 @@
 import prisma from '../src/lib/db';
-import { cloneRepo, commitAll, openPullRequest, pushBranch } from './git-handler';
+import {
+  cloneRepo,
+  commitAll,
+  ensureNodeModules,
+  openPullRequest,
+  pushBranch,
+} from './git-handler';
 import { runAgent } from './claude-agent';
 import { logger } from './logger';
 
 const DEFAULT_MODEL = process.env.WORKER_DEFAULT_MODEL || 'claude-sonnet-4-6';
 const TIMEOUT_MS = parseInt(process.env.WORKER_TIMEOUT_MS || '300000', 10) || 300000;
 const MAX_ITERATIONS = parseInt(process.env.WORKER_MAX_ITERATIONS || '40', 10) || 40;
+const NPM_INSTALL_TIMEOUT_MS =
+  parseInt(process.env.WORKER_NPM_INSTALL_TIMEOUT_MS || '300000', 10) || 300000;
+const SKIP_NPM_INSTALL =
+  (process.env.WORKER_SKIP_NPM_INSTALL || '').toLowerCase() === 'true';
 
 interface ExecuteParams {
   taskId: string;
@@ -56,6 +66,31 @@ export async function executeTask({ taskId, workerId }: ExecuteParams): Promise<
       token: githubToken,
       presetPath: project.clonePath,
     });
+
+    // Install dependencies so the agent can run tsc / lint / tests inside
+    // its run_bash tool. Failure here is logged as a warning rather than
+    // fatal — the agent can still make code changes, it just won't be
+    // able to verify them locally. Skip entirely with WORKER_SKIP_NPM_INSTALL=true.
+    if (!SKIP_NPM_INSTALL) {
+      try {
+        const r = await ensureNodeModules({
+          taskId,
+          workdir: clone.workdir,
+          timeoutMs: NPM_INSTALL_TIMEOUT_MS,
+        });
+        if (r.skipped) {
+          await logger.info(
+            taskId,
+            `Dependency setup: skipped (${r.reason ?? 'no reason'})`
+          );
+        }
+      } catch (e) {
+        await logger.warn(
+          taskId,
+          `Dependency install failed; agent will run without node_modules: ${(e as Error).message}`
+        );
+      }
+    }
 
     const systemPrompt =
       agentProfile?.systemPrompt ??
