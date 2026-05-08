@@ -203,7 +203,6 @@ export default function AdminServicesPage() {
           onAiSuggest={aiSuggest}
         />
       )}
-        </div>
       </div>
     </div>
   );
