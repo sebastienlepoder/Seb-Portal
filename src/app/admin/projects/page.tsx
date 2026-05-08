@@ -4,7 +4,19 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/hooks/usePortal';
 import MainSidebar from '@/components/layout/MainSidebar';
 import { cn } from '@/lib/utils';
-import { Bot, FolderGit2, Loader2, Pencil, Plus, Save, Trash2, X } from 'lucide-react';
+import {
+  Bot,
+  FolderGit2,
+  HelpCircle,
+  Loader2,
+  Lock,
+  Pencil,
+  Plus,
+  Save,
+  Trash2,
+  Unlock,
+  X,
+} from 'lucide-react';
 import Link from 'next/link';
 
 interface Project {
@@ -150,6 +162,34 @@ export default function AdminProjectsPage() {
     }
   }
 
+  async function toggleAllowWrite(p: Project) {
+    const willEnable = !p.allowWrite;
+    if (willEnable) {
+      const ok = window.confirm(
+        `Enable write for "${p.name}"?\n\n` +
+          `The agent worker will be allowed to commit and push to ${p.repoOwner ?? '?'}/${p.repoName ?? '?'} (branch: ${p.workingBranch}).\n\n` +
+          `Make sure GITHUB_TOKEN is set in the worker's environment.`
+      );
+      if (!ok) return;
+    }
+    // Optimistic update
+    setProjects((prev) => prev.map((x) => (x.id === p.id ? { ...x, allowWrite: willEnable } : x)));
+    const res = await fetch(`/api/admin/projects/${p.id}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
+      },
+      body: JSON.stringify({ allowWrite: willEnable }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      alert(data.error || 'Failed to toggle');
+      // revert
+      setProjects((prev) => prev.map((x) => (x.id === p.id ? { ...x, allowWrite: !willEnable } : x)));
+    }
+  }
+
   async function remove(id: string) {
     if (!confirm('Delete this project? Cannot be undone.')) return;
     const res = await fetch(`/api/admin/projects/${id}`, {
@@ -195,6 +235,13 @@ export default function AdminProjectsPage() {
             </div>
             <div className="flex gap-2">
               <Link
+                href="/agents/help"
+                className="flex items-center gap-2 px-3 py-2 bg-portal-card border border-portal-border hover:border-portal-accent/50 text-portal-text rounded-lg text-sm"
+                title="Help & documentation"
+              >
+                <HelpCircle className="h-4 w-4" />
+              </Link>
+              <Link
                 href="/admin/agents"
                 className="flex items-center gap-2 px-3 py-2 bg-portal-card border border-portal-border hover:border-portal-accent/50 text-portal-text rounded-lg text-sm"
               >
@@ -222,15 +269,32 @@ export default function AdminProjectsPage() {
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-sm font-medium text-portal-text">{p.name}</span>
                       <code className="text-[11px] text-portal-muted">{p.slug}</code>
-                      {p.allowWrite ? (
-                        <span className="text-[10px] bg-yellow-500/10 text-yellow-300 border border-yellow-500/30 rounded px-1.5 py-0.5">
-                          write enabled
-                        </span>
-                      ) : (
-                        <span className="text-[10px] bg-blue-500/10 text-blue-300 border border-blue-500/30 rounded px-1.5 py-0.5">
-                          read-only
-                        </span>
-                      )}
+                      <button
+                        onClick={() => toggleAllowWrite(p)}
+                        title={
+                          p.allowWrite
+                            ? 'Click to switch to read-only'
+                            : 'Click to allow worker to commit + push'
+                        }
+                        className={cn(
+                          'text-[10px] inline-flex items-center gap-1 rounded px-1.5 py-0.5 border cursor-pointer transition-colors',
+                          p.allowWrite
+                            ? 'bg-yellow-500/10 text-yellow-300 border-yellow-500/30 hover:bg-yellow-500/20'
+                            : 'bg-blue-500/10 text-blue-300 border-blue-500/30 hover:bg-blue-500/20'
+                        )}
+                      >
+                        {p.allowWrite ? (
+                          <>
+                            <Unlock className="h-3 w-3" />
+                            write enabled
+                          </>
+                        ) : (
+                          <>
+                            <Lock className="h-3 w-3" />
+                            read-only
+                          </>
+                        )}
+                      </button>
                       <span className="text-[10px] bg-portal-bg border border-portal-border text-portal-muted rounded px-1.5 py-0.5">
                         {p.status}
                       </span>

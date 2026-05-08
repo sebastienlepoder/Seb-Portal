@@ -99,6 +99,30 @@ async function reapStaleTasks(): Promise<void> {
   }
 }
 
+async function heartbeat(status: 'running' | 'draining' | 'stopped'): Promise<void> {
+  // Write a heartbeat row so the dashboard can show "worker online" / "no
+  // worker running". Best-effort — never crash the loop if the DB is busy.
+  const payload = JSON.stringify({
+    workerId: WORKER_ID,
+    lastSeen: new Date().toISOString(),
+    status,
+    inFlight: inFlight.size,
+    concurrency: CONCURRENCY,
+    pollIntervalMs: POLL_INTERVAL_MS,
+    hasAnthropicKey: !!process.env.ANTHROPIC_API_KEY,
+    hasGithubToken: !!process.env.GITHUB_TOKEN,
+  });
+  try {
+    await prisma.appSetting.upsert({
+      where: { key: `worker:${WORKER_ID}` },
+      create: { key: `worker:${WORKER_ID}`, value: payload },
+      update: { value: payload },
+    });
+  } catch {
+    /* ignore */
+  }
+}
+
 async function tick(): Promise<void> {
   if (shuttingDown) return;
   if (inFlight.size >= CONCURRENCY) return;
@@ -165,9 +189,12 @@ async function main(): Promise<void> {
     shuttingDown = true;
   });
 
+  await heartbeat('running');
+
   while (!shuttingDown) {
     try {
       await tick();
+      await heartbeat('running');
     } catch (e) {
       process.stderr.write(`[worker] tick error: ${(e as Error).message}\n`);
     }
@@ -176,9 +203,11 @@ async function main(): Promise<void> {
 
   // Drain in-flight tasks before exit
   process.stdout.write(`[worker] draining ${inFlight.size} task(s)…\n`);
+  await heartbeat('draining');
   while (inFlight.size > 0) {
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
+  await heartbeat('stopped');
   await prisma.$disconnect();
   process.stdout.write('[worker] shutdown complete\n');
 }

@@ -5,10 +5,12 @@ import { useAuth } from '@/hooks/usePortal';
 import MainSidebar from '@/components/layout/MainSidebar';
 import { cn, formatRelativeTime } from '@/lib/utils';
 import {
+  AlertTriangle,
   Bot,
   Briefcase,
   Cpu,
   ExternalLink,
+  HelpCircle,
   Loader2,
   Plus,
   RotateCcw,
@@ -17,6 +19,7 @@ import {
   StopCircle,
   X,
 } from 'lucide-react';
+import Link from 'next/link';
 import type {
   AgentSummary,
   ProjectSummary,
@@ -28,6 +31,18 @@ import type {
 interface AgentListItem extends AgentSummary {
   description: string | null;
   inFlightTaskCount: number;
+}
+
+interface WorkerStatus {
+  workerId: string;
+  lastSeen: string;
+  status: 'running' | 'draining' | 'stopped';
+  inFlight: number;
+  concurrency: number;
+  ageSec: number;
+  active: boolean;
+  hasAnthropicKey: boolean;
+  hasGithubToken: boolean;
 }
 
 const STATUS_LABEL: Record<TaskDTO['status'], string> = {
@@ -62,6 +77,8 @@ export default function AgentsPage() {
   const [agents, setAgents] = useState<AgentListItem[]>([]);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [tasks, setTasks] = useState<TaskDTO[]>([]);
+  const [workers, setWorkers] = useState<WorkerStatus[]>([]);
+  const [anyWorkerActive, setAnyWorkerActive] = useState<boolean | null>(null);
   const [statusFilter, setStatusFilter] = useState<'active' | 'all'>('active');
   const [showDispatcher, setShowDispatcher] = useState(false);
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
@@ -94,6 +111,18 @@ export default function AgentsPage() {
       .catch(() => {});
   }, []);
 
+  const fetchWorkers = useCallback(() => {
+    fetch('/api/ai-hub/workers')
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.ok) {
+          setWorkers(d.data.workers);
+          setAnyWorkerActive(d.data.anyActive);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   const fetchTasks = useCallback(() => {
     const url =
       statusFilter === 'active'
@@ -110,7 +139,8 @@ export default function AgentsPage() {
     fetchAgents();
     fetchProjects();
     fetchTasks();
-  }, [user, fetchAgents, fetchProjects, fetchTasks]);
+    fetchWorkers();
+  }, [user, fetchAgents, fetchProjects, fetchTasks, fetchWorkers]);
 
   // Polling: every 2s while at least one task is in flight, otherwise 5s.
   useEffect(() => {
@@ -120,9 +150,10 @@ export default function AgentsPage() {
     const id = setInterval(() => {
       fetchTasks();
       fetchAgents();
+      fetchWorkers();
     }, interval);
     return () => clearInterval(id);
-  }, [user, tasks, fetchTasks, fetchAgents]);
+  }, [user, tasks, fetchTasks, fetchAgents, fetchWorkers]);
 
   // When a task detail modal is open, refresh that task too.
   useEffect(() => {
@@ -188,6 +219,13 @@ export default function AgentsPage() {
               </p>
             </div>
             <div className="flex items-center gap-2 ml-auto">
+              <Link
+                href="/agents/help"
+                className="flex items-center gap-2 px-3 py-2 bg-portal-card border border-portal-border hover:border-portal-accent/50 text-portal-text rounded-lg transition-colors text-sm"
+                title="Help & documentation"
+              >
+                <HelpCircle className="h-4 w-4" />
+              </Link>
               <button
                 onClick={() => setShowDispatcher(true)}
                 className="flex items-center gap-2 px-4 py-2 bg-portal-accent hover:bg-portal-accent/80 text-white rounded-lg transition-colors text-sm"
@@ -206,6 +244,35 @@ export default function AgentsPage() {
               )}
             </div>
           </div>
+
+          {/* Worker status banner */}
+          {anyWorkerActive === false && (
+            <div className="mb-4 bg-yellow-500/10 border border-yellow-500/30 text-yellow-200 rounded-lg px-4 py-3 flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5 text-yellow-300" />
+              <div className="flex-1 text-sm">
+                <div className="font-medium text-yellow-100">No worker is running.</div>
+                <div className="text-yellow-200/80 mt-0.5">
+                  Tasks will sit in <span className="font-mono">pending</span> until a worker picks them up.{' '}
+                  <Link href="/agents/help#starting-the-worker" className="underline hover:text-yellow-100">
+                    How to start the worker →
+                  </Link>
+                </div>
+              </div>
+            </div>
+          )}
+          {anyWorkerActive === true && workers.some((w) => !w.hasAnthropicKey) && (
+            <div className="mb-4 bg-red-500/10 border border-red-500/30 text-red-200 rounded-lg px-4 py-3 flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5 text-red-300" />
+              <div className="flex-1 text-sm">
+                <div className="font-medium text-red-100">
+                  Worker is running but ANTHROPIC_API_KEY is not set.
+                </div>
+                <div className="text-red-200/80 mt-0.5">
+                  Tasks will fail immediately. Set <span className="font-mono">ANTHROPIC_API_KEY</span> in the worker's environment and restart it.
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Stat strip */}
           <div className="grid grid-cols-2 md:grid-cols-6 gap-2 mb-6 text-xs">
