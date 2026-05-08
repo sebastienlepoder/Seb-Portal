@@ -120,7 +120,7 @@ export default function AiPage() {
       {/* Content */}
       <div className="flex-1 flex">
         {tab === 'chat' && (
-          <div className="w-full max-w-2xl mx-auto h-[calc(100vh-60px)]">
+          <div className="w-full max-w-6xl mx-auto h-[calc(100vh-60px)]">
             <AiChatPanel csrfToken={user.csrfToken} />
           </div>
         )}

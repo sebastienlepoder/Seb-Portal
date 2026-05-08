@@ -1,17 +1,189 @@
 import { NextResponse } from 'next/server';
+import type Anthropic from '@anthropic-ai/sdk';
 import { requireApiAuth } from '@/lib/auth';
 import { checkRateLimit, aiChatLimiter } from '@/lib/rate-limit';
 import { auditLog, getClientIp } from '@/lib/audit';
 import prisma from '@/lib/db';
 import { getAnthropicClient, ANTHROPIC_MODELS } from '@/lib/anthropic';
-import type { AiProvider, AiMessage } from '@/types';
+import { dispatchTask, DispatchError } from '@/lib/agent-dispatch';
+import type { TaskPriority } from '@/types/agents';
+import type { AiProvider, AiMessage, SessionUser } from '@/types';
+
+// ─── Tool definitions ────────────────────────────────────────
+
+const CHAT_TOOLS = [
+  {
+    name: 'list_projects',
+    description:
+      'List the projects registered in this portal that the agent worker can act on. Use this when the user mentions a project by partial name and you need to disambiguate, or when they ask "what projects are available?".',
+    input_schema: { type: 'object' as const, properties: {}, required: [] as string[] },
+  },
+  {
+    name: 'list_agents',
+    description:
+      'List the active agent profiles with their roles and expertise tags. Use this when the user asks "which agents are available?" or when you need to pick the right agent for a task.',
+    input_schema: { type: 'object' as const, properties: {}, required: [] as string[] },
+  },
+  {
+    name: 'dispatch_to_project',
+    description:
+      'Dispatch a development task to a project\'s agent worker. The worker clones the GitHub repo and runs Claude with the chosen agent\'s system prompt. Returns a taskId. Call this once you have the project + a clear task description. The agent_role is optional — if omitted, the dispatcher auto-matches by expertise tags.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        project_name: { type: 'string', description: 'Project slug or human name' },
+        task_title: { type: 'string', description: 'Short imperative title (max 200 chars)' },
+        task_description: { type: 'string', description: 'Detailed instructions for the agent' },
+        agent_role: {
+          type: 'string',
+          description: 'Optional: agent slug, role name, or id. Omit for auto-match.',
+        },
+        priority: {
+          type: 'string',
+          enum: ['low', 'normal', 'high', 'urgent'],
+          description: 'Task priority. Defaults to "normal".',
+        },
+      },
+      required: ['project_name', 'task_title', 'task_description'],
+    },
+  },
+  {
+    name: 'ask_user_question',
+    description:
+      'Ask the user a clarifying question with 2-4 multiple-choice options. Use ONLY when the request is genuinely ambiguous and cannot be resolved from context — e.g. the user said "fix the bug" but did not say which project, or they want to dispatch to a write-enabled project but you should confirm. Do NOT use for obvious cases. The user will pick one option, which becomes their next message.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        question: { type: 'string', description: 'The question to show the user' },
+        options: {
+          type: 'array',
+          items: { type: 'string' },
+          description: '2-4 short option labels (each max ~40 chars)',
+        },
+      },
+      required: ['question', 'options'],
+    },
+  },
+] satisfies Anthropic.Tool[];
+
+// ─── Tool executors ──────────────────────────────────────────
+
+async function executeTool(
+  name: string,
+  input: Record<string, unknown>,
+  user: SessionUser
+): Promise<string> {
+  if (name === 'list_projects') {
+    const projects = await prisma.project.findMany({
+      where: { status: { in: ['active', 'paused'] } },
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      select: {
+        slug: true,
+        name: true,
+        description: true,
+        repoOwner: true,
+        repoName: true,
+        workingBranch: true,
+        allowWrite: true,
+      },
+    });
+    return JSON.stringify(projects);
+  }
+
+  if (name === 'list_agents') {
+    const agents = await prisma.agentProfile.findMany({
+      where: { isActive: true },
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      select: { slug: true, name: true, role: true, expertise: true, description: true },
+    });
+    const formatted = agents.map((a) => ({
+      slug: a.slug,
+      name: a.name,
+      role: a.role,
+      description: a.description,
+      expertise: (() => {
+        try {
+          const parsed = JSON.parse(a.expertise);
+          return Array.isArray(parsed) ? parsed : [];
+        } catch {
+          return [];
+        }
+      })(),
+    }));
+    return JSON.stringify(formatted);
+  }
+
+  if (name === 'dispatch_to_project') {
+    try {
+      const result = await dispatchTask({
+        projectName: String(input.project_name ?? ''),
+        taskTitle: String(input.task_title ?? ''),
+        taskDescription: String(input.task_description ?? ''),
+        agentRole: input.agent_role ? String(input.agent_role) : null,
+        priority: (input.priority as TaskPriority) ?? 'normal',
+        createdById: user.id,
+      });
+      return JSON.stringify({
+        success: true,
+        taskId: result.taskId,
+        taskUrl: result.taskUrl,
+        message: result.message,
+        agent: result.matchedAgentSlug,
+        project: result.matchedProjectSlug,
+      });
+    } catch (e) {
+      if (e instanceof DispatchError) {
+        return JSON.stringify({ success: false, error: e.message, code: e.code });
+      }
+      return JSON.stringify({ success: false, error: (e as Error).message });
+    }
+  }
+
+  return JSON.stringify({ error: `Unknown tool: ${name}` });
+}
+
+// ─── System prompt ───────────────────────────────────────────
+
+function buildSystemPrompt(): string {
+  return [
+    'You are the LEPODER Portal AI assistant. You help the operator (Sebastien) manage projects, agents, and dispatched tasks.',
+    '',
+    'You have four tools:',
+    '- `list_projects` — see available projects and their write permissions',
+    '- `list_agents` — see available agents and their expertise',
+    '- `dispatch_to_project` — create a task for a project\'s agent worker',
+    '- `ask_user_question` — ask a clarifying question with 2-4 options',
+    '',
+    'Guidelines for dispatching tasks:',
+    '- If the user clearly names a project + describes work, dispatch immediately. Do not ask redundant questions.',
+    '- If the project name is ambiguous (matches multiple, or none precisely), use `list_projects` first, then either pick the obvious match or ask via `ask_user_question`.',
+    '- If you need to pick an agent and the task type is non-obvious from keywords, use `list_agents` to see expertise tags.',
+    '- Default priority is "normal". Only use "high" or "urgent" if the user explicitly asks.',
+    '- After a successful dispatch, tell the user the task ID and the link to track it (/agents?taskId=...).',
+    '- If a project is read-only (allowWrite=false), warn the user that the agent will produce a summary only, not a commit. Don\'t refuse — many users dispatch summaries intentionally.',
+    '',
+    'Guidelines for `ask_user_question`:',
+    '- Use sparingly. Only when genuinely ambiguous.',
+    '- Phrase the question concisely. Provide 2-4 short options.',
+    '- After the user picks, continue with what you were doing.',
+    '',
+    'For non-dispatch questions, just answer normally — you don\'t need to use tools.',
+  ].join('\n');
+}
+
+// ─── Question detection ──────────────────────────────────────
+
+function formatQuestionAsText(q: { question: string; options: string[] }): string {
+  return `${q.question}\n\nOptions:\n${q.options.map((o) => `- ${o}`).join('\n')}`;
+}
+
+// ─── POST handler ────────────────────────────────────────────
 
 export async function POST(request: Request) {
   try {
     const user = await requireApiAuth();
     const ip = getClientIp(request);
 
-    // Rate limit
     const check = checkRateLimit(aiChatLimiter, user.id);
     if (!check.allowed) {
       return NextResponse.json(
@@ -27,13 +199,15 @@ export async function POST(request: Request) {
       maxTokens?: number;
     };
 
-    const { provider, messages, threadId, maxTokens = 2048 } = body;
+    const { provider, messages: incoming, threadId, maxTokens = 2048 } = body;
 
-    if (!messages?.length) {
+    if (!incoming?.length) {
       return NextResponse.json({ ok: false, error: 'Messages required' }, { status: 400 });
     }
 
     let reply: string;
+    let pendingQuestion: { question: string; options: string[] } | null = null;
+    const toolEvents: string[] = []; // human-readable summary of tools used
 
     if (provider === 'openai') {
       const apiKey = process.env.OPENAI_API_KEY;
@@ -47,7 +221,10 @@ export async function POST(request: Request) {
       const openai = new OpenAI({ apiKey });
       const completion = await openai.chat.completions.create({
         model: 'gpt-4o',
-        messages: messages.map((m) => ({ role: m.role as 'user' | 'assistant' | 'system', content: m.content })),
+        messages: incoming.map((m) => ({
+          role: m.role as 'user' | 'assistant' | 'system',
+          content: m.content,
+        })),
         max_tokens: Math.min(maxTokens, 4096),
       });
       reply = completion.choices[0]?.message?.content || 'No response';
@@ -59,31 +236,104 @@ export async function POST(request: Request) {
           { status: 503 }
         );
       }
-      const systemMsg = messages.find((m) => m.role === 'system');
-      const userMsgs = messages.filter((m) => m.role !== 'system');
-      const completion = await anthropic.messages.create({
-        model: ANTHROPIC_MODELS.sonnet,
-        max_tokens: Math.min(maxTokens, 4096),
-        system: systemMsg?.content || undefined,
-        messages: userMsgs.map((m) => ({
-          role: m.role as 'user' | 'assistant',
-          content: m.content,
-        })),
-      });
-      reply =
-        completion.content[0]?.type === 'text' ? completion.content[0].text : 'No response';
+      const systemMsg = incoming.find((m) => m.role === 'system');
+      const userAndAssistantMsgs = incoming.filter((m) => m.role !== 'system');
+      const systemPrompt = systemMsg?.content || buildSystemPrompt();
+
+      // Anthropic message history (we may add tool_use / tool_result blocks
+      // during the loop but they are NOT persisted — only final user-facing
+      // text is saved to the DB).
+      const messages: Anthropic.MessageParam[] = userAndAssistantMsgs.map((m) => ({
+        role: m.role as 'user' | 'assistant',
+        content: m.content,
+      }));
+
+      const MAX_ITERS = 8;
+      let finalText = '';
+      let askedQuestion: { question: string; options: string[] } | null = null;
+
+      for (let iter = 0; iter < MAX_ITERS; iter++) {
+        const resp = await anthropic.messages.create({
+          model: ANTHROPIC_MODELS.sonnet,
+          max_tokens: Math.min(maxTokens, 4096),
+          system: systemPrompt,
+          tools: CHAT_TOOLS,
+          messages,
+        });
+
+        if (resp.stop_reason !== 'tool_use') {
+          finalText = resp.content
+            .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+            .map((b) => b.text)
+            .join('\n')
+            .trim();
+          break;
+        }
+
+        // Append assistant turn so the next call sees it
+        messages.push({ role: 'assistant', content: resp.content });
+
+        const toolResults: Anthropic.ToolResultBlockParam[] = [];
+        for (const block of resp.content) {
+          if (block.type !== 'tool_use') continue;
+          if (block.name === 'ask_user_question') {
+            askedQuestion = block.input as { question: string; options: string[] };
+            // Synthesize a tool_result so the conversation stays
+            // well-formed if the user comes back. The result text is the
+            // user's eventual answer — we don't have it yet, so we
+            // record a placeholder. When the user replies as a fresh
+            // user message, this in-memory state is gone anyway.
+            toolResults.push({
+              type: 'tool_result',
+              tool_use_id: block.id,
+              content: 'Question presented to user; response will arrive as the next user message.',
+            });
+            toolEvents.push(`Asked: ${askedQuestion.question}`);
+            continue;
+          }
+          const result = await executeTool(block.name, block.input as Record<string, unknown>, user);
+          toolEvents.push(`${block.name}`);
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: block.id,
+            content: result,
+          });
+        }
+
+        // If a question was asked, stop the loop and return to user
+        if (askedQuestion) {
+          // Use any text the model also produced as preamble; otherwise
+          // fall back to the formatted question.
+          const preamble = resp.content
+            .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+            .map((b) => b.text.trim())
+            .filter(Boolean)
+            .join('\n');
+          finalText = preamble
+            ? `${preamble}\n\n${formatQuestionAsText(askedQuestion)}`
+            : formatQuestionAsText(askedQuestion);
+          break;
+        }
+
+        messages.push({ role: 'user', content: toolResults });
+      }
+
+      reply = finalText || 'No response';
+      pendingQuestion = askedQuestion;
     } else {
       return NextResponse.json({ ok: false, error: 'Invalid provider' }, { status: 400 });
     }
 
-    // Save thread
+    // Persist as plain text. Tool calls/results are NOT saved — only the
+    // user-visible question and reply text. This keeps history readable
+    // and avoids re-executing tools when the thread is reloaded.
     let savedThreadId = threadId;
     if (threadId) {
       const thread = await prisma.aiThread.findUnique({ where: { id: threadId } });
-      if (thread) {
+      if (thread && thread.userId === user.id) {
         const existingMessages = JSON.parse(thread.messages) as AiMessage[];
         existingMessages.push(
-          messages[messages.length - 1]!,
+          incoming[incoming.length - 1]!,
           { role: 'assistant', content: reply }
         );
         await prisma.aiThread.update({
@@ -92,12 +342,15 @@ export async function POST(request: Request) {
         });
       }
     } else {
-      const allMessages = [...messages, { role: 'assistant' as const, content: reply }];
+      const allMessages: AiMessage[] = [
+        ...incoming,
+        { role: 'assistant', content: reply },
+      ];
       const thread = await prisma.aiThread.create({
         data: {
           userId: user.id,
           provider,
-          title: messages[0]?.content.slice(0, 100) || 'New chat',
+          title: incoming[0]?.content.slice(0, 100) || 'New chat',
           messages: JSON.stringify(allMessages),
         },
       });
@@ -107,13 +360,18 @@ export async function POST(request: Request) {
     await auditLog({
       userId: user.id,
       action: 'ai_chat',
-      details: { provider, threadId: savedThreadId },
+      details: { provider, threadId: savedThreadId, tools: toolEvents },
       ipAddress: ip,
     });
 
     return NextResponse.json({
       ok: true,
-      data: { reply, threadId: savedThreadId },
+      data: {
+        reply,
+        threadId: savedThreadId,
+        question: pendingQuestion,
+        toolEvents,
+      },
     });
   } catch (e) {
     if ((e as Error).message === 'UNAUTHORIZED') {
