@@ -6,6 +6,8 @@ import MainSidebar from '@/components/layout/MainSidebar';
 import { cn } from '@/lib/utils';
 import {
   Bot,
+  ChevronDown,
+  ChevronUp,
   FolderGit2,
   HelpCircle,
   Loader2,
@@ -162,6 +164,49 @@ export default function AdminProjectsPage() {
     }
   }
 
+  async function move(p: Project, direction: 'up' | 'down') {
+    const sorted = [...projects].sort((a, b) =>
+      a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)
+    );
+    const idx = sorted.findIndex((x) => x.id === p.id);
+    const swapWith = direction === 'up' ? sorted[idx - 1] : sorted[idx + 1];
+    if (!swapWith) return;
+
+    // Optimistic swap so the UI moves instantly
+    const aOrder = p.sortOrder;
+    const bOrder = swapWith.sortOrder === aOrder ? aOrder + 1 : swapWith.sortOrder;
+    const newAOrder = bOrder;
+    const newBOrder = aOrder === bOrder ? aOrder - 1 : aOrder;
+    setProjects((prev) =>
+      prev.map((x) => {
+        if (x.id === p.id) return { ...x, sortOrder: newAOrder };
+        if (x.id === swapWith.id) return { ...x, sortOrder: newBOrder };
+        return x;
+      })
+    );
+
+    const headers = {
+      'Content-Type': 'application/json',
+      ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
+    };
+    const [resA, resB] = await Promise.all([
+      fetch(`/api/admin/projects/${p.id}`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ sortOrder: newAOrder }),
+      }),
+      fetch(`/api/admin/projects/${swapWith.id}`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ sortOrder: newBOrder }),
+      }),
+    ]);
+    if (!resA.ok || !resB.ok) {
+      // Revert on failure
+      await refresh();
+    }
+  }
+
   async function toggleAllowWrite(p: Project) {
     const willEnable = !p.allowWrite;
     if (willEnable) {
@@ -262,8 +307,30 @@ export default function AdminProjectsPage() {
             {projects.length === 0 ? (
               <div className="p-6 text-sm text-portal-muted">No projects configured.</div>
             ) : (
-              projects.map((p) => (
+              [...projects]
+                .sort(
+                  (a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)
+                )
+                .map((p, i, arr) => (
                 <div key={p.id} className="p-4 flex items-start gap-3">
+                  <div className="flex flex-col gap-0.5 shrink-0">
+                    <button
+                      onClick={() => move(p, 'up')}
+                      disabled={i === 0}
+                      title="Move up"
+                      className="p-0.5 text-portal-muted hover:text-portal-text disabled:opacity-30 disabled:cursor-not-allowed rounded hover:bg-portal-card-hover"
+                    >
+                      <ChevronUp className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      onClick={() => move(p, 'down')}
+                      disabled={i === arr.length - 1}
+                      title="Move down"
+                      className="p-0.5 text-portal-muted hover:text-portal-text disabled:opacity-30 disabled:cursor-not-allowed rounded hover:bg-portal-card-hover"
+                    >
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                   <div className="text-2xl shrink-0">{p.icon || '📦'}</div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
