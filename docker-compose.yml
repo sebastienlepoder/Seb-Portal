@@ -15,10 +15,11 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      # Persist SQLite database. PORTAL_DATA_VOLUME lets you override the
-      # left side: set to a host path (e.g. /data/coolify/lepoder-portal)
-      # to bind-mount, or leave unset to use the named volume below.
-      - ${PORTAL_DATA_VOLUME:-portal-data}:/app/data
+      # Persist SQLite database. Default is the Coolify-managed bind path
+      # (where this app actually runs). Override with PORTAL_DATA_VOLUME if
+      # deploying elsewhere (e.g. PORTAL_DATA_VOLUME=portal-data for a
+      # Docker named volume during local dev).
+      - ${PORTAL_DATA_VOLUME:-/data/coolify/lepoder-portal}:/app/data
       # Persist generated icons
       - portal-icons:/app/public/icons/generated
       # Config file (editable on host)
@@ -52,7 +53,7 @@ services:
     environment:
       - DATABASE_URL=file:/app/data/portal.db
     volumes:
-      - ${PORTAL_DATA_VOLUME:-portal-data}:/app/data
+      - ${PORTAL_DATA_VOLUME:-/data/coolify/lepoder-portal}:/app/data
       - portal-icons:/app/public/icons/generated
       - ./config:/app/config:ro
     command: sh -lc "node ./node_modules/prisma/build/index.js db push || npx prisma db push"
@@ -72,7 +73,7 @@ services:
     volumes:
       # Shared SQLite database (read-write) — same path as the portal so
       # both processes see the same DB. Override via PORTAL_DATA_VOLUME.
-      - ${PORTAL_DATA_VOLUME:-portal-data}:/app/data
+      - ${PORTAL_DATA_VOLUME:-/data/coolify/lepoder-portal}:/app/data
       # Persistent clones (so subsequent runs reuse fetches)
       - portal-worker-clones:/app/worker-clones
     env_file:
