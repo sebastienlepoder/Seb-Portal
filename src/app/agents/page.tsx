@@ -8,7 +8,6 @@ import {
   AlertTriangle,
   Bot,
   Briefcase,
-  Cpu,
   ExternalLink,
   GitMerge,
   HelpCircle,
@@ -300,187 +299,123 @@ export default function AgentsPage() {
             ))}
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-            {/* Agents column */}
-            <section className="lg:col-span-4">
-              <div className="bg-portal-card border border-portal-border rounded-xl">
-                <div className="px-4 py-3 border-b border-portal-border flex items-center justify-between">
-                  <h2 className="text-sm font-semibold text-portal-text flex items-center gap-2">
-                    <Cpu className="h-4 w-4 text-portal-accent" /> Agents
-                  </h2>
-                  <span className="text-xs text-portal-muted">{agents.length} active</span>
-                </div>
-                <div className="divide-y divide-portal-border max-h-[70vh] overflow-y-auto">
-                  {agents.length === 0 ? (
-                    <div className="p-4 text-sm text-portal-muted">
-                      No active agents. {user.role === 'admin' ? 'Create one in Admin → Agents.' : ''}
-                    </div>
-                  ) : (
-                    agents.map((a) => (
-                      <div key={a.id} className="p-3">
-                        <div className="flex items-start gap-2">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-medium text-portal-text truncate">
-                                {a.name}
-                              </span>
-                              <span className="text-[10px] uppercase tracking-wider text-portal-accent">
-                                {a.role}
-                              </span>
-                            </div>
-                            {a.description && (
-                              <p className="text-xs text-portal-muted mt-1 line-clamp-2">
-                                {a.description}
-                              </p>
-                            )}
-                            <div className="flex flex-wrap gap-1 mt-2">
-                              {a.expertise.slice(0, 6).map((tag) => (
-                                <span
-                                  key={tag}
-                                  className="text-[10px] bg-portal-bg border border-portal-border text-portal-muted rounded px-1.5 py-0.5"
-                                >
-                                  {tag}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                          <div
-                            className={cn(
-                              'shrink-0 text-[10px] rounded-full px-2 py-0.5 border',
-                              a.inFlightTaskCount > 0
-                                ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-300'
-                                : 'bg-green-500/10 border-green-500/30 text-green-300'
-                            )}
-                          >
-                            {a.inFlightTaskCount > 0
-                              ? `${a.inFlightTaskCount} working`
-                              : 'idle'}
-                          </div>
-                        </div>
-                      </div>
-                    ))
-                  )}
+          {/* Task queue */}
+          <section>
+            <div className="bg-portal-card border border-portal-border rounded-xl">
+              <div className="px-4 py-3 border-b border-portal-border flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-portal-text flex items-center gap-2">
+                  <Briefcase className="h-4 w-4 text-portal-accent" /> Task queue
+                </h2>
+                <div className="flex gap-1 text-xs">
+                  <FilterBtn
+                    active={statusFilter === 'active'}
+                    onClick={() => setStatusFilter('active')}
+                  >
+                    Active
+                  </FilterBtn>
+                  <FilterBtn
+                    active={statusFilter === 'all'}
+                    onClick={() => setStatusFilter('all')}
+                  >
+                    All
+                  </FilterBtn>
                 </div>
               </div>
-            </section>
-
-            {/* Task queue column */}
-            <section className="lg:col-span-8">
-              <div className="bg-portal-card border border-portal-border rounded-xl">
-                <div className="px-4 py-3 border-b border-portal-border flex items-center justify-between">
-                  <h2 className="text-sm font-semibold text-portal-text flex items-center gap-2">
-                    <Briefcase className="h-4 w-4 text-portal-accent" /> Task queue
-                  </h2>
-                  <div className="flex gap-1 text-xs">
-                    <FilterBtn
-                      active={statusFilter === 'active'}
-                      onClick={() => setStatusFilter('active')}
+              <div className="divide-y divide-portal-border max-h-[70vh] overflow-y-auto">
+                {tasks.length === 0 ? (
+                  <div className="p-6 text-center text-sm text-portal-muted">
+                    No tasks {statusFilter === 'active' ? 'in flight' : 'yet'}.{' '}
+                    <button
+                      onClick={() => setShowDispatcher(true)}
+                      className="text-portal-accent hover:underline cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent rounded"
                     >
-                      Active
-                    </FilterBtn>
-                    <FilterBtn
-                      active={statusFilter === 'all'}
-                      onClick={() => setStatusFilter('all')}
-                    >
-                      All
-                    </FilterBtn>
+                      Dispatch one →
+                    </button>
                   </div>
-                </div>
-                <div className="divide-y divide-portal-border max-h-[70vh] overflow-y-auto">
-                  {tasks.length === 0 ? (
-                    <div className="p-6 text-center text-sm text-portal-muted">
-                      No tasks {statusFilter === 'active' ? 'in flight' : 'yet'}.{' '}
+                ) : (
+                  tasks.map((t) => {
+                    const isOrchestrator = t.agentProfile?.slug === 'orchestrator';
+                    const parentTitle = t.parentTaskId
+                      ? tasks.find((x) => x.id === t.parentTaskId)?.title ?? null
+                      : null;
+                    const childCount = isOrchestrator
+                      ? tasks.filter((x) => x.parentTaskId === t.id).length
+                      : 0;
+                    return (
                       <button
-                        onClick={() => setShowDispatcher(true)}
-                        className="text-portal-accent hover:underline cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent rounded"
+                        key={t.id}
+                        onClick={() => setOpenTaskId(t.id)}
+                        className={cn(
+                          'w-full text-left p-3 hover:bg-portal-card-hover/50 transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent focus:ring-inset',
+                          t.parentTaskId && 'pl-8'
+                        )}
                       >
-                        Dispatch one →
-                      </button>
-                    </div>
-                  ) : (
-                    tasks.map((t) => {
-                      const isOrchestrator = t.agentProfile?.slug === 'orchestrator';
-                      const parentTitle = t.parentTaskId
-                        ? tasks.find((x) => x.id === t.parentTaskId)?.title ?? null
-                        : null;
-                      const childCount =
-                        isOrchestrator
-                          ? tasks.filter((x) => x.parentTaskId === t.id).length
-                          : 0;
-                      return (
-                        <button
-                          key={t.id}
-                          onClick={() => setOpenTaskId(t.id)}
-                          className={cn(
-                            'w-full text-left p-3 hover:bg-portal-card-hover/50 transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent focus:ring-inset',
-                            t.parentTaskId && 'pl-8'
-                          )}
-                        >
-                          <div className="flex items-start gap-3">
-                            {t.parentTaskId ? (
-                              <div className="text-portal-muted text-sm shrink-0 mt-0.5">↳</div>
-                            ) : (
-                              <div className="text-lg shrink-0 mt-0.5">
-                                {t.project.icon ?? '📦'}
-                              </div>
-                            )}
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="text-sm font-medium text-portal-text truncate">
-                                  {t.title}
-                                </span>
-                                <span
-                                  className={cn(
-                                    'text-[10px] rounded-full px-2 py-0.5 border',
-                                    STATUS_CLASS[t.status]
-                                  )}
-                                >
-                                  {STATUS_LABEL[t.status]}
-                                </span>
-                                <span
-                                  className={cn(
-                                    'text-[10px] font-medium',
-                                    PRIORITY_CLASS[t.priority]
-                                  )}
-                                >
-                                  {t.priority}
-                                </span>
-                                {isOrchestrator && (
-                                  <span className="text-[10px] rounded-full px-2 py-0.5 border bg-portal-accent/10 text-portal-accent border-portal-accent/30">
-                                    orchestrated · {childCount}{' '}
-                                    {childCount === 1 ? 'sub-task' : 'sub-tasks'}
-                                  </span>
-                                )}
-                              </div>
-                              <div className="text-xs text-portal-muted mt-1 truncate">
-                                {t.project.name}
-                                {t.agentProfile
-                                  ? ` · ${t.agentProfile.name} (${t.agentProfile.role})`
-                                  : ''}
-                                {parentTitle && (
-                                  <span className="ml-1">· sub-task of "{parentTitle}"</span>
-                                )}
-                              </div>
-                              <div className="text-xs text-portal-muted mt-0.5">
-                                {formatRelativeTime(t.createdAt)}
-                                {t.workerStartedAt &&
-                                  ` · started ${formatRelativeTime(t.workerStartedAt)}`}
-                                {t.completedAt &&
-                                  ` · finished ${formatRelativeTime(t.completedAt)}`}
-                              </div>
+                        <div className="flex items-start gap-3">
+                          {t.parentTaskId ? (
+                            <div className="text-portal-muted text-sm shrink-0 mt-0.5">↳</div>
+                          ) : (
+                            <div className="text-lg shrink-0 mt-0.5">
+                              {t.project.icon ?? '📦'}
                             </div>
-                            {t.status === 'in_progress' && (
-                              <Loader2 className="h-4 w-4 animate-spin text-yellow-300 shrink-0 mt-1" />
-                            )}
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-sm font-medium text-portal-text truncate">
+                                {t.title}
+                              </span>
+                              <span
+                                className={cn(
+                                  'text-[10px] rounded-full px-2 py-0.5 border',
+                                  STATUS_CLASS[t.status]
+                                )}
+                              >
+                                {STATUS_LABEL[t.status]}
+                              </span>
+                              <span
+                                className={cn(
+                                  'text-[10px] font-medium',
+                                  PRIORITY_CLASS[t.priority]
+                                )}
+                              >
+                                {t.priority}
+                              </span>
+                              {isOrchestrator && (
+                                <span className="text-[10px] rounded-full px-2 py-0.5 border bg-portal-accent/10 text-portal-accent border-portal-accent/30">
+                                  orchestrated · {childCount}{' '}
+                                  {childCount === 1 ? 'sub-task' : 'sub-tasks'}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-xs text-portal-muted mt-1 truncate">
+                              {t.project.name}
+                              {t.agentProfile
+                                ? ` · ${t.agentProfile.name} (${t.agentProfile.role})`
+                                : ''}
+                              {parentTitle && (
+                                <span className="ml-1">
+                                  · sub-task of &quot;{parentTitle}&quot;
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-xs text-portal-muted mt-0.5">
+                              {formatRelativeTime(t.createdAt)}
+                              {t.workerStartedAt &&
+                                ` · started ${formatRelativeTime(t.workerStartedAt)}`}
+                              {t.completedAt &&
+                                ` · finished ${formatRelativeTime(t.completedAt)}`}
+                            </div>
                           </div>
-                        </button>
-                      );
-                    })
-                  )}
-                </div>
+                          {t.status === 'in_progress' && (
+                            <Loader2 className="h-4 w-4 animate-spin text-yellow-300 shrink-0 mt-1" />
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })
+                )}
               </div>
-            </section>
-          </div>
+            </div>
+          </section>
         </div>
       </div>
 
