@@ -398,47 +398,84 @@ export default function AgentsPage() {
                       </button>
                     </div>
                   ) : (
-                    tasks.map((t) => (
-                      <button
-                        key={t.id}
-                        onClick={() => setOpenTaskId(t.id)}
-                        className="w-full text-left p-3 hover:bg-portal-card-hover/50 transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent focus:ring-inset"
-                      >
-                        <div className="flex items-start gap-3">
-                          <div className="text-lg shrink-0 mt-0.5">{t.project.icon ?? '📦'}</div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="text-sm font-medium text-portal-text truncate">
-                                {t.title}
-                              </span>
-                              <span
-                                className={cn(
-                                  'text-[10px] rounded-full px-2 py-0.5 border',
-                                  STATUS_CLASS[t.status]
-                                )}
-                              >
-                                {STATUS_LABEL[t.status]}
-                              </span>
-                              <span className={cn('text-[10px] font-medium', PRIORITY_CLASS[t.priority])}>
-                                {t.priority}
-                              </span>
-                            </div>
-                            <div className="text-xs text-portal-muted mt-1 truncate">
-                              {t.project.name}
-                              {t.agentProfile ? ` · ${t.agentProfile.name} (${t.agentProfile.role})` : ''}
-                            </div>
-                            <div className="text-xs text-portal-muted mt-0.5">
-                              {formatRelativeTime(t.createdAt)}
-                              {t.workerStartedAt && ` · started ${formatRelativeTime(t.workerStartedAt)}`}
-                              {t.completedAt && ` · finished ${formatRelativeTime(t.completedAt)}`}
-                            </div>
-                          </div>
-                          {t.status === 'in_progress' && (
-                            <Loader2 className="h-4 w-4 animate-spin text-yellow-300 shrink-0 mt-1" />
+                    tasks.map((t) => {
+                      const isOrchestrator = t.agentProfile?.slug === 'orchestrator';
+                      const parentTitle = t.parentTaskId
+                        ? tasks.find((x) => x.id === t.parentTaskId)?.title ?? null
+                        : null;
+                      const childCount =
+                        isOrchestrator
+                          ? tasks.filter((x) => x.parentTaskId === t.id).length
+                          : 0;
+                      return (
+                        <button
+                          key={t.id}
+                          onClick={() => setOpenTaskId(t.id)}
+                          className={cn(
+                            'w-full text-left p-3 hover:bg-portal-card-hover/50 transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent focus:ring-inset',
+                            t.parentTaskId && 'pl-8'
                           )}
-                        </div>
-                      </button>
-                    ))
+                        >
+                          <div className="flex items-start gap-3">
+                            {t.parentTaskId ? (
+                              <div className="text-portal-muted text-sm shrink-0 mt-0.5">↳</div>
+                            ) : (
+                              <div className="text-lg shrink-0 mt-0.5">
+                                {t.project.icon ?? '📦'}
+                              </div>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-sm font-medium text-portal-text truncate">
+                                  {t.title}
+                                </span>
+                                <span
+                                  className={cn(
+                                    'text-[10px] rounded-full px-2 py-0.5 border',
+                                    STATUS_CLASS[t.status]
+                                  )}
+                                >
+                                  {STATUS_LABEL[t.status]}
+                                </span>
+                                <span
+                                  className={cn(
+                                    'text-[10px] font-medium',
+                                    PRIORITY_CLASS[t.priority]
+                                  )}
+                                >
+                                  {t.priority}
+                                </span>
+                                {isOrchestrator && (
+                                  <span className="text-[10px] rounded-full px-2 py-0.5 border bg-portal-accent/10 text-portal-accent border-portal-accent/30">
+                                    orchestrated · {childCount}{' '}
+                                    {childCount === 1 ? 'sub-task' : 'sub-tasks'}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-xs text-portal-muted mt-1 truncate">
+                                {t.project.name}
+                                {t.agentProfile
+                                  ? ` · ${t.agentProfile.name} (${t.agentProfile.role})`
+                                  : ''}
+                                {parentTitle && (
+                                  <span className="ml-1">· sub-task of "{parentTitle}"</span>
+                                )}
+                              </div>
+                              <div className="text-xs text-portal-muted mt-0.5">
+                                {formatRelativeTime(t.createdAt)}
+                                {t.workerStartedAt &&
+                                  ` · started ${formatRelativeTime(t.workerStartedAt)}`}
+                                {t.completedAt &&
+                                  ` · finished ${formatRelativeTime(t.completedAt)}`}
+                              </div>
+                            </div>
+                            {t.status === 'in_progress' && (
+                              <Loader2 className="h-4 w-4 animate-spin text-yellow-300 shrink-0 mt-1" />
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })
                   )}
                 </div>
               </div>

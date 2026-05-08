@@ -409,6 +409,11 @@ model Task {
   agentProfileId  String?
   createdById     String?   // user that dispatched the task
 
+  // Orchestration: when an Orchestrator agent runs, it dispatches sub-tasks
+  // that share the parent's workdir and branch. parentTaskId links them.
+  // Top-level tasks have parentTaskId=null.
+  parentTaskId    String?
+
   title           String
   description     String    // detailed instructions for the agent
   priority        String    @default("normal") // low | normal | high | urgent
@@ -430,11 +435,14 @@ model Task {
 
   project      Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
   agentProfile AgentProfile? @relation(fields: [agentProfileId], references: [id], onDelete: SetNull)
+  parent       Task?         @relation("TaskHierarchy", fields: [parentTaskId], references: [id], onDelete: SetNull)
+  children     Task[]        @relation("TaskHierarchy")
   logs         TaskLog[]
 
   @@index([status, priority, createdAt])
   @@index([projectId, status])
   @@index([agentProfileId, status])
+  @@index([parentTaskId])
 }
 
 model TaskLog {
