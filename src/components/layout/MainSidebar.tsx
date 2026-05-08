@@ -127,6 +127,8 @@ const NAV_GROUPS: NavGroup[] = [
   },
 ];
 
+const OPEN_GROUP_STORAGE_KEY = 'sidebar.openGroup';
+
 function isItemActive(item: NavItem, pathname: string): boolean {
   if (item.match) return item.match(pathname);
   return pathname === item.href;
@@ -148,41 +150,34 @@ export default function MainSidebar({ user, onLogout }: MainSidebarProps) {
 
   const isDashboard = pathname === '/dashboard' || pathname === '/';
 
-  // Per-group expand state. Default: only the group containing the current
-  // page is open. User toggles persist per browser via localStorage.
+  // Accordion: at most one group expanded at a time. Default opens the group
+  // containing the current page; user toggles persist via localStorage.
   const initialGroupContainingPath = useMemo(
     () => findGroupContainingPath(pathname),
     [pathname]
   );
-  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
-    const initial: Record<string, boolean> = {};
-    for (const g of NAV_GROUPS) {
-      initial[g.id] = g.id === initialGroupContainingPath;
-    }
-    return initial;
-  });
+  const [openGroup, setOpenGroup] = useState<string | null>(initialGroupContainingPath);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    setOpenGroups((prev) => {
-      const next = { ...prev };
-      for (const g of NAV_GROUPS) {
-        const stored = window.localStorage.getItem(`sidebar.group.${g.id}`);
-        if (stored === '1') next[g.id] = true;
-        else if (stored === '0') next[g.id] = false;
-      }
-      // Always force-open the group containing the current page so the user
-      // can see where they are, even if they had previously collapsed it.
-      if (initialGroupContainingPath) next[initialGroupContainingPath] = true;
-      return next;
-    });
+    // Page change always wins so the user sees where they are.
+    if (initialGroupContainingPath) {
+      setOpenGroup(initialGroupContainingPath);
+      return;
+    }
+    const stored = window.localStorage.getItem(OPEN_GROUP_STORAGE_KEY);
+    if (stored === '') {
+      setOpenGroup(null);
+    } else if (stored && NAV_GROUPS.some((g) => g.id === stored)) {
+      setOpenGroup(stored);
+    }
   }, [initialGroupContainingPath]);
 
   const toggleGroup = (groupId: string) => {
-    setOpenGroups((prev) => {
-      const next = { ...prev, [groupId]: !prev[groupId] };
+    setOpenGroup((prev) => {
+      const next = prev === groupId ? null : groupId;
       if (typeof window !== 'undefined') {
-        window.localStorage.setItem(`sidebar.group.${groupId}`, next[groupId] ? '1' : '0');
+        window.localStorage.setItem(OPEN_GROUP_STORAGE_KEY, next ?? '');
       }
       return next;
     });
@@ -196,7 +191,7 @@ export default function MainSidebar({ user, onLogout }: MainSidebarProps) {
       <button
         onClick={() => setMobileOpen(true)}
         className={cn(
-          'fixed top-3 left-3 z-50 lg:hidden p-2 bg-portal-card border border-portal-border rounded-lg text-portal-muted hover:text-portal-text shadow-lg',
+          'fixed top-3 left-3 z-50 lg:hidden p-2 bg-portal-card border border-portal-border rounded-lg text-portal-muted hover:text-portal-text shadow-lg cursor-pointer',
           mobileOpen && 'hidden'
         )}
         aria-label="Open menu"
@@ -238,15 +233,16 @@ export default function MainSidebar({ user, onLogout }: MainSidebarProps) {
           )}
           <button
             onClick={() => setMobileOpen(false)}
-            className="lg:hidden p-1 text-portal-muted hover:text-portal-text hover:bg-portal-card-hover rounded-md transition-colors shrink-0"
+            className="lg:hidden p-1 text-portal-muted hover:text-portal-text hover:bg-portal-card-hover rounded-md transition-colors shrink-0 cursor-pointer"
             aria-label="Close menu"
           >
             <X className="h-4 w-4" />
           </button>
           <button
             onClick={() => setCollapsed(!collapsed)}
-            className="hidden lg:flex p-1 text-portal-muted hover:text-portal-text hover:bg-portal-card-hover rounded-md transition-colors shrink-0"
+            className="hidden lg:flex p-1 text-portal-muted hover:text-portal-text hover:bg-portal-card-hover rounded-md transition-colors shrink-0 cursor-pointer"
             title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           >
             {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronLeft className="h-3.5 w-3.5" />}
           </button>
@@ -262,10 +258,10 @@ export default function MainSidebar({ user, onLogout }: MainSidebarProps) {
             icon={<LayoutGrid className="h-3.5 w-3.5" />}
           />
 
-          {/* Grouped nav */}
+          {/* Grouped nav (accordion: one open at a time) */}
           {visibleGroups.map((group, idx) => {
             const isFirstGroup = idx === 0;
-            const groupOpen = openGroups[group.id] ?? false;
+            const groupOpen = openGroup === group.id;
             const groupHasActive = group.items.some((item) => isItemActive(item, pathname));
 
             return (
@@ -275,19 +271,21 @@ export default function MainSidebar({ user, onLogout }: MainSidebarProps) {
                 ) : (
                   <button
                     onClick={() => toggleGroup(group.id)}
-                    className="w-full flex items-center gap-1.5 px-3 pt-3 pb-1 group"
+                    className="w-full flex items-center gap-1.5 px-3 pt-3 pb-1 group cursor-pointer"
+                    aria-expanded={groupOpen}
+                    aria-controls={`sidebar-group-${group.id}`}
                   >
                     <ChevronDown
                       className={cn(
-                        'h-3 w-3 text-portal-muted transition-transform',
+                        'h-3 w-3 text-portal-muted transition-transform duration-200',
                         !groupOpen && '-rotate-90'
                       )}
                     />
                     <span
                       className={cn(
-                        'text-[10px] font-semibold uppercase tracking-wider',
+                        'text-[10px] font-semibold uppercase tracking-wider transition-colors duration-200',
                         groupHasActive ? 'text-portal-accent' : 'text-portal-muted',
-                        'group-hover:text-portal-text transition-colors'
+                        'group-hover:text-portal-text'
                       )}
                     >
                       {group.label}
@@ -295,18 +293,21 @@ export default function MainSidebar({ user, onLogout }: MainSidebarProps) {
                   </button>
                 )}
 
-                {(collapsed || groupOpen) &&
-                  group.items.map((item) => (
-                    <SidebarLink
-                      key={item.href}
-                      collapsed={collapsed}
-                      href={item.href}
-                      active={isItemActive(item, pathname)}
-                      label={item.label}
-                      icon={item.icon}
-                      accent={item.accent}
-                    />
-                  ))}
+                {(collapsed || groupOpen) && (
+                  <div id={`sidebar-group-${group.id}`}>
+                    {group.items.map((item) => (
+                      <SidebarLink
+                        key={item.href}
+                        collapsed={collapsed}
+                        href={item.href}
+                        active={isItemActive(item, pathname)}
+                        label={item.label}
+                        icon={item.icon}
+                        accent={item.accent}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -330,7 +331,7 @@ export default function MainSidebar({ user, onLogout }: MainSidebarProps) {
             onClick={onLogout}
             title={collapsed ? 'Sign Out' : undefined}
             className={cn(
-              'flex items-center rounded-lg transition-colors text-red-400 hover:bg-red-500/10',
+              'flex items-center rounded-lg transition-colors duration-200 text-red-400 hover:bg-red-500/10 cursor-pointer',
               collapsed ? 'p-2 justify-center' : 'w-full gap-2 px-3 py-2 text-xs'
             )}
           >
@@ -372,7 +373,7 @@ function SidebarLink({
         href={href}
         title={label}
         className={cn(
-          'w-full flex items-center justify-center p-2 rounded-lg transition-colors',
+          'w-full flex items-center justify-center p-2 rounded-lg transition-colors duration-200 cursor-pointer',
           active
             ? 'bg-portal-accent/10 text-portal-accent'
             : accent
@@ -389,7 +390,7 @@ function SidebarLink({
     <Link
       href={href}
       className={cn(
-        'flex items-center gap-2 px-3 py-2 mx-2 rounded-lg text-xs transition-colors',
+        'flex items-center gap-2 px-3 py-2 mx-2 rounded-lg text-xs transition-colors duration-200 cursor-pointer',
         active
           ? 'bg-portal-accent/10 text-portal-accent font-medium'
           : accent
