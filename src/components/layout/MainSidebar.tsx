@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -13,6 +13,7 @@ import {
   Shield,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Star,
   Menu,
   X,
@@ -22,6 +23,11 @@ import {
   CheckSquare,
   Sparkles,
   HardDrive,
+  NotebookText,
+  BrainCircuit,
+  Wrench,
+  Briefcase,
+  TrendingUp,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -40,6 +46,95 @@ interface MainSidebarProps {
   favoritesCount?: number;
 }
 
+interface NavItem {
+  href: string;
+  label: string;
+  icon: React.ReactNode;
+  /** Custom active matcher; defaults to exact pathname equality. */
+  match?: (pathname: string) => boolean;
+  accent?: boolean;
+}
+
+interface NavGroup {
+  id: string;
+  label: string;
+  items: NavItem[];
+  adminOnly?: boolean;
+}
+
+const NAV_GROUPS: NavGroup[] = [
+  {
+    id: 'productivity',
+    label: 'Productivity',
+    items: [
+      { href: '/mail', label: 'Mail', icon: <Mail className="h-3.5 w-3.5" /> },
+      { href: '/todos', label: 'Todo List', icon: <CheckSquare className="h-3.5 w-3.5" /> },
+      { href: '/onenote', label: 'OneNote', icon: <NotebookText className="h-3.5 w-3.5" /> },
+    ],
+  },
+  {
+    id: 'infrastructure',
+    label: 'Infrastructure',
+    items: [
+      { href: '/tailscale', label: 'Tailscale', icon: <Wifi className="h-3.5 w-3.5" /> },
+      { href: '/local', label: 'Local Services', icon: <HardDrive className="h-3.5 w-3.5" /> },
+      { href: '/coolify', label: 'VPS Servers', icon: <Cloud className="h-3.5 w-3.5" /> },
+      { href: '/remote', label: 'Remote Desktop', icon: <Monitor className="h-3.5 w-3.5" /> },
+    ],
+  },
+  {
+    id: 'development',
+    label: 'Development',
+    items: [
+      {
+        href: '/projects',
+        label: 'Projects',
+        icon: <FolderGit2 className="h-3.5 w-3.5" />,
+        match: (p) => p.startsWith('/projects'),
+      },
+      {
+        href: '/amonis',
+        label: 'Amonis Finance',
+        icon: <Briefcase className="h-3.5 w-3.5" />,
+        accent: true,
+      },
+      { href: '/insights', label: 'Insights', icon: <TrendingUp className="h-3.5 w-3.5" /> },
+      { href: '/ai', label: 'AI Hub', icon: <BrainCircuit className="h-3.5 w-3.5" /> },
+    ],
+  },
+  {
+    id: 'manage',
+    label: 'Manage',
+    adminOnly: true,
+    items: [
+      {
+        href: '/admin/services',
+        label: 'Manage services',
+        icon: <Wrench className="h-3.5 w-3.5" />,
+      },
+      {
+        href: '/admin/reports',
+        label: 'Reports',
+        icon: <BarChart3 className="h-3.5 w-3.5" />,
+      },
+    ],
+  },
+];
+
+function isItemActive(item: NavItem, pathname: string): boolean {
+  if (item.match) return item.match(pathname);
+  return pathname === item.href;
+}
+
+function findGroupContainingPath(pathname: string): string | null {
+  for (const group of NAV_GROUPS) {
+    if (group.items.some((item) => isItemActive(item, pathname))) {
+      return group.id;
+    }
+  }
+  return null;
+}
+
 export default function MainSidebar({
   user,
   onLogout,
@@ -48,20 +143,53 @@ export default function MainSidebar({
   sections = [],
   favoritesCount = 0,
 }: MainSidebarProps) {
-  const pathname = usePathname();
+  const pathname = usePathname() || '';
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const isDashboard = pathname === '/dashboard' || pathname === '/';
-  const isMail = pathname === '/mail';
-  const isProjects = pathname?.startsWith('/projects');
-  const isTailscale = pathname === '/tailscale';
-  const isRemote = pathname === "/remote";
-  const isCoolify = pathname === "/coolify";
-  const isLocal = pathname === "/local";
-  const isTodos = pathname === "/todos";
-  const isInsights = pathname === "/insights";
-  const isAmonis = pathname === "/amonis";
+
+  // Per-group expand state. Default: only the group containing the current
+  // page is open. User toggles persist per browser via localStorage.
+  const initialGroupContainingPath = useMemo(
+    () => findGroupContainingPath(pathname),
+    [pathname]
+  );
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
+    const initial: Record<string, boolean> = {};
+    for (const g of NAV_GROUPS) {
+      initial[g.id] = g.id === initialGroupContainingPath;
+    }
+    return initial;
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    setOpenGroups((prev) => {
+      const next = { ...prev };
+      for (const g of NAV_GROUPS) {
+        const stored = window.localStorage.getItem(`sidebar.group.${g.id}`);
+        if (stored === '1') next[g.id] = true;
+        else if (stored === '0') next[g.id] = false;
+      }
+      // Always force-open the group containing the current page so the user
+      // can see where they are, even if they had previously collapsed it.
+      if (initialGroupContainingPath) next[initialGroupContainingPath] = true;
+      return next;
+    });
+  }, [initialGroupContainingPath]);
+
+  const toggleGroup = (groupId: string) => {
+    setOpenGroups((prev) => {
+      const next = { ...prev, [groupId]: !prev[groupId] };
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(`sidebar.group.${groupId}`, next[groupId] ? '1' : '0');
+      }
+      return next;
+    });
+  };
+
+  const visibleGroups = NAV_GROUPS.filter((g) => !g.adminOnly || user.role === 'admin');
 
   return (
     <>
@@ -85,12 +213,18 @@ export default function MainSidebar({
         )}
       >
         {/* Brand + collapse toggle */}
-        <div className={cn(
-          'border-b border-portal-border flex items-center gap-2',
-          collapsed ? 'p-2 justify-center flex-col' : 'p-4'
-        )}>
+        <div
+          className={cn(
+            'border-b border-portal-border flex items-center gap-2',
+            collapsed ? 'p-2 justify-center flex-col' : 'p-4'
+          )}
+        >
           {!collapsed && (
-            <Link href="/dashboard" className="flex-1 min-w-0" onClick={() => setMobileOpen(false)}>
+            <Link
+              href="/dashboard"
+              className="flex-1 min-w-0"
+              onClick={() => setMobileOpen(false)}
+            >
               <div className="flex items-center gap-2">
                 <Shield className="h-6 w-6 text-portal-accent" />
                 <span className="text-lg font-bold text-portal-text">LEPODER</span>
@@ -103,7 +237,6 @@ export default function MainSidebar({
               <Shield className="h-5 w-5 text-portal-accent" />
             </Link>
           )}
-          {/* Close button for mobile */}
           <button
             onClick={() => setMobileOpen(false)}
             className="lg:hidden p-1 text-portal-muted hover:text-portal-text hover:bg-portal-card-hover rounded-md transition-colors shrink-0"
@@ -111,7 +244,6 @@ export default function MainSidebar({
           >
             <X className="h-4 w-4" />
           </button>
-          {/* Collapse button for desktop */}
           <button
             onClick={() => setCollapsed(!collapsed)}
             className="hidden lg:flex p-1 text-portal-muted hover:text-portal-text hover:bg-portal-card-hover rounded-md transition-colors shrink-0"
@@ -123,7 +255,7 @@ export default function MainSidebar({
 
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto py-2">
-          {/* Dashboard filters (only functional on dashboard) */}
+          {/* Top: Dashboard or its filter buttons */}
           {isDashboard && onSectionChange ? (
             <>
               <SidebarButton
@@ -139,8 +271,30 @@ export default function MainSidebar({
                 onClick={() => onSectionChange('favorites')}
                 label="Favorites"
                 icon={<Star className="h-3.5 w-3.5" />}
-                badge={!collapsed ? (favoritesCount || undefined) : undefined}
+                badge={!collapsed ? favoritesCount || undefined : undefined}
               />
+              {/* Dynamic dashboard sections */}
+              {sections.length > 0 && (
+                <>
+                  {!collapsed && (
+                    <div className="px-3 pt-3 pb-1">
+                      <div className="text-[10px] font-semibold text-portal-muted uppercase tracking-wider">
+                        Sections
+                      </div>
+                    </div>
+                  )}
+                  {collapsed && <div className="border-t border-portal-border mx-2 mt-2 mb-1" />}
+                  {sections.map((s) => (
+                    <SidebarButton
+                      key={s}
+                      collapsed={collapsed}
+                      active={activeSection === s}
+                      onClick={() => onSectionChange(s)}
+                      label={s}
+                    />
+                  ))}
+                </>
+              )}
             </>
           ) : (
             <SidebarLink
@@ -152,140 +306,69 @@ export default function MainSidebar({
             />
           )}
 
-          {/* Quick Access */}
-          {!collapsed && (
-            <div className="px-3 pt-4 pb-1">
-              <div className="text-[10px] font-semibold text-portal-muted uppercase tracking-wider">
-                Quick Access
-              </div>
-            </div>
-          )}
-          {collapsed && <div className="h-1 border-t border-portal-border mx-2 mt-2 mb-1" />}
-          
-          <SidebarLink
-            collapsed={collapsed}
-            href="/mail"
-            active={isMail}
-            label="Mail"
-            icon={<Mail className="h-3.5 w-3.5" />}
-          />
-          <SidebarLink
-            collapsed={collapsed}
-            href="/projects"
-            active={isProjects}
-            label="Projects"
-            icon={<FolderGit2 className="h-3.5 w-3.5" />}
-          />
-          <SidebarLink
-            collapsed={collapsed}
-            href="/tailscale"
-            active={isTailscale}
-            label="Tailscale"
-            icon={<Wifi className="h-3.5 w-3.5" />}
-          />
-          <SidebarLink
-            collapsed={collapsed}
-            href="/remote"
-            active={isRemote}
-            label="Remote Desktop"
-            icon={<Monitor className="h-3.5 w-3.5" />}
-          />
-          <SidebarLink
-            collapsed={collapsed}
-            href="/coolify"
-            active={isCoolify}
-            label="VPS Servers"
-            icon={<Cloud className="h-3.5 w-3.5" />}
-          />
-          <SidebarLink
-            collapsed={collapsed}
-            href="/local"
-            active={isLocal}
-            label="Local Services"
-            icon={<HardDrive className="h-3.5 w-3.5" />}
-          />
-          <SidebarLink
-            collapsed={collapsed}
-            href="/todos"
-            active={isTodos}
-            label="Todo List"
-            icon={<CheckSquare className="h-3.5 w-3.5" />}
-          />
-          <SidebarLink
-            collapsed={collapsed}
-            href="/insights"
-            active={isInsights}
-            label="Insights"
-            icon={<Sparkles className="h-3.5 w-3.5" />}
-          />
-          
-          {/* Amonis Finance - Development Hub */}
-          {!collapsed && (
-            <div className="px-3 pt-4 pb-1">
-              <div className="text-[10px] font-semibold text-portal-muted uppercase tracking-wider">
-                Development
-              </div>
-            </div>
-          )}
-          {collapsed && <div className="h-1 border-t border-portal-border mx-2 mt-2 mb-1" />}
-          <SidebarLink
-            collapsed={collapsed}
-            href="/amonis"
-            active={isAmonis}
-            label="Amonis Finance"
-            icon={<Sparkles className="h-3.5 w-3.5" />}
-            accent
-          />
+          {/* Grouped nav */}
+          {visibleGroups.map((group, idx) => {
+            const isFirstGroup = idx === 0;
+            const groupOpen = openGroups[group.id] ?? false;
+            const groupHasActive = group.items.some((item) => isItemActive(item, pathname));
 
-          {/* Dashboard sections (only on dashboard) */}
-          {isDashboard && onSectionChange && sections.length > 0 && (
-            <>
-              {!collapsed && (
-                <div className="px-3 pt-4 pb-1">
-                  <div className="text-[10px] font-semibold text-portal-muted uppercase tracking-wider">
-                    Sections
-                  </div>
-                </div>
-              )}
-              {collapsed && <div className="h-1 border-t border-portal-border mx-2 mt-2 mb-1" />}
-              {sections.map((section) => (
-                <SidebarButton
-                  key={section}
-                  collapsed={collapsed}
-                  active={activeSection === section}
-                  onClick={() => onSectionChange(section)}
-                  label={section}
-                />
-              ))}
-            </>
-          )}
+            return (
+              <div key={group.id} className={cn(isFirstGroup ? 'mt-2' : 'mt-1')}>
+                {collapsed ? (
+                  <div className="border-t border-portal-border mx-2 mt-2 mb-1" />
+                ) : (
+                  <button
+                    onClick={() => toggleGroup(group.id)}
+                    className="w-full flex items-center gap-1.5 px-3 pt-3 pb-1 group"
+                  >
+                    <ChevronDown
+                      className={cn(
+                        'h-3 w-3 text-portal-muted transition-transform',
+                        !groupOpen && '-rotate-90'
+                      )}
+                    />
+                    <span
+                      className={cn(
+                        'text-[10px] font-semibold uppercase tracking-wider',
+                        groupHasActive ? 'text-portal-accent' : 'text-portal-muted',
+                        'group-hover:text-portal-text transition-colors'
+                      )}
+                    >
+                      {group.label}
+                    </span>
+                  </button>
+                )}
+
+                {(collapsed || groupOpen) &&
+                  group.items.map((item) => (
+                    <SidebarLink
+                      key={item.href}
+                      collapsed={collapsed}
+                      href={item.href}
+                      active={isItemActive(item, pathname)}
+                      label={item.label}
+                      icon={item.icon}
+                      accent={item.accent}
+                    />
+                  ))}
+              </div>
+            );
+          })}
         </nav>
 
         {/* Bottom actions */}
-        <div className={cn(
-          'border-t border-portal-border space-y-1',
-          collapsed ? 'p-2 flex flex-col items-center' : 'p-3'
-        )}>
-          {user.role === 'admin' && (
-            <SidebarLink
-              collapsed={collapsed}
-              href="/admin/services"
-              label="Gérer les services"
-              icon={<Settings className="h-3.5 w-3.5" />}
-              accent
-            />
+        <div
+          className={cn(
+            'border-t border-portal-border space-y-1',
+            collapsed ? 'p-2 flex flex-col items-center' : 'p-3'
           )}
+        >
           <SidebarLink
             collapsed={collapsed}
             href="/settings"
             label="Settings"
             icon={<Settings className="h-3.5 w-3.5" />}
-          />
-          <SidebarLink
-            collapsed={collapsed}
-            href="/admin/reports"
-            label="Reports"
-            icon={<BarChart3 className="h-3.5 w-3.5" />}
+            active={pathname === '/settings'}
           />
           <button
             onClick={onLogout}
