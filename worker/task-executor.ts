@@ -7,6 +7,7 @@ import {
   pushBranch,
 } from './git-handler';
 import { runAgent } from './claude-agent';
+import { runOrchestrator } from './orchestrator';
 import { logger } from './logger';
 
 const DEFAULT_MODEL = process.env.WORKER_DEFAULT_MODEL || 'claude-sonnet-4-6';
@@ -16,6 +17,14 @@ const NPM_INSTALL_TIMEOUT_MS =
   parseInt(process.env.WORKER_NPM_INSTALL_TIMEOUT_MS || '300000', 10) || 300000;
 const SKIP_NPM_INSTALL =
   (process.env.WORKER_SKIP_NPM_INSTALL || '').toLowerCase() === 'true';
+// Orchestrator (Maestro) runs longer than a normal task — it dispatches
+// multiple specialist sub-tasks back-to-back. Default to 4× the normal
+// per-task timeout so Maestro's outer loop has room.
+const ORCHESTRATOR_TIMEOUT_MS =
+  parseInt(process.env.MAESTRO_TIMEOUT_MS || String(TIMEOUT_MS * 4), 10) ||
+  TIMEOUT_MS * 4;
+const ORCHESTRATOR_MAX_ITERATIONS =
+  parseInt(process.env.MAESTRO_MAX_ITERATIONS || '30', 10) || 30;
 
 interface ExecuteParams {
   taskId: string;
@@ -96,6 +105,8 @@ export async function executeTask({ taskId, workerId }: ExecuteParams): Promise<
       agentProfile?.systemPrompt ??
       'You are a careful software engineer. Make the smallest correct change that satisfies the task. When done, call the `finish` tool with a one-paragraph summary.';
 
+    const isOrchestrator = agentProfile?.slug === 'orchestrator';
+
     const userMessage = [
       `# Task: ${task.title}`,
       '',
@@ -107,67 +118,123 @@ export async function executeTask({ taskId, workerId }: ExecuteParams): Promise<
       `Work branch: ${clone.workBranch}`,
       `Write access: ${project.allowWrite && githubToken ? 'enabled — your changes will be committed' : 'disabled — produce a summary only, no commits will be made'}`,
       '',
-      'Use the read_file / list_directory / run_bash / write_file tools to inspect and edit code, then call `finish` with a summary. Stay focused on the task above.',
+      isOrchestrator
+        ? 'Plan a sequence of sub-tasks for specialist agents. Each sub-task you dispatch shares this branch — its commits accumulate before the next sub-task runs. When you have nothing left to dispatch, call `finish` with a paragraph describing what each sub-task accomplished.'
+        : 'Use the read_file / list_directory / run_bash / write_file tools to inspect and edit code, then call `finish` with a summary. Stay focused on the task above.',
     ].join('\n');
 
-    await logger.info(taskId, 'Starting agent loop…');
+    let result: { ok: boolean; summary: string; filesTouched: string[]; error?: string };
+    let subtaskIds: string[] = [];
 
-    const result = await runAgent({
-      taskId,
-      workdir: clone.workdir,
-      systemPrompt,
-      userMessage,
-      model: agentProfile?.model || DEFAULT_MODEL,
-      maxIterations: MAX_ITERATIONS,
-      timeoutMs: TIMEOUT_MS,
-    });
+    if (isOrchestrator) {
+      await logger.info(
+        taskId,
+        `Starting Orchestrator loop (timeout ${Math.round(ORCHESTRATOR_TIMEOUT_MS / 1000)}s, max iterations ${ORCHESTRATOR_MAX_ITERATIONS})…`
+      );
+      const orch = await runOrchestrator({
+        parentTaskId: taskId,
+        projectId: project.id,
+        workdir: clone.workdir,
+        systemPrompt,
+        userMessage,
+        model: agentProfile?.model || DEFAULT_MODEL,
+        maxIterations: ORCHESTRATOR_MAX_ITERATIONS,
+        timeoutMs: ORCHESTRATOR_TIMEOUT_MS,
+        defaultSubagentModel: DEFAULT_MODEL,
+        subagentTimeoutMs: TIMEOUT_MS,
+        subagentMaxIterations: MAX_ITERATIONS,
+      });
+      subtaskIds = orch.subtaskIds;
+      result = {
+        ok: orch.ok,
+        summary: orch.summary,
+        filesTouched: orch.filesTouched,
+        error: orch.error,
+      };
+    } else {
+      await logger.info(taskId, 'Starting agent loop…');
+      result = await runAgent({
+        taskId,
+        workdir: clone.workdir,
+        systemPrompt,
+        userMessage,
+        model: agentProfile?.model || DEFAULT_MODEL,
+        maxIterations: MAX_ITERATIONS,
+        timeoutMs: TIMEOUT_MS,
+      });
+    }
 
     if (!result.ok) {
       await fail(taskId, result.error || 'Agent failed', result.summary || undefined);
       return;
     }
 
-    await logger.info(taskId, `Agent finished. Files touched: ${result.filesTouched.length}`);
+    await logger.info(
+      taskId,
+      isOrchestrator
+        ? `Orchestrator finished. ${subtaskIds.length} sub-task(s), ${result.filesTouched.length} unique files touched.`
+        : `Agent finished. Files touched: ${result.filesTouched.length}`
+    );
 
-    // Decide on result: commit + PR (if writable), else summary-only
-    if (project.allowWrite && githubToken && result.filesTouched.length > 0) {
-      const commitMsg = `[agent:${agentProfile?.slug ?? 'auto'}] ${task.title}\n\n${result.summary}`;
-      const { commitHash, changed } = await commitAll({
-        taskId,
-        workdir: clone.workdir,
-        message: commitMsg,
-      });
-      if (!changed) {
-        await logger.warn(taskId, 'No git diff after agent run — recording summary only');
-        await complete(taskId, {
-          resultType: 'summary',
-          resultUrl: null,
-          resultSummary: result.summary,
+    // Decide on result: commit + PR (if writable), else summary-only.
+    // For the Orchestrator, sub-tasks have already committed on the shared
+    // branch, so we may have commits to push even if the orchestrator's
+    // working tree is clean now.
+    const hasWorkdirChanges = result.filesTouched.length > 0;
+    const hasUnpushedCommits = isOrchestrator && subtaskIds.length > 0;
+
+    if (project.allowWrite && githubToken && (hasWorkdirChanges || hasUnpushedCommits)) {
+      // Commit any straggler changes (orchestrator usually has none here).
+      let parentCommitHash: string | null = null;
+      if (hasWorkdirChanges) {
+        const commitMsg = `[agent:${agentProfile?.slug ?? 'auto'}] ${task.title}\n\n${result.summary}`;
+        const c = await commitAll({
+          taskId,
+          workdir: clone.workdir,
+          message: commitMsg,
         });
-        return;
+        parentCommitHash = c.commitHash;
+        if (!c.changed && !hasUnpushedCommits) {
+          await logger.warn(taskId, 'No git diff after agent run — recording summary only');
+          await complete(taskId, {
+            resultType: 'summary',
+            resultUrl: null,
+            resultSummary: result.summary,
+          });
+          return;
+        }
       }
+
       await pushBranch({ taskId, workdir: clone.workdir, branch: clone.workBranch });
+
+      // Build a body that lists sub-task summaries for orchestrator runs.
+      const subtaskBlock = isOrchestrator
+        ? await buildSubtaskBlock(subtaskIds)
+        : '';
+
       const prUrl = await openPullRequest({
         taskId,
         owner: project.repoOwner,
         repo: project.repoName,
         head: clone.workBranch,
         base: clone.baseBranch,
-        title: `[agent] ${task.title}`,
+        title: isOrchestrator ? `[orchestrated] ${task.title}` : `[agent] ${task.title}`,
         body: [
           `Dispatched from LEPODER Portal — task \`${taskId}\``,
           '',
           result.summary,
           '',
+          subtaskBlock,
           '---',
           `Agent: ${agentProfile?.name ?? 'auto'} (${agentProfile?.role ?? 'unknown'})`,
           `Files touched: ${result.filesTouched.map((f) => `\`${f}\``).join(', ') || '(none)'}`,
-          commitHash ? `Commit: ${commitHash}` : '',
+          parentCommitHash ? `Commit: ${parentCommitHash}` : '',
         ]
           .filter(Boolean)
           .join('\n'),
         token: githubToken,
       });
+      const commitHash = parentCommitHash;
 
       if (prUrl) {
         await complete(taskId, {
@@ -234,4 +301,34 @@ async function fail(taskId: string, message: string, partialSummary?: string): P
       resultSummary: partialSummary ?? null,
     },
   });
+}
+
+/**
+ * Build the "Sub-tasks" section that goes into the PR body when an
+ * Orchestrator coordinated the run. Lists each sub-task with its agent,
+ * status, and one-line summary so reviewers can see the breakdown.
+ */
+async function buildSubtaskBlock(subtaskIds: string[]): Promise<string> {
+  if (subtaskIds.length === 0) return '';
+  const subtasks = await prisma.task.findMany({
+    where: { id: { in: subtaskIds } },
+    include: { agentProfile: true },
+  });
+  // Preserve dispatch order (subtaskIds is in dispatch order, prisma may not be)
+  const byId = new Map(subtasks.map((t) => [t.id, t]));
+  const lines = ['## Sub-tasks', ''];
+  for (const id of subtaskIds) {
+    const t = byId.get(id);
+    if (!t) continue;
+    const agent = t.agentProfile
+      ? `${t.agentProfile.name} (${t.agentProfile.slug})`
+      : 'unknown';
+    const status =
+      t.status === 'completed' ? '✓' : t.status === 'failed' ? '✗' : `· ${t.status}`;
+    const firstLine = (t.resultSummary || '').split('\n')[0]?.trim() || '(no summary)';
+    lines.push(`- ${status} **${t.title}** — ${agent}`);
+    lines.push(`  ${firstLine.slice(0, 200)}`);
+  }
+  lines.push('');
+  return lines.join('\n');
 }
