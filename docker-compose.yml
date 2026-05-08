@@ -12,8 +12,11 @@ services:
       dockerfile: Dockerfile
     container_name: lepoder-portal
     restart: unless-stopped
-    ports:
-      - "3000:3000"
+    # `expose:` (not `ports:`) — Coolify's Traefik proxy reaches the
+    # container on the internal Docker network. Publishing to the host
+    # port directly would conflict with Coolify's port management.
+    expose:
+      - "3000"
     volumes:
       # Persist SQLite database. Default is the Coolify-managed bind path
       # (where this app actually runs). Override with PORTAL_DATA_VOLUME if
@@ -34,10 +37,11 @@ services:
       - .env
     environment:
       - DATABASE_URL=file:/app/data/portal.db
-    networks:
-      - portal-net
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/auth/me"]
+      # /api/health returns 200 for everyone. /api/auth/me returns 401 when
+      # unauthenticated, which `wget --spider` reports as a failure and
+      # Traefik then refuses to route to the container.
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -86,11 +90,12 @@ services:
       - WORKER_MAX_ITERATIONS=40
       - WORKER_CONCURRENCY=1
       # ANTHROPIC_API_KEY, ANTHROPIC_BASE_URL, GITHUB_TOKEN come from .env
-    networks:
-      - portal-net
     command: sh -lc "npx tsx worker/index.ts"
 
 volumes:
+  # `portal-data` is only used when PORTAL_DATA_VOLUME is set to the literal
+  # string "portal-data" (typically for local dev). On Coolify and any other
+  # default deploy the bind path is used and this declaration is unused.
   portal-data:
     driver: local
   portal-icons:
@@ -98,6 +103,6 @@ volumes:
   portal-worker-clones:
     driver: local
 
-networks:
-  portal-net:
-    driver: bridge
+# No top-level `networks:` — let Coolify (or `docker compose`) attach
+# services to its default network. On Coolify this puts the portal on the
+# `coolify` proxy network so Traefik can route to it.
