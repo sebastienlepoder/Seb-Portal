@@ -27,6 +27,7 @@ import {
   Wrench,
   Briefcase,
   TrendingUp,
+  Bot,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -93,6 +94,12 @@ const NAV_GROUPS: NavGroup[] = [
       },
       { href: '/insights', label: 'Insights', icon: <TrendingUp className="h-3.5 w-3.5" /> },
       { href: '/ai', label: 'AI Hub', icon: <BrainCircuit className="h-3.5 w-3.5" /> },
+      {
+        href: '/agents',
+        label: 'Agents',
+        icon: <Bot className="h-3.5 w-3.5" />,
+        match: (p) => p.startsWith('/agents'),
+      },
     ],
   },
   {
@@ -104,6 +111,12 @@ const NAV_GROUPS: NavGroup[] = [
         href: '/admin/services',
         label: 'Manage services',
         icon: <Wrench className="h-3.5 w-3.5" />,
+      },
+      {
+        href: '/admin/agents',
+        label: 'Manage agents',
+        icon: <Bot className="h-3.5 w-3.5" />,
+        match: (p) => p.startsWith('/admin/agents') || p.startsWith('/admin/projects'),
       },
       {
         href: '/admin/reports',

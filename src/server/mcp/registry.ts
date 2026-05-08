@@ -6,6 +6,8 @@
 
 import type { SessionUser } from '@/types';
 import prisma from '@/lib/db';
+import { dispatchTask, DispatchError } from '@/lib/agent-dispatch';
+import type { TaskPriority } from '@/types/agents';
 
 export interface McpToolDef {
   name: string;
@@ -111,6 +113,64 @@ toolRegistry.push({
 
     const data = await res.json();
     return { configured: true, ordersToday: data.count };
+  },
+});
+
+// Tool 4: Dispatch a task to a project's agent worker
+toolRegistry.push({
+  name: 'dispatch_to_project',
+  description:
+    'Dispatch a development task to a project\'s headless agent worker. The worker clones the GitHub repo and runs Claude with the chosen agent\'s system prompt to make code changes. Returns a taskId you can use to track progress.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      project_name: {
+        type: 'string',
+        description: 'Project slug or human name (e.g. "amonis-finance" or "Amonis Finance")',
+      },
+      task_title: { type: 'string', description: 'Short, imperative title (max 200 chars)' },
+      task_description: {
+        type: 'string',
+        description: 'Detailed instructions for the agent (the agent receives this verbatim)',
+      },
+      agent_role: {
+        type: 'string',
+        description:
+          'Optional: agent slug, role name, or id. If omitted, the system auto-matches by expertise.',
+      },
+      priority: {
+        type: 'string',
+        enum: ['low', 'normal', 'high', 'urgent'],
+        description: 'Task priority. Defaults to "normal".',
+      },
+    },
+    required: ['project_name', 'task_title', 'task_description'],
+  },
+  adminOnly: false,
+  handler: async (input, user) => {
+    try {
+      const result = await dispatchTask({
+        projectName: String(input.project_name ?? ''),
+        taskTitle: String(input.task_title ?? ''),
+        taskDescription: String(input.task_description ?? ''),
+        agentRole: input.agent_role ? String(input.agent_role) : null,
+        priority: (input.priority as TaskPriority) ?? 'normal',
+        createdById: user.id === 'amonis-worker' ? null : user.id,
+      });
+      return {
+        success: true,
+        taskId: result.taskId,
+        message: result.message,
+        taskUrl: result.taskUrl,
+        agent: result.matchedAgentSlug,
+        project: result.matchedProjectSlug,
+      };
+    } catch (e) {
+      if (e instanceof DispatchError) {
+        return { success: false, error: e.message, code: e.code };
+      }
+      throw e;
+    }
   },
 });
 

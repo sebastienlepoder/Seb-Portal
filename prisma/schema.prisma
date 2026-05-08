@@ -234,19 +234,25 @@ model AppSetting {
 // ─── Projects ────────────────────────────────────────────────
 
 model Project {
-  id          String   @id @default(uuid())
-  slug        String   @unique
-  name        String
-  description String?
-  repoUrl     String?  // GitHub repo URL
-  status      String   @default("active") // active|paused|completed|archived
-  icon        String?  // emoji or icon path
-  color       String?  // accent color
-  sortOrder   Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id            String   @id @default(uuid())
+  slug          String   @unique
+  name          String
+  description   String?
+  repoUrl       String?  // GitHub repo URL (e.g. https://github.com/owner/repo)
+  repoOwner     String?  // GitHub owner (org or user)
+  repoName      String?  // GitHub repo name
+  workingBranch String   @default("main") // branch the worker should push to / open PRs against
+  clonePath     String?  // optional pre-configured clone path on the worker host
+  allowWrite    Boolean  @default(false) // worker may push commits / open PRs to this repo
+  status        String   @default("active") // active|paused|completed|archived
+  icon          String?  // emoji or icon path
+  color         String?  // accent color
+  sortOrder     Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  sessions    ProjectSession[]
+  sessions ProjectSession[]
+  tasks    Task[]
 }
 
 model ProjectSession {
@@ -369,6 +375,77 @@ model AmonisBuild {
   startedAt     DateTime @default(now())
   completedAt   DateTime?
   createdAt     DateTime @default(now())
-  
+
   @@index([status])
+}
+
+// ─── Agent Dispatch System ───────────────────────────────────
+// General-purpose agent profiles + a task queue dispatched from
+// the AI Hub to a headless worker that runs Claude against a
+// cloned repo.
+
+model AgentProfile {
+  id           String   @id @default(uuid())
+  slug         String   @unique
+  name         String
+  role         String   // e.g. "Layout Specialist", "Architecture Expert"
+  expertise    String   @default("[]") // JSON array of tags: ["frontend","finance",...]
+  description  String?
+  systemPrompt String   // custom instructions used when this agent is invoked
+  model        String?  // optional override (e.g. claude-opus-4-7); null = use worker default
+  isActive     Boolean  @default(true)
+  sortOrder    Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tasks Task[]
+
+  @@index([isActive, sortOrder])
+}
+
+model Task {
+  id              String    @id @default(uuid())
+  projectId       String
+  agentProfileId  String?
+  createdById     String?   // user that dispatched the task
+
+  title           String
+  description     String    // detailed instructions for the agent
+  priority        String    @default("normal") // low | normal | high | urgent
+  status          String    @default("pending") // pending | queued | in_progress | completed | failed | cancelled
+
+  // Worker tracking
+  workerId        String?   // set when a worker locks the task
+  workerStartedAt DateTime?
+  completedAt     DateTime?
+
+  // Result
+  resultType      String?   // "commit" | "pr" | "summary"
+  resultUrl       String?   // PR URL, commit URL, or null
+  resultSummary   String?   // markdown summary written by the agent
+  errorMessage    String?
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  project      Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  agentProfile AgentProfile? @relation(fields: [agentProfileId], references: [id], onDelete: SetNull)
+  logs         TaskLog[]
+
+  @@index([status, priority, createdAt])
+  @@index([projectId, status])
+  @@index([agentProfileId, status])
+}
+
+model TaskLog {
+  id        String   @id @default(uuid())
+  taskId    String
+  level     String   @default("info") // info | warn | error | stdout | stderr
+  message   String
+  metadata  String?  // optional JSON
+  createdAt DateTime @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId, createdAt])
 }
