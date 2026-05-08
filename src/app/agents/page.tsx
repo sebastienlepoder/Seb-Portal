@@ -10,6 +10,7 @@ import {
   Briefcase,
   Cpu,
   ExternalLink,
+  GitMerge,
   HelpCircle,
   Loader2,
   Plus,
@@ -221,14 +222,14 @@ export default function AgentsPage() {
             <div className="flex items-center gap-2 ml-auto">
               <Link
                 href="/agents/help"
-                className="flex items-center gap-2 px-3 py-2 bg-portal-card border border-portal-border hover:border-portal-accent/50 text-portal-text rounded-lg transition-colors text-sm"
+                className="flex items-center gap-2 px-3 py-2 bg-portal-card border border-portal-border hover:border-portal-accent/50 text-portal-text rounded-lg transition-colors duration-200 text-sm cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
                 title="Help & documentation"
               >
                 <HelpCircle className="h-4 w-4" />
               </Link>
               <button
                 onClick={() => setShowDispatcher(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-portal-accent hover:bg-portal-accent/80 text-white rounded-lg transition-colors text-sm"
+                className="flex items-center gap-2 px-4 py-2 bg-portal-accent hover:bg-portal-accent/80 text-white rounded-lg transition-colors duration-200 text-sm cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
               >
                 <Send className="h-4 w-4" />
                 New task
@@ -236,7 +237,7 @@ export default function AgentsPage() {
               {user.role === 'admin' && (
                 <a
                   href="/admin/agents"
-                  className="flex items-center gap-2 px-3 py-2 bg-portal-card border border-portal-border hover:border-portal-accent/50 text-portal-text rounded-lg transition-colors text-sm"
+                  className="flex items-center gap-2 px-3 py-2 bg-portal-card border border-portal-border hover:border-portal-accent/50 text-portal-text rounded-lg transition-colors duration-200 text-sm cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
                   title="Manage agents"
                 >
                   <Settings className="h-4 w-4" />
@@ -391,7 +392,7 @@ export default function AgentsPage() {
                       No tasks {statusFilter === 'active' ? 'in flight' : 'yet'}.{' '}
                       <button
                         onClick={() => setShowDispatcher(true)}
-                        className="text-portal-accent hover:underline"
+                        className="text-portal-accent hover:underline cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent rounded"
                       >
                         Dispatch one →
                       </button>
@@ -401,7 +402,7 @@ export default function AgentsPage() {
                       <button
                         key={t.id}
                         onClick={() => setOpenTaskId(t.id)}
-                        className="w-full text-left p-3 hover:bg-portal-card-hover/50 transition-colors"
+                        className="w-full text-left p-3 hover:bg-portal-card-hover/50 transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent focus:ring-inset"
                       >
                         <div className="flex items-start gap-3">
                           <div className="text-lg shrink-0 mt-0.5">{t.project.icon ?? '📦'}</div>
@@ -487,7 +488,7 @@ function FilterBtn({
     <button
       onClick={onClick}
       className={cn(
-        'px-2.5 py-1 rounded border transition-colors',
+        'px-2.5 py-1 rounded border transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent',
         active
           ? 'bg-portal-accent/10 text-portal-accent border-portal-accent/30'
           : 'bg-portal-bg border-portal-border text-portal-muted hover:text-portal-text'
@@ -516,6 +517,7 @@ function DispatcherModal({
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<TaskPriority>('normal');
+  const [autoMerge, setAutoMerge] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -536,6 +538,7 @@ function DispatcherModal({
           task_description: description.trim(),
           agent_role: agentSlug || null,
           priority,
+          auto_merge: autoMerge,
         }),
       });
       const data = await res.json();
@@ -558,7 +561,7 @@ function DispatcherModal({
           <select
             value={projectName}
             onChange={(e) => setProjectName(e.target.value)}
-            className="w-full bg-portal-bg border border-portal-border rounded-md px-3 py-2 text-sm text-portal-text"
+            className="w-full bg-portal-bg border border-portal-border rounded-md px-3 py-2 text-sm text-portal-text cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
           >
             {projects.length === 0 ? (
               <option value="">— no projects configured —</option>
@@ -576,7 +579,7 @@ function DispatcherModal({
           <select
             value={agentSlug}
             onChange={(e) => setAgentSlug(e.target.value)}
-            className="w-full bg-portal-bg border border-portal-border rounded-md px-3 py-2 text-sm text-portal-text"
+            className="w-full bg-portal-bg border border-portal-border rounded-md px-3 py-2 text-sm text-portal-text cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
           >
             <option value="">— auto —</option>
             {agents.map((a) => (
@@ -592,7 +595,7 @@ function DispatcherModal({
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="e.g. Add search bar to dashboard"
-            className="w-full bg-portal-bg border border-portal-border rounded-md px-3 py-2 text-sm text-portal-text"
+            className="w-full bg-portal-bg border border-portal-border rounded-md px-3 py-2 text-sm text-portal-text focus:outline-none focus:ring-2 focus:ring-portal-accent"
           />
         </Field>
 
@@ -602,7 +605,7 @@ function DispatcherModal({
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Detailed instructions for the agent…"
             rows={6}
-            className="w-full bg-portal-bg border border-portal-border rounded-md px-3 py-2 text-sm text-portal-text font-mono resize-y"
+            className="w-full bg-portal-bg border border-portal-border rounded-md px-3 py-2 text-sm text-portal-text font-mono resize-y focus:outline-none focus:ring-2 focus:ring-portal-accent"
           />
         </Field>
 
@@ -613,10 +616,10 @@ function DispatcherModal({
                 key={p}
                 onClick={() => setPriority(p)}
                 className={cn(
-                  'flex-1 px-3 py-1.5 rounded border text-xs',
+                  'flex-1 px-3 py-1.5 rounded border text-xs transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent',
                   priority === p
                     ? 'bg-portal-accent/10 border-portal-accent/40 text-portal-accent'
-                    : 'bg-portal-bg border-portal-border text-portal-muted'
+                    : 'bg-portal-bg border-portal-border text-portal-muted hover:text-portal-text'
                 )}
               >
                 {p}
@@ -624,6 +627,41 @@ function DispatcherModal({
             ))}
           </div>
         </Field>
+
+        {/* Auto-merge toggle */}
+        <label
+          htmlFor="auto-merge"
+          className={cn(
+            'flex items-start gap-3 rounded-md border p-3 cursor-pointer transition-colors duration-200',
+            autoMerge
+              ? 'bg-portal-accent/10 border-portal-accent/40'
+              : 'bg-portal-bg border-portal-border hover:border-portal-accent/40'
+          )}
+        >
+          <input
+            id="auto-merge"
+            type="checkbox"
+            checked={autoMerge}
+            onChange={(e) => setAutoMerge(e.target.checked)}
+            className="mt-0.5 h-4 w-4 rounded border-portal-border bg-portal-bg accent-portal-accent cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
+          />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1.5 text-sm font-medium text-portal-text">
+              <GitMerge
+                className={cn(
+                  'h-3.5 w-3.5',
+                  autoMerge ? 'text-portal-accent' : 'text-portal-muted'
+                )}
+              />
+              Merge to main automatically
+            </div>
+            <p className="text-xs text-portal-muted mt-0.5">
+              When the agent finishes, merge its pull request into{' '}
+              <span className="font-mono">main</span> directly — no manual GitHub
+              review needed.
+            </p>
+          </div>
+        </label>
 
         {error && (
           <div className="bg-red-500/10 border border-red-500/30 text-red-300 text-xs rounded-md px-3 py-2">
@@ -634,21 +672,23 @@ function DispatcherModal({
         <div className="flex justify-end gap-2 pt-2">
           <button
             onClick={onClose}
-            className="px-3 py-2 text-sm text-portal-muted hover:text-portal-text"
+            className="px-3 py-2 text-sm text-portal-muted hover:text-portal-text transition-colors duration-200 cursor-pointer rounded-md focus:outline-none focus:ring-2 focus:ring-portal-accent"
           >
             Cancel
           </button>
           <button
             onClick={submit}
             disabled={submitting || !title.trim() || !description.trim() || !projectName}
-            className="px-4 py-2 bg-portal-accent hover:bg-portal-accent/80 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-md text-sm flex items-center gap-2"
+            className="px-4 py-2 bg-portal-accent hover:bg-portal-accent/80 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-md text-sm flex items-center gap-2 transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
           >
             {submitting ? (
               <Loader2 className="h-4 w-4 animate-spin" />
+            ) : autoMerge ? (
+              <GitMerge className="h-4 w-4" />
             ) : (
               <Send className="h-4 w-4" />
             )}
-            Dispatch
+            {autoMerge ? 'Dispatch & merge' : 'Dispatch'}
           </button>
         </div>
       </div>
@@ -740,7 +780,7 @@ function TaskDetailModal({
               href={detail.resultUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 text-sm text-portal-accent hover:underline"
+              className="inline-flex items-center gap-2 text-sm text-portal-accent hover:underline cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent rounded"
             >
               <ExternalLink className="h-4 w-4" />
               {detail.resultType === 'pr'
@@ -806,7 +846,7 @@ function TaskDetailModal({
               <button
                 onClick={() => callPatch({ action: 'cancel' })}
                 disabled={busy}
-                className="flex items-center gap-1 px-3 py-1.5 bg-red-500/10 border border-red-500/30 text-red-300 hover:bg-red-500/20 rounded-md text-xs disabled:opacity-50"
+                className="flex items-center gap-1 px-3 py-1.5 bg-red-500/10 border border-red-500/30 text-red-300 hover:bg-red-500/20 rounded-md text-xs disabled:opacity-50 transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-400"
               >
                 <StopCircle className="h-3.5 w-3.5" />
                 Cancel
@@ -821,7 +861,7 @@ function TaskDetailModal({
                   }}
                   defaultValue=""
                   disabled={busy}
-                  className="bg-portal-bg border border-portal-border rounded-md px-2 py-1.5 text-xs text-portal-text"
+                  className="bg-portal-bg border border-portal-border rounded-md px-2 py-1.5 text-xs text-portal-text cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
                 >
                   <option value="">Reassign to…</option>
                   {agents.map((a) => (
@@ -837,7 +877,7 @@ function TaskDetailModal({
                   }}
                   defaultValue=""
                   disabled={busy}
-                  className="bg-portal-bg border border-portal-border rounded-md px-2 py-1.5 text-xs text-portal-text"
+                  className="bg-portal-bg border border-portal-border rounded-md px-2 py-1.5 text-xs text-portal-text cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
                 >
                   <option value="">Change priority…</option>
                   {(['low', 'normal', 'high', 'urgent'] as TaskPriority[]).map((p) => (
@@ -887,7 +927,7 @@ function ModalShell({
           <h2 className="text-sm font-semibold text-portal-text truncate">{title}</h2>
           <button
             onClick={onClose}
-            className="p-1 text-portal-muted hover:text-portal-text rounded-md"
+            className="p-1 text-portal-muted hover:text-portal-text rounded-md transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
             aria-label="Close"
           >
             <X className="h-4 w-4" />
