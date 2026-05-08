@@ -37,11 +37,20 @@ services:
       - .env
     environment:
       - DATABASE_URL=file:/app/data/portal.db
+    networks:
+      # `default` keeps the portal on the per-app compose network for talking
+      # to portal-worker. `coolify` is the external proxy network where
+      # Traefik runs — without this, Traefik has no path to the container
+      # and you get "no available server" even with correct routing labels.
+      - default
+      - coolify
     healthcheck:
-      # /api/health returns 200 for everyone. /api/auth/me returns 401 when
-      # unauthenticated, which `wget --spider` reports as a failure and
-      # Traefik then refuses to route to the container.
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
+      # /api/health returns 200 for everyone (auth/me returns 401 → wget fail
+      # → Traefik thinks the container is unhealthy).
+      # 127.0.0.1, NOT localhost — `localhost` resolves to ::1 (IPv6) in
+      # this container but next-server only listens on 0.0.0.0:3000 (IPv4),
+      # so the wget connection gets refused.
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/api/health"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -52,6 +61,8 @@ services:
       context: .
       dockerfile: Dockerfile
     restart: "no"
+    networks:
+      - default
     env_file:
       - .env
     environment:
@@ -74,6 +85,8 @@ services:
     depends_on:
       portal:
         condition: service_started
+    networks:
+      - default
     volumes:
       # Shared SQLite database (read-write) — same path as the portal so
       # both processes see the same DB. Override via PORTAL_DATA_VOLUME.
@@ -103,6 +116,11 @@ volumes:
   portal-worker-clones:
     driver: local
 
-# No top-level `networks:` — let Coolify (or `docker compose`) attach
-# services to its default network. On Coolify this puts the portal on the
-# `coolify` proxy network so Traefik can route to it.
+networks:
+  # `default` is auto-created per project (Coolify renames it to its
+  # per-app network like pwk4...) — services use this to talk to each other.
+  # `coolify` is the external Traefik proxy network. The portal joins both
+  # so Traefik can route inbound traffic to it. Worker stays on default
+  # only — it doesn't serve HTTP, just polls the shared SQLite DB.
+  coolify:
+    external: true
