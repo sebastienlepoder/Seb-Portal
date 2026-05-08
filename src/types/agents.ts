@@ -98,3 +98,11 @@ export function isTaskStatus(s: string): s is TaskStatus {
 export function isTaskPriority(p: string): p is TaskPriority {
   return (TASK_PRIORITIES as string[]).includes(p);
 }
+
+// Models the worker can run. Keep in sync with src/lib/anthropic.ts.
+export const AVAILABLE_MODELS = [
+  { value: '', label: 'Auto — use worker default' },
+  { value: 'claude-haiku-4-5', label: 'Haiku 4.5 — fast & cheap' },
+  { value: 'claude-sonnet-4-6', label: 'Sonnet 4.6 — balanced' },
+  { value: 'claude-opus-4-7', label: 'Opus 4.7 — smartest' },
+] as const;

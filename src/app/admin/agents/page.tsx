@@ -4,9 +4,10 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/hooks/usePortal';
 import MainSidebar from '@/components/layout/MainSidebar';
 import { cn } from '@/lib/utils';
-import { Bot, FolderGit2, Loader2, Pencil, Plus, Save, Trash2, X } from 'lucide-react';
+import { Bot, FolderGit2, HelpCircle, Loader2, Pencil, Plus, Save, Trash2, X } from 'lucide-react';
 import Link from 'next/link';
 import type { AgentProfileDTO } from '@/types/agents';
+import { AVAILABLE_MODELS } from '@/types/agents';
 
 type AgentDraft = Omit<AgentProfileDTO, 'id' | 'createdAt' | 'updatedAt'>;
 
@@ -159,6 +160,13 @@ export default function AdminAgentsPage() {
               <p className="text-sm text-portal-muted">Configure AI agent profiles for task dispatch</p>
             </div>
             <div className="flex gap-2">
+              <Link
+                href="/agents/help"
+                className="flex items-center gap-2 px-3 py-2 bg-portal-card border border-portal-border hover:border-portal-accent/50 text-portal-text rounded-lg text-sm"
+                title="Help & documentation"
+              >
+                <HelpCircle className="h-4 w-4" />
+              </Link>
               <Link
                 href="/admin/projects"
                 className="flex items-center gap-2 px-3 py-2 bg-portal-card border border-portal-border hover:border-portal-accent/50 text-portal-text rounded-lg text-sm"
@@ -326,13 +334,18 @@ export default function AdminAgentsPage() {
                 />
               </Field>
               <Row>
-                <Field label="Model override (optional)">
-                  <input
+                <Field label="Model">
+                  <select
                     value={draft.model ?? ''}
                     onChange={(e) => setDraft({ ...draft, model: e.target.value })}
-                    placeholder="claude-opus-4-7"
                     className={input}
-                  />
+                  >
+                    {AVAILABLE_MODELS.map((m) => (
+                      <option key={m.value} value={m.value}>
+                        {m.label}
+                      </option>
+                    ))}
+                  </select>
                 </Field>
                 <Field label="Active">
                   <label className="flex items-center gap-2 px-3 py-2 bg-portal-bg border border-portal-border rounded-md text-sm text-portal-text">
