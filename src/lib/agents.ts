@@ -77,6 +77,7 @@ export function toTaskDTO(
     description: t.description,
     status: t.status as TaskStatus,
     priority: t.priority as TaskPriority,
+    parentTaskId: t.parentTaskId ?? null,
     workerId: t.workerId,
     workerStartedAt: t.workerStartedAt?.toISOString() ?? null,
     completedAt: t.completedAt?.toISOString() ?? null,

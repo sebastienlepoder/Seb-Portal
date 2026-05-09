@@ -12,7 +12,6 @@ import {
   GitMerge,
   HelpCircle,
   Loader2,
-  Plus,
   RotateCcw,
   Send,
   Settings,
@@ -46,7 +45,7 @@ interface WorkerStatus {
 }
 
 const STATUS_LABEL: Record<TaskDTO['status'], string> = {
-  pending: 'Pending',
+  pending: 'Queued',
   queued: 'Queued',
   in_progress: 'In progress',
   completed: 'Completed',
@@ -55,7 +54,7 @@ const STATUS_LABEL: Record<TaskDTO['status'], string> = {
 };
 
 const STATUS_CLASS: Record<TaskDTO['status'], string> = {
-  pending: 'bg-gray-500/10 text-gray-300 border-gray-500/30',
+  pending: 'bg-blue-500/10 text-blue-300 border-blue-500/30',
   queued: 'bg-blue-500/10 text-blue-300 border-blue-500/30',
   in_progress: 'bg-yellow-500/10 text-yellow-300 border-yellow-500/30',
   completed: 'bg-green-500/10 text-green-300 border-green-500/30',
@@ -179,15 +178,17 @@ export default function AgentsPage() {
   }, [openTaskId]);
 
   const stats = useMemo(() => {
-    const counts: Record<TaskDTO['status'], number> = {
-      pending: 0,
+    const counts = {
       queued: 0,
       in_progress: 0,
       completed: 0,
       failed: 0,
       cancelled: 0,
     };
-    for (const t of tasks) counts[t.status]++;
+    for (const t of tasks) {
+      if (t.status === 'pending' || t.status === 'queued') counts.queued++;
+      else counts[t.status]++;
+    }
     return counts;
   }, [tasks]);
 
@@ -252,7 +253,7 @@ export default function AgentsPage() {
               <div className="flex-1 text-sm">
                 <div className="font-medium text-yellow-100">No worker is running.</div>
                 <div className="text-yellow-200/80 mt-0.5">
-                  Tasks will sit in <span className="font-mono">pending</span> until a worker picks them up.{' '}
+                  Tasks will sit in <span className="font-mono">queued</span> until a worker picks them up.{' '}
                   <Link href="/agents/help#starting-the-worker" className="underline hover:text-yellow-100">
                     How to start the worker →
                   </Link>
@@ -275,10 +276,9 @@ export default function AgentsPage() {
           )}
 
           {/* Stat strip */}
-          <div className="grid grid-cols-2 md:grid-cols-6 gap-2 mb-6 text-xs">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-6 text-xs">
             {(
               [
-                ['pending', 'Pending'],
                 ['queued', 'Queued'],
                 ['in_progress', 'In progress'],
                 ['completed', 'Completed'],
@@ -333,47 +333,85 @@ export default function AgentsPage() {
                     </button>
                   </div>
                 ) : (
-                  tasks.map((t) => (
-                    <button
-                      key={t.id}
-                      onClick={() => setOpenTaskId(t.id)}
-                      className="w-full text-left p-3 hover:bg-portal-card-hover/50 transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent focus:ring-inset"
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className="text-lg shrink-0 mt-0.5">{t.project.icon ?? '📦'}</div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-sm font-medium text-portal-text truncate">
-                              {t.title}
-                            </span>
-                            <span
-                              className={cn(
-                                'text-[10px] rounded-full px-2 py-0.5 border',
-                                STATUS_CLASS[t.status]
-                              )}
-                            >
-                              {STATUS_LABEL[t.status]}
-                            </span>
-                            <span className={cn('text-[10px] font-medium', PRIORITY_CLASS[t.priority])}>
-                              {t.priority}
-                            </span>
-                          </div>
-                          <div className="text-xs text-portal-muted mt-1 truncate">
-                            {t.project.name}
-                            {t.agentProfile ? ` · ${t.agentProfile.name} (${t.agentProfile.role})` : ''}
-                          </div>
-                          <div className="text-xs text-portal-muted mt-0.5">
-                            {formatRelativeTime(t.createdAt)}
-                            {t.workerStartedAt && ` · started ${formatRelativeTime(t.workerStartedAt)}`}
-                            {t.completedAt && ` · finished ${formatRelativeTime(t.completedAt)}`}
-                          </div>
-                        </div>
-                        {t.status === 'in_progress' && (
-                          <Loader2 className="h-4 w-4 animate-spin text-yellow-300 shrink-0 mt-1" />
+                  tasks.map((t) => {
+                    const isOrchestrator = t.agentProfile?.slug === 'orchestrator';
+                    const parentTitle = t.parentTaskId
+                      ? tasks.find((x) => x.id === t.parentTaskId)?.title ?? null
+                      : null;
+                    const childCount = isOrchestrator
+                      ? tasks.filter((x) => x.parentTaskId === t.id).length
+                      : 0;
+                    return (
+                      <button
+                        key={t.id}
+                        onClick={() => setOpenTaskId(t.id)}
+                        className={cn(
+                          'w-full text-left p-3 hover:bg-portal-card-hover/50 transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent focus:ring-inset',
+                          t.parentTaskId && 'pl-8'
                         )}
-                      </div>
-                    </button>
-                  ))
+                      >
+                        <div className="flex items-start gap-3">
+                          {t.parentTaskId ? (
+                            <div className="text-portal-muted text-sm shrink-0 mt-0.5">↳</div>
+                          ) : (
+                            <div className="text-lg shrink-0 mt-0.5">
+                              {t.project.icon ?? '📦'}
+                            </div>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-sm font-medium text-portal-text truncate">
+                                {t.title}
+                              </span>
+                              <span
+                                className={cn(
+                                  'text-[10px] rounded-full px-2 py-0.5 border',
+                                  STATUS_CLASS[t.status]
+                                )}
+                              >
+                                {STATUS_LABEL[t.status]}
+                              </span>
+                              <span
+                                className={cn(
+                                  'text-[10px] font-medium',
+                                  PRIORITY_CLASS[t.priority]
+                                )}
+                              >
+                                {t.priority}
+                              </span>
+                              {isOrchestrator && (
+                                <span className="text-[10px] rounded-full px-2 py-0.5 border bg-portal-accent/10 text-portal-accent border-portal-accent/30">
+                                  orchestrated · {childCount}{' '}
+                                  {childCount === 1 ? 'sub-task' : 'sub-tasks'}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-xs text-portal-muted mt-1 truncate">
+                              {t.project.name}
+                              {t.agentProfile
+                                ? ` · ${t.agentProfile.name} (${t.agentProfile.role})`
+                                : ''}
+                              {parentTitle && (
+                                <span className="ml-1">
+                                  · sub-task of &quot;{parentTitle}&quot;
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-xs text-portal-muted mt-0.5">
+                              {formatRelativeTime(t.createdAt)}
+                              {t.workerStartedAt &&
+                                ` · started ${formatRelativeTime(t.workerStartedAt)}`}
+                              {t.completedAt &&
+                                ` · finished ${formatRelativeTime(t.completedAt)}`}
+                            </div>
+                          </div>
+                          {t.status === 'in_progress' && (
+                            <Loader2 className="h-4 w-4 animate-spin text-yellow-300 shrink-0 mt-1" />
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })
                 )}
               </div>
             </div>
@@ -403,6 +441,10 @@ export default function AgentsPage() {
           csrfToken={csrfToken}
           onClose={() => setOpenTaskId(null)}
           onChanged={fetchTasks}
+          onTaskCreated={(newTaskId) => {
+            fetchTasks();
+            setOpenTaskId(newTaskId);
+          }}
         />
       )}
     </div>
@@ -637,6 +679,7 @@ function TaskDetailModal({
   csrfToken,
   onClose,
   onChanged,
+  onTaskCreated,
 }: {
   taskId: string;
   detail: (TaskDTO & { logs: TaskLogDTO[] }) | null;
@@ -644,8 +687,10 @@ function TaskDetailModal({
   csrfToken: string | undefined;
   onClose: () => void;
   onChanged: () => void;
+  onTaskCreated: (taskId: string) => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const [restarting, setRestarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function callPatch(body: Record<string, unknown>) {
@@ -669,6 +714,38 @@ function TaskDetailModal({
       setError((e as Error).message);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function restart() {
+    if (!detail) return;
+    setRestarting(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/ai-hub/dispatch-task', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
+        },
+        body: JSON.stringify({
+          project_name: detail.project.slug,
+          task_title: detail.title,
+          task_description: detail.description,
+          agent_role: detail.agentProfile?.slug ?? null,
+          priority: detail.priority,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        setError(data.error || `Restart failed (${res.status})`);
+        setRestarting(false);
+        return;
+      }
+      onTaskCreated(data.taskId);
+    } catch (e) {
+      setError((e as Error).message);
+      setRestarting(false);
     }
   }
 
@@ -823,9 +900,19 @@ function TaskDetailModal({
               </>
             )}
             {detail.status === 'failed' && (
-              <span className="text-xs text-portal-muted ml-auto inline-flex items-center gap-1">
-                <RotateCcw className="h-3 w-3" /> Re-dispatch by clicking <Plus className="h-3 w-3" /> New task above
-              </span>
+              <button
+                onClick={restart}
+                disabled={restarting}
+                className="ml-auto flex items-center gap-1.5 px-3 py-1.5 bg-portal-accent hover:bg-portal-accent/80 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-md text-xs transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
+                title="Re-dispatch this task with the same project, agent, priority and description"
+              >
+                {restarting ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RotateCcw className="h-3.5 w-3.5" />
+                )}
+                Restart task
+              </button>
             )}
           </div>
         </div>

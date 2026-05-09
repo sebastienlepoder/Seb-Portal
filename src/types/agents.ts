@@ -55,6 +55,8 @@ export interface TaskDTO {
   description: string;
   status: TaskStatus;
   priority: TaskPriority;
+  /** When set, this is a sub-task dispatched by an Orchestrator agent. */
+  parentTaskId: string | null;
   workerId: string | null;
   workerStartedAt: string | null;
   completedAt: string | null;
