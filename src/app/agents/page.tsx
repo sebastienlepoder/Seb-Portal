@@ -46,7 +46,7 @@ interface WorkerStatus {
 }
 
 const STATUS_LABEL: Record<TaskDTO['status'], string> = {
-  pending: 'Pending',
+  pending: 'Queued',
   queued: 'Queued',
   in_progress: 'In progress',
   completed: 'Completed',
@@ -55,7 +55,7 @@ const STATUS_LABEL: Record<TaskDTO['status'], string> = {
 };
 
 const STATUS_CLASS: Record<TaskDTO['status'], string> = {
-  pending: 'bg-gray-500/10 text-gray-300 border-gray-500/30',
+  pending: 'bg-blue-500/10 text-blue-300 border-blue-500/30',
   queued: 'bg-blue-500/10 text-blue-300 border-blue-500/30',
   in_progress: 'bg-yellow-500/10 text-yellow-300 border-yellow-500/30',
   completed: 'bg-green-500/10 text-green-300 border-green-500/30',
@@ -179,15 +179,17 @@ export default function AgentsPage() {
   }, [openTaskId]);
 
   const stats = useMemo(() => {
-    const counts: Record<TaskDTO['status'], number> = {
-      pending: 0,
+    const counts = {
       queued: 0,
       in_progress: 0,
       completed: 0,
       failed: 0,
       cancelled: 0,
     };
-    for (const t of tasks) counts[t.status]++;
+    for (const t of tasks) {
+      if (t.status === 'pending' || t.status === 'queued') counts.queued++;
+      else counts[t.status]++;
+    }
     return counts;
   }, [tasks]);
 
@@ -252,7 +254,7 @@ export default function AgentsPage() {
               <div className="flex-1 text-sm">
                 <div className="font-medium text-yellow-100">No worker is running.</div>
                 <div className="text-yellow-200/80 mt-0.5">
-                  Tasks will sit in <span className="font-mono">pending</span> until a worker picks them up.{' '}
+                  Tasks will sit in <span className="font-mono">queued</span> until a worker picks them up.{' '}
                   <Link href="/agents/help#starting-the-worker" className="underline hover:text-yellow-100">
                     How to start the worker →
                   </Link>
@@ -275,10 +277,9 @@ export default function AgentsPage() {
           )}
 
           {/* Stat strip */}
-          <div className="grid grid-cols-2 md:grid-cols-6 gap-2 mb-6 text-xs">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-6 text-xs">
             {(
               [
-                ['pending', 'Pending'],
                 ['queued', 'Queued'],
                 ['in_progress', 'In progress'],
                 ['completed', 'Completed'],
