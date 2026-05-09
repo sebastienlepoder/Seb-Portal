@@ -12,7 +12,6 @@ import {
   GitMerge,
   HelpCircle,
   Loader2,
-  Plus,
   RotateCcw,
   Send,
   Settings,
@@ -441,6 +440,10 @@ export default function AgentsPage() {
           csrfToken={csrfToken}
           onClose={() => setOpenTaskId(null)}
           onChanged={fetchTasks}
+          onTaskCreated={(newTaskId) => {
+            fetchTasks();
+            setOpenTaskId(newTaskId);
+          }}
         />
       )}
     </div>
@@ -675,6 +678,7 @@ function TaskDetailModal({
   csrfToken,
   onClose,
   onChanged,
+  onTaskCreated,
 }: {
   taskId: string;
   detail: (TaskDTO & { logs: TaskLogDTO[] }) | null;
@@ -682,8 +686,10 @@ function TaskDetailModal({
   csrfToken: string | undefined;
   onClose: () => void;
   onChanged: () => void;
+  onTaskCreated: (taskId: string) => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const [restarting, setRestarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function callPatch(body: Record<string, unknown>) {
@@ -707,6 +713,38 @@ function TaskDetailModal({
       setError((e as Error).message);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function restart() {
+    if (!detail) return;
+    setRestarting(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/ai-hub/dispatch-task', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
+        },
+        body: JSON.stringify({
+          project_name: detail.project.slug,
+          task_title: detail.title,
+          task_description: detail.description,
+          agent_role: detail.agentProfile?.slug ?? null,
+          priority: detail.priority,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        setError(data.error || `Restart failed (${res.status})`);
+        setRestarting(false);
+        return;
+      }
+      onTaskCreated(data.taskId);
+    } catch (e) {
+      setError((e as Error).message);
+      setRestarting(false);
     }
   }
 
@@ -861,9 +899,19 @@ function TaskDetailModal({
               </>
             )}
             {detail.status === 'failed' && (
-              <span className="text-xs text-portal-muted ml-auto inline-flex items-center gap-1">
-                <RotateCcw className="h-3 w-3" /> Re-dispatch by clicking <Plus className="h-3 w-3" /> New task above
-              </span>
+              <button
+                onClick={restart}
+                disabled={restarting}
+                className="ml-auto flex items-center gap-1.5 px-3 py-1.5 bg-portal-accent hover:bg-portal-accent/80 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-md text-xs transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
+                title="Re-dispatch this task with the same project, agent, priority and description"
+              >
+                {restarting ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RotateCcw className="h-3.5 w-3.5" />
+                )}
+                Restart task
+              </button>
             )}
           </div>
         </div>
