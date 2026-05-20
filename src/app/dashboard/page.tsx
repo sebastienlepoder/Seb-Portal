@@ -16,28 +16,19 @@ import { IframeModal } from '@/components/dashboard/IframeModal';
 import { ServiceEditorModal } from '@/components/dashboard/ServiceEditorModal';
 import MainSidebar from '@/components/layout/MainSidebar';
 import type { ServiceData } from '@/hooks/usePortal';
-import type { StatusColor } from '@/types';
+import type { StatusColor, VpnStatus } from '@/types';
 import {
-  Settings,
-  BarChart3,
-  Menu,
   X,
   Star,
   ChevronDown,
   Mail,
   Wrench,
   Plus,
-  Brain,
-  Calculator,
-  TrendingUp,
-  Briefcase,
-  Terminal,
-  Home,
-  Heart,
-  Globe,
   Layers,
-  Database,
-  Activity,
+  Shield,
+  ShieldOff,
+  MoreVertical,
+  ChevronRight,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -135,6 +126,9 @@ export default function DashboardPage() {
 
   if (!user) return null;
 
+  const userLabel = user.displayName || user.email;
+  const userInitial = (userLabel || '?').trim().charAt(0).toUpperCase();
+
   return (
     <div className="h-dvh bg-portal-bg flex overflow-hidden">
       <MainSidebar user={user} onLogout={logout} />
@@ -142,28 +136,49 @@ export default function DashboardPage() {
       {/* Main content */}
       <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
         {/* Header */}
-        <header className="shrink-0 z-20 bg-portal-bg/80 backdrop-blur-lg border-b border-portal-border">
-          <div className="flex items-center gap-3 px-4 py-3 pl-14 sm:pl-4">
+        <header className="shrink-0 z-20 bg-portal-bg/85 backdrop-blur-lg border-b border-portal-border">
+          {/* Mobile: row 1 — title + status + overflow */}
+          <div className="flex items-center gap-2 px-4 h-14 pl-14 sm:hidden">
+            <div className="min-w-0 flex-1">
+              <div className="text-[10px] uppercase tracking-wider text-portal-muted leading-none">
+                Dashboard
+              </div>
+              <div className="text-sm font-semibold text-portal-text truncate mt-0.5">
+                {userLabel}
+              </div>
+            </div>
+            <CompactVpnIndicator status={vpnStatus} />
+            <MobileActionsMenu
+              services={services}
+              userLabel={userLabel}
+              userInitial={userInitial}
+              vpnStatus={vpnStatus}
+              onOpenMcp={() => setShowMcpPanel(true)}
+            />
+          </div>
+
+          {/* Mobile: row 2 — full-width search */}
+          <div className="px-4 pb-3 sm:hidden">
+            <SearchBar services={services} onSelect={openService} />
+          </div>
+
+          {/* Desktop: single bar */}
+          <div className="hidden sm:flex items-center gap-3 px-4 py-3">
             <SearchBar services={services} onSelect={openService} />
 
             <div className="flex items-center gap-2 ml-auto">
               <VpnBadge status={vpnStatus} />
-
-              {/* Email quick access */}
               <EmailDropdown services={services} />
-
-              {/* MCP Tools */}
               <button
                 onClick={() => setShowMcpPanel(!showMcpPanel)}
-                className="p-2 text-portal-muted hover:text-portal-text hover:bg-portal-card rounded-lg transition-colors"
+                className="p-2 text-portal-muted hover:text-portal-text hover:bg-portal-card rounded-lg transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
                 title="MCP Tools"
+                aria-label="MCP Tools"
               >
                 <Wrench className="h-4 w-4" />
               </button>
-
-              {/* User */}
-              <div className="text-xs text-portal-muted">
-                {user.displayName || user.email}
+              <div className="text-xs text-portal-muted truncate max-w-[180px]">
+                {userLabel}
               </div>
             </div>
           </div>
@@ -181,59 +196,50 @@ export default function DashboardPage() {
           )}
 
           {/* Dashboard content — hidden while iframe is open */}
-          <div className={cn('flex-1 overflow-y-auto p-4 lg:p-6', iframeModal && 'hidden')}>
+          <div
+            className={cn(
+              'flex-1 overflow-y-auto px-4 py-4 lg:px-6 lg:py-6',
+              iframeModal && 'hidden'
+            )}
+          >
             <VpnBanner status={vpnStatus} />
 
-            {/* Filter chips */}
-            <div className="flex flex-wrap items-center gap-2 mb-6">
-              <button
+            {/* Filter chips — horizontal scroll on mobile, wrap on desktop */}
+            <div
+              className={cn(
+                'flex sm:flex-wrap items-center gap-2 mb-5 sm:mb-6',
+                '-mx-4 px-4 sm:mx-0 sm:px-0',
+                'overflow-x-auto sm:overflow-visible scrollbar-hide pb-1 sm:pb-0'
+              )}
+            >
+              <FilterChip
+                active={activeSection === 'all'}
                 onClick={() => setActiveSection('all')}
-                className={cn(
-                  'flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-full transition-colors',
-                  activeSection === 'all'
-                    ? 'bg-portal-accent text-white'
-                    : 'bg-portal-card border border-portal-border text-portal-muted hover:text-portal-text'
-                )}
-              >
-                <Layers className="h-3.5 w-3.5" />
-                All Services
-              </button>
-              <button
+                icon={<Layers className="h-3.5 w-3.5" />}
+                label="All"
+              />
+              <FilterChip
+                active={activeSection === 'favorites'}
                 onClick={() => setActiveSection('favorites')}
-                className={cn(
-                  'flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-full transition-colors',
-                  activeSection === 'favorites'
-                    ? 'bg-portal-accent text-white'
-                    : 'bg-portal-card border border-portal-border text-portal-muted hover:text-portal-text'
-                )}
-              >
-                <Star className="h-3.5 w-3.5" />
-                Favorites
-                {favorites.length > 0 && (
-                  <span className="text-[10px] opacity-70">({favorites.length})</span>
-                )}
-              </button>
+                icon={<Star className="h-3.5 w-3.5" />}
+                label="Favorites"
+                count={favorites.length || undefined}
+              />
               {sections.length > 0 && (
-                <div className="h-5 w-px bg-portal-border mx-1" />
+                <div className="h-5 w-px bg-portal-border mx-1 shrink-0" aria-hidden />
               )}
               {sections.map((s) => (
-                <button
+                <FilterChip
                   key={s}
+                  active={activeSection === s}
                   onClick={() => setActiveSection(s)}
-                  className={cn(
-                    'px-3 py-1.5 text-xs rounded-full transition-colors',
-                    activeSection === s
-                      ? 'bg-portal-accent text-white'
-                      : 'bg-portal-card border border-portal-border text-portal-muted hover:text-portal-text'
-                  )}
-                >
-                  {s}
-                </button>
+                  label={s}
+                />
               ))}
             </div>
 
-            {/* Widgets Row */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            {/* Widgets — stacked on mobile, 2-col tablet, 3-col desktop */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 mb-5 sm:mb-6">
               <WeatherWidget />
               <MarketsWidget />
               <UrgentInboxWidget csrfToken={user.csrfToken} />
@@ -244,7 +250,7 @@ export default function DashboardPage() {
 
             {/* Favorites Bar */}
             {activeSection === 'all' && favorites.length > 0 && (
-              <div className="mb-6">
+              <div className="mb-5 sm:mb-6">
                 <h2 className="text-xs font-semibold text-portal-muted uppercase tracking-wider mb-3 flex items-center gap-1.5">
                   <Star className="h-3.5 w-3.5 text-amber-400" />
                   Favorites
@@ -272,7 +278,7 @@ export default function DashboardPage() {
 
             {/* Services Grid */}
             {Array.from(groupedBySection.entries()).map(([section, svcs]) => (
-              <div key={section} className="mb-6">
+              <div key={section} className="mb-5 sm:mb-6">
                 <div className="flex items-center justify-between mb-3">
                   <h2 className="text-xs font-semibold text-portal-muted uppercase tracking-wider">
                     {section}
@@ -280,7 +286,7 @@ export default function DashboardPage() {
                   {user.role === 'admin' && (
                     <a
                       href="/admin/services"
-                      className="flex items-center gap-1 px-2 py-1 text-[10px] text-portal-accent hover:bg-portal-accent/10 rounded-md transition-colors border border-portal-accent/20"
+                      className="flex items-center gap-1 px-2 py-1 text-[10px] text-portal-accent hover:bg-portal-accent/10 rounded-md transition-colors duration-200 border border-portal-accent/20 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
                     >
                       <Plus className="h-3 w-3" />
                       Ajouter
@@ -314,7 +320,7 @@ export default function DashboardPage() {
                 {user.role === 'admin' && (
                   <a
                     href="/admin/services"
-                    className="inline-flex items-center gap-2 mt-4 px-4 py-2 bg-portal-accent hover:bg-portal-accent-dark text-white rounded-lg text-sm transition-colors"
+                    className="inline-flex items-center gap-2 mt-4 px-4 py-2 bg-portal-accent hover:bg-portal-accent-dark text-white rounded-lg text-sm transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent min-h-[44px]"
                   >
                     <Plus className="h-4 w-4" />
                     Ajouter un service
@@ -324,15 +330,20 @@ export default function DashboardPage() {
             )}
           </div>
 
-          {/* Floating admin button */}
+          {/* Floating admin button — icon-only on mobile, labeled on desktop */}
           {user.role === 'admin' && !showAiPanel && !showMcpPanel && !iframeModal && (
             <a
               href="/admin/services"
-              className="fixed bottom-6 right-6 flex items-center gap-2 px-4 py-3 bg-portal-accent hover:bg-portal-accent-dark text-white rounded-full shadow-lg shadow-portal-accent/20 transition-all hover:shadow-portal-accent/40 z-30"
-              title="Gérer les services"
+              className={cn(
+                'fixed z-30 bg-portal-accent hover:bg-portal-accent-dark text-white rounded-full shadow-lg shadow-portal-accent/30 transition-all duration-200 hover:shadow-portal-accent/50 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent focus:ring-offset-2 focus:ring-offset-portal-bg',
+                'bottom-5 right-5 h-14 w-14 flex items-center justify-center',
+                'sm:bottom-6 sm:right-6 sm:h-auto sm:w-auto sm:px-4 sm:py-3 sm:gap-2 sm:rounded-full'
+              )}
+              title="Nouveau service"
+              aria-label="Nouveau service"
             >
-              <Plus className="h-5 w-5" />
-              <span className="text-sm font-medium">Nouveau service</span>
+              <Plus className="h-5 w-5 shrink-0" />
+              <span className="hidden sm:inline text-sm font-medium">Nouveau service</span>
             </a>
           )}
 
@@ -370,21 +381,186 @@ export default function DashboardPage() {
 
 // ─── Sub-components ──────────────────────────────────────────
 
-/** Maps section names (case-insensitive keywords) to a Lucide icon. */
-function getSectionIcon(section: string): React.ReactNode {
-  const s = section.toLowerCase();
-  if (/\bai\b|ml\b|intelligence|gpt|llm/.test(s)) return <Brain className="h-3.5 w-3.5" />;
-  if (/account|compt|finance|fiscal|budget/.test(s)) return <Calculator className="h-3.5 w-3.5" />;
-  if (/bank|market|invest|trading|bourse/.test(s)) return <TrendingUp className="h-3.5 w-3.5" />;
-  if (/business|work|projet|company/.test(s)) return <Briefcase className="h-3.5 w-3.5" />;
-  if (/dev|infra|code|tech|git|server/.test(s)) return <Terminal className="h-3.5 w-3.5" />;
-  if (/email|mail|message/.test(s)) return <Mail className="h-3.5 w-3.5" />;
-  if (/home|maison|domotique|automat/.test(s)) return <Home className="h-3.5 w-3.5" />;
-  if (/loisir|personal|perso|media|music|sport/.test(s)) return <Heart className="h-3.5 w-3.5" />;
-  if (/remote|access|vpn|network|tunnel/.test(s)) return <Globe className="h-3.5 w-3.5" />;
-  if (/storage|backup|nas|data/.test(s)) return <Database className="h-3.5 w-3.5" />;
-  if (/monitor|status|alert|uptime/.test(s)) return <Activity className="h-3.5 w-3.5" />;
-  return <Layers className="h-3.5 w-3.5" />;
+function FilterChip({
+  active,
+  onClick,
+  icon,
+  label,
+  count,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon?: React.ReactNode;
+  label: string;
+  count?: number;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        'shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-full transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent',
+        active
+          ? 'bg-portal-accent text-white'
+          : 'bg-portal-card border border-portal-border text-portal-text-dim hover:text-portal-text hover:bg-portal-card-hover'
+      )}
+      aria-pressed={active}
+    >
+      {icon}
+      <span>{label}</span>
+      {typeof count === 'number' && (
+        <span className="text-[10px] opacity-70">({count})</span>
+      )}
+    </button>
+  );
+}
+
+/** Compact icon-only VPN indicator for the mobile header. */
+function CompactVpnIndicator({ status }: { status: VpnStatus | null }) {
+  if (!status) return null;
+  const ok = status.connected;
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center justify-center h-9 w-9 rounded-lg border',
+        ok
+          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+          : 'bg-red-500/10 text-red-400 border-red-500/20'
+      )}
+      title={`Tailscale ${ok ? 'connected' : 'disconnected'}`}
+      aria-label={`Tailscale ${ok ? 'connected' : 'disconnected'}`}
+    >
+      {ok ? <Shield className="h-4 w-4" /> : <ShieldOff className="h-4 w-4" />}
+    </span>
+  );
+}
+
+/** Bottom-sheet menu used in the mobile header to surface secondary actions
+ * (email shortcuts, MCP tools, account info) without crowding the top bar. */
+function MobileActionsMenu({
+  services,
+  userLabel,
+  userInitial,
+  vpnStatus,
+  onOpenMcp,
+}: {
+  services: ServiceData[];
+  userLabel: string;
+  userInitial: string;
+  vpnStatus: VpnStatus | null;
+  onOpenMcp: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const emailServices = services.filter((s) => s.type === 'email');
+
+  // Lock body scroll while sheet is open
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [open]);
+
+  const close = () => setOpen(false);
+
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="inline-flex items-center justify-center h-9 w-9 rounded-lg text-portal-muted hover:text-portal-text hover:bg-portal-card transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
+        aria-label="More actions"
+      >
+        <MoreVertical className="h-5 w-5" />
+      </button>
+
+      {open && (
+        <>
+          <div
+            className="fixed inset-0 bg-black/60 z-40 animate-fade-in"
+            onClick={close}
+            aria-hidden
+          />
+          <div
+            role="dialog"
+            aria-label="Actions menu"
+            className="fixed inset-x-0 bottom-0 z-50 bg-portal-card border-t border-portal-border rounded-t-2xl pb-[env(safe-area-inset-bottom)] animate-slide-up"
+          >
+            <div className="flex justify-center pt-2.5 pb-1">
+              <span className="h-1 w-10 rounded-full bg-portal-border" aria-hidden />
+            </div>
+
+            {/* Account header */}
+            <div className="flex items-center gap-3 px-4 py-3 border-b border-portal-border">
+              <div className="h-10 w-10 rounded-full bg-portal-accent/15 border border-portal-accent/30 flex items-center justify-center text-portal-accent font-semibold">
+                {userInitial}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium text-portal-text truncate">{userLabel}</div>
+                <div className="text-[11px] text-portal-muted truncate flex items-center gap-1">
+                  {vpnStatus?.connected ? (
+                    <><Shield className="h-3 w-3 text-emerald-400" /> Tailscale connected</>
+                  ) : vpnStatus ? (
+                    <><ShieldOff className="h-3 w-3 text-red-400" /> Tailscale offline</>
+                  ) : (
+                    'Signed in'
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={close}
+                className="p-2 -mr-1 text-portal-muted hover:text-portal-text rounded-md transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
+                aria-label="Close menu"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Email shortcuts */}
+            {emailServices.length > 0 && (
+              <div className="px-2 py-2 border-b border-portal-border">
+                <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-portal-muted">
+                  Email
+                </div>
+                {emailServices.map((svc) => (
+                  <a
+                    key={svc.id}
+                    href={svc.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={close}
+                    className="flex items-center gap-3 px-3 py-3 rounded-lg text-sm text-portal-text hover:bg-portal-card-hover transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent min-h-[44px]"
+                  >
+                    <Mail className="h-4 w-4 text-portal-accent shrink-0" />
+                    <span className="flex-1 truncate">{svc.name}</span>
+                    <ChevronRight className="h-4 w-4 text-portal-muted shrink-0" />
+                  </a>
+                ))}
+              </div>
+            )}
+
+            {/* Tools */}
+            <div className="px-2 py-2">
+              <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-portal-muted">
+                Tools
+              </div>
+              <button
+                onClick={() => {
+                  close();
+                  onOpenMcp();
+                }}
+                className="w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm text-portal-text hover:bg-portal-card-hover transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent min-h-[44px]"
+              >
+                <Wrench className="h-4 w-4 text-portal-accent shrink-0" />
+                <span className="flex-1 text-left">MCP Tools</span>
+                <ChevronRight className="h-4 w-4 text-portal-muted shrink-0" />
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+    </>
+  );
 }
 
 function EmailDropdown({ services }: { services: ServiceData[] }) {
@@ -397,7 +573,9 @@ function EmailDropdown({ services }: { services: ServiceData[] }) {
     <div className="relative">
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-1 p-2 text-portal-muted hover:text-portal-text hover:bg-portal-card rounded-lg transition-colors"
+        className="flex items-center gap-1 p-2 text-portal-muted hover:text-portal-text hover:bg-portal-card rounded-lg transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
+        aria-label="Email services"
+        aria-expanded={open}
       >
         <Mail className="h-4 w-4" />
         <ChevronDown className="h-3 w-3" />
@@ -410,7 +588,7 @@ function EmailDropdown({ services }: { services: ServiceData[] }) {
               href={svc.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="block px-3 py-2 text-xs text-portal-text hover:bg-portal-card-hover transition-colors"
+              className="block px-3 py-2 text-xs text-portal-text hover:bg-portal-card-hover transition-colors duration-200"
               onClick={() => setOpen(false)}
             >
               {svc.name}
