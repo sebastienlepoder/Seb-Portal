@@ -5,6 +5,8 @@ All notable changes to LEPODER Portal are documented here.
 ## [Unreleased]
 
 ### Added
+- **1Password Connect integration** — admin-only Settings panel; Connect token stored encrypted (AES-256-GCM); per-project env-var → 1Password field mappings; worker injects resolved secrets via `extraEnv` at task-start without logging values
+- **Unified Help center** at `/manage/help` — replaces and handles the previous `/agents/help` link
 - **Unified sidebar navigation** across all pages (dashboard, mail, projects)
 - **Microsoft Graph integration** — OneNote notebooks and Outlook email
 - **Mail page** — View and compose emails directly in the portal

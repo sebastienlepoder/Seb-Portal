@@ -105,6 +105,7 @@ docker compose up -d
 | Guacamole stack | ✅ |
 | Nginx Proxy Manager stack | ✅ |
 | Docker Compose ready | ✅ |
+| 1Password Connect (agent secrets) | ✅ |
 
 ## Tailscale on Synology — Setup Guide
 
@@ -251,6 +252,10 @@ The portal exposes a webhook endpoint for n8n to push urgent items:
    - Body: `{ title, snippet, priority, actionUrl }`
 4. The portal displays the item in the Urgent Inbox widget
 
+## 1Password (secrets for agent workers)
+
+Admins link a self-hosted 1Password Connect server under **Settings → 1Password**. Per-project mappings bind 1Password fields to the env-var names the worker injects at task-start; the Connect token is stored encrypted (AES-256-GCM) and resolved secret values are never written to task logs. For setup details see **Manage → Help → 1Password**; to provision a Connect server and access token see https://developer.1password.com/docs/connect/get-started.
+
 ## AI Hub
 
 ### Mode 1: Iframe Embed
@@ -336,6 +341,7 @@ See `.env.example` for the full list with documentation.
 - `SHOPIFY_*` — Business metrics
 - `MSFT_*` — OneNote integration
 - `SYNOLOGY_*` — File browsing
+- `ONEPASSWORD_ENCRYPTION_KEY` — AES-256-GCM key for the Connect token (falls back to `AUTH_SECRET`)
 - `WEBHOOK_AUTH_TOKEN` — n8n webhook auth
 
 ## Post-Deploy Checklist
