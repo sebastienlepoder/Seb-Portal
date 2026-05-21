@@ -3,6 +3,7 @@ import {
   cloneRepo,
   commitAll,
   ensureNodeModules,
+  mergePullRequest,
   openPullRequest,
   pushBranch,
 } from './git-handler';
@@ -258,13 +259,16 @@ export async function executeTask({ taskId, workerId }: ExecuteParams): Promise<
         ? await buildSubtaskBlock(subtaskIds)
         : '';
 
-      const prUrl = await openPullRequest({
+      const prTitle = isOrchestrator
+        ? `[orchestrated] ${task.title}`
+        : `[agent] ${task.title}`;
+      const pr = await openPullRequest({
         taskId,
         owner: project.repoOwner,
         repo: project.repoName,
         head: clone.workBranch,
         base: clone.baseBranch,
-        title: isOrchestrator ? `[orchestrated] ${task.title}` : `[agent] ${task.title}`,
+        title: prTitle,
         body: [
           `Dispatched from LEPODER Portal — task \`${taskId}\``,
           '',
@@ -282,11 +286,35 @@ export async function executeTask({ taskId, workerId }: ExecuteParams): Promise<
       });
       const commitHash = parentCommitHash;
 
-      if (prUrl) {
+      if (pr) {
+        let summary = result.summary;
+        // Auto-merge if requested. We tried in the order: PR creation → auto-merge.
+        // If auto-merge fails (branch protection, conflicts, token perms), the PR
+        // stays open and the user can finish it by hand — never throw away the
+        // agent's work over a merge failure.
+        if (task.autoMerge) {
+          await logger.info(taskId, `auto_merge requested — calling GitHub merge API for PR #${pr.number}`);
+          const m = await mergePullRequest({
+            taskId,
+            owner: project.repoOwner,
+            repo: project.repoName,
+            prNumber: pr.number,
+            token: githubToken,
+            method: 'squash',
+            commitTitle: `${prTitle} (#${pr.number})`,
+          });
+          if (m.merged) {
+            await logger.info(taskId, `Auto-merged PR #${pr.number} (sha ${m.sha ?? '?'})`);
+            summary += `\n\nAuto-merged into ${clone.baseBranch} (commit ${m.sha ?? 'unknown'}).`;
+          } else {
+            summary +=
+              `\n\nNote: auto-merge requested but failed (${m.error ?? 'unknown'}). PR is open at ${pr.url} — finish it by hand.`;
+          }
+        }
         await complete(taskId, {
           resultType: 'pr',
-          resultUrl: prUrl,
-          resultSummary: result.summary,
+          resultUrl: pr.url,
+          resultSummary: summary,
         });
       } else {
         // Push succeeded but PR creation failed — record commit + branch

@@ -14,6 +14,7 @@ const dispatchSchema = z.object({
   task_description: z.string().min(1).max(10000),
   agent_role: z.string().max(120).optional().nullable(),
   priority: z.enum(['low', 'normal', 'high', 'urgent']).optional(),
+  auto_merge: z.boolean().optional(),
 });
 
 /**
@@ -48,6 +49,7 @@ export async function POST(request: Request) {
         taskDescription: d.task_description,
         agentRole: d.agent_role,
         priority: d.priority,
+        autoMerge: d.auto_merge,
         createdById: user.id === 'amonis-worker' ? null : user.id,
       });
       await auditLog({

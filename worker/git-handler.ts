@@ -326,8 +326,14 @@ export async function pushBranch(params: {
   if (res.code !== 0) throw new Error(`git push failed: ${res.stderr}`);
 }
 
+export interface OpenPullRequestResult {
+  url: string;
+  number: number;
+}
+
 /**
- * Open a PR via the GitHub REST API. Returns the PR URL or null on failure.
+ * Open a PR via the GitHub REST API. Returns { url, number } or null on
+ * failure. The number is needed for follow-up calls like auto-merge.
  */
 export async function openPullRequest(params: {
   taskId: string;
@@ -338,7 +344,7 @@ export async function openPullRequest(params: {
   title: string;
   body: string;
   token: string;
-}): Promise<string | null> {
+}): Promise<OpenPullRequestResult | null> {
   const { taskId, owner, repo, head, base, title, body, token } = params;
   try {
     const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/pulls`, {
@@ -356,10 +362,69 @@ export async function openPullRequest(params: {
       await logger.error(taskId, `GitHub PR API ${res.status}: ${text}`);
       return null;
     }
-    const data = (await res.json()) as { html_url?: string };
-    return data.html_url ?? null;
+    const data = (await res.json()) as { html_url?: string; number?: number };
+    if (!data.html_url || typeof data.number !== 'number') {
+      await logger.error(taskId, `GitHub PR API returned malformed body`);
+      return null;
+    }
+    return { url: data.html_url, number: data.number };
   } catch (e) {
     await logger.error(taskId, `PR creation error: ${(e as Error).message}`);
     return null;
+  }
+}
+
+/**
+ * Merge a PR via the GitHub REST API. Returns true on success.
+ * Used for the dispatcher's auto-merge feature.
+ *
+ * Common reasons this fails (logged as warn so the task still completes
+ * with the PR open):
+ *   - Branch protection requires reviews or status checks
+ *   - The token lacks `pull_requests: write` permission
+ *   - The PR has conflicts that GitHub can't auto-resolve
+ *   - The PR isn't mergeable yet (GitHub still computing mergeability)
+ */
+export async function mergePullRequest(params: {
+  taskId: string;
+  owner: string;
+  repo: string;
+  prNumber: number;
+  token: string;
+  /** Merge strategy. Defaults to "squash" to match how we merge by hand. */
+  method?: 'merge' | 'squash' | 'rebase';
+  commitTitle?: string;
+  commitMessage?: string;
+}): Promise<{ merged: boolean; sha?: string; error?: string }> {
+  const { taskId, owner, repo, prNumber, token, method = 'squash', commitTitle, commitMessage } = params;
+  try {
+    const res = await fetch(
+      `https://api.github.com/repos/${owner}/${repo}/pulls/${prNumber}/merge`,
+      {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28',
+          'User-Agent': 'lepoder-portal-worker',
+        },
+        body: JSON.stringify({
+          merge_method: method,
+          ...(commitTitle ? { commit_title: commitTitle } : {}),
+          ...(commitMessage ? { commit_message: commitMessage } : {}),
+        }),
+      }
+    );
+    if (!res.ok) {
+      const text = await res.text();
+      await logger.warn(taskId, `Auto-merge failed (${res.status}): ${text.slice(0, 400)}`);
+      return { merged: false, error: `${res.status}: ${text.slice(0, 200)}` };
+    }
+    const data = (await res.json()) as { sha?: string; merged?: boolean };
+    return { merged: !!data.merged, sha: data.sha };
+  } catch (e) {
+    const msg = (e as Error).message;
+    await logger.warn(taskId, `Auto-merge request error: ${msg}`);
+    return { merged: false, error: msg };
   }
 }

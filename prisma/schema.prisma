@@ -419,6 +419,12 @@ model Task {
   description     String    // detailed instructions for the agent
   priority        String    @default("normal") // low | normal | high | urgent
   status          String    @default("pending") // pending | queued | in_progress | completed | failed | cancelled
+  /**
+   * When true and the project is write-enabled, the worker auto-merges
+   * the PR it opens via GitHub API after creation. Set per-task from
+   * the dispatcher's "Merge to main automatically" checkbox.
+   */
+  autoMerge       Boolean   @default(false)
 
   // Worker tracking
   workerId        String?   // set when a worker locks the task

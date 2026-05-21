@@ -80,6 +80,7 @@ export function toTaskDTO(
     priority: t.priority as TaskPriority,
     parentTaskId: t.parentTaskId ?? null,
     parentTitle: t.parent?.title ?? null,
+    autoMerge: t.autoMerge ?? false,
     workerId: t.workerId,
     workerStartedAt: t.workerStartedAt?.toISOString() ?? null,
     completedAt: t.completedAt?.toISOString() ?? null,

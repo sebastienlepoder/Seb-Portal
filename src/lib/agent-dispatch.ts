@@ -15,6 +15,9 @@ export interface DispatchInput {
   agentRole?: string | null; // role string, agent slug, or agent id
   priority?: TaskPriority;
   createdById?: string | null;
+  /** When true, the worker auto-merges the PR after opening it. Only
+   *  honored when the resolved project has allowWrite=true. */
+  autoMerge?: boolean;
 }
 
 export interface DispatchResult {
@@ -104,6 +107,18 @@ export async function dispatchTask(input: DispatchInput): Promise<DispatchResult
     matchedAgentSlug = picked.slug;
   }
 
+  // Validate auto-merge against the project — never silently downgrade.
+  // Either reject loudly so the user knows, or strip the request before
+  // creating the task. Read-only projects can't auto-merge because there's
+  // no PR to merge in the first place.
+  const wantsAutoMerge = !!input.autoMerge;
+  if (wantsAutoMerge && !project.allowWrite) {
+    throw new DispatchError(
+      'INVALID_INPUT',
+      `Cannot auto-merge: project "${project.name}" is read-only. Enable "Allow worker to commit/push" in Admin → Projects first.`
+    );
+  }
+
   const task = await prisma.task.create({
     data: {
       projectId: project.id,
@@ -113,6 +128,7 @@ export async function dispatchTask(input: DispatchInput): Promise<DispatchResult
       description: input.taskDescription.trim(),
       priority: input.priority ?? 'normal',
       status: 'pending',
+      autoMerge: wantsAutoMerge,
     },
   });
 
