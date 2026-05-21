@@ -31,6 +31,8 @@ export interface OrchestratorRunOptions {
   subagentTimeoutMs: number;
   /** Per-sub-task tool-loop iteration cap. */
   subagentMaxIterations: number;
+  /** Extra env vars threaded into every sub-agent's run_bash. Values never logged. */
+  extraEnv?: Record<string, string>;
 }
 
 export interface OrchestratorResult {
@@ -192,6 +194,7 @@ async function dispatchSubtask(params: {
   defaultModel: string;
   timeoutMs: number;
   maxIterations: number;
+  extraEnv?: Record<string, string>;
 }): Promise<SubtaskDispatchResult> {
   const {
     parentTaskId,
@@ -203,6 +206,7 @@ async function dispatchSubtask(params: {
     defaultModel,
     timeoutMs,
     maxIterations,
+    extraEnv,
   } = params;
 
   // Resolve the specialist
@@ -280,6 +284,7 @@ async function dispatchSubtask(params: {
       model: agent.model || defaultModel,
       maxIterations,
       timeoutMs,
+      extraEnv,
     });
   } catch (e) {
     const msg = (e as Error).message;
@@ -521,6 +526,7 @@ export async function runOrchestrator(
           defaultModel: opts.defaultSubagentModel,
           timeoutMs: opts.subagentTimeoutMs,
           maxIterations: opts.subagentMaxIterations,
+          extraEnv: opts.extraEnv,
         });
         if (r.taskId) subtaskIds.push(r.taskId);
         for (const f of r.filesTouched) allFilesTouched.add(f);
