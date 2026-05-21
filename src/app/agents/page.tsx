@@ -11,10 +11,12 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  CornerDownRight,
   ExternalLink,
   GitMerge,
   HelpCircle,
   Loader2,
+  MessageSquarePlus,
   RotateCcw,
   Send,
   Settings,
@@ -55,6 +57,8 @@ interface DispatcherInitialValues {
   description: string;
   priority: TaskPriority;
   auto_merge: boolean;
+  parent_task_id?: string | null;
+  parent_task_title?: string | null;
 }
 
 const STATUS_LABEL: Record<TaskDTO['status'], string> = {
@@ -346,6 +350,21 @@ export default function AgentsPage() {
       description: d.description,
       priority: d.priority,
       auto_merge: false,
+    });
+    setOpenTaskId(null);
+    setShowDispatcher(true);
+  };
+
+  const handleFollowUp = (d: TaskDTO) => {
+    setDispatcherInitialValues({
+      project_name: d.project.slug,
+      agent_slug: d.agentProfile?.slug ?? '',
+      title: '',
+      description: '',
+      priority: d.priority,
+      auto_merge: false,
+      parent_task_id: d.id,
+      parent_task_title: d.title,
     });
     setOpenTaskId(null);
     setShowDispatcher(true);
@@ -656,6 +675,7 @@ export default function AgentsPage() {
           onClose={() => setOpenTaskId(null)}
           onChanged={fetchTasks}
           onRetask={handleRetask}
+          onFollowUp={handleFollowUp}
         />
       )}
     </div>
@@ -711,6 +731,12 @@ function DispatcherModal({
     initialValues?.priority ?? 'normal'
   );
   const [autoMerge, setAutoMerge] = useState(initialValues?.auto_merge ?? false);
+  const [parentTaskId, setParentTaskId] = useState<string | null>(
+    initialValues?.parent_task_id ?? null,
+  );
+  const [parentTaskTitle, setParentTaskTitle] = useState<string | null>(
+    initialValues?.parent_task_title ?? null,
+  );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [attachments, setAttachments] = useState<
@@ -753,6 +779,7 @@ function DispatcherModal({
           agent_role: agentSlug || null,
           priority,
           auto_merge: autoMerge,
+          parent_task_id: parentTaskId || undefined,
           attachments: attachments.length ? attachments : undefined,
         }),
       });
@@ -770,8 +797,32 @@ function DispatcherModal({
   }
 
   return (
-    <ModalShell onClose={onClose} title="Dispatch a new task">
+    <ModalShell
+      onClose={onClose}
+      title={parentTaskId ? 'Submit a follow-up task' : 'Dispatch a new task'}
+    >
       <div className="space-y-3">
+        {parentTaskId && (
+          <div className="bg-portal-accent/5 border border-portal-accent/20 rounded-md px-3 py-2 text-xs text-portal-text flex items-start gap-2">
+            <CornerDownRight className="h-3.5 w-3.5 mt-0.5 text-portal-accent shrink-0" />
+            <div className="flex-1 min-w-0">
+              <div className="font-medium text-portal-text">Follow-up to previous task</div>
+              <div className="text-portal-muted truncate">&quot;{parentTaskTitle}&quot;</div>
+              <div className="text-portal-muted mt-0.5">
+                The agent will receive the original task&apos;s instructions, result, and any error as context.
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => { setParentTaskId(null); setParentTaskTitle(null); }}
+              className="text-portal-muted hover:text-portal-text shrink-0 p-0.5 rounded focus:outline-none focus:ring-2 focus:ring-portal-accent"
+              aria-label="Clear follow-up link"
+              title="Clear follow-up link"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
         <Field label="Project">
           <select
             value={projectName}
@@ -809,7 +860,11 @@ function DispatcherModal({
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="e.g. Add search bar to dashboard"
+            placeholder={
+              parentTaskId
+                ? 'e.g. Also handle the empty state'
+                : 'e.g. Add search bar to dashboard'
+            }
             className="w-full bg-portal-bg border border-portal-border rounded-md px-3 py-2 text-sm text-portal-text focus:outline-none focus:ring-2 focus:ring-portal-accent"
           />
         </Field>
@@ -819,7 +874,11 @@ function DispatcherModal({
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             onPaste={handlePaste}
-            placeholder="Detailed instructions for the agent… Paste a screenshot to attach an image."
+            placeholder={
+              parentTaskId
+                ? 'What should the agent do next? It already knows what was done in the previous task.'
+                : 'Detailed instructions for the agent… Paste a screenshot to attach an image.'
+            }
             rows={6}
             className="w-full bg-portal-bg border border-portal-border rounded-md px-3 py-2 text-sm text-portal-text font-mono resize-y focus:outline-none focus:ring-2 focus:ring-portal-accent"
           />
@@ -934,7 +993,11 @@ function DispatcherModal({
             ) : (
               <Send className="h-4 w-4" />
             )}
-            {autoMerge ? 'Dispatch & merge' : 'Dispatch'}
+            {autoMerge
+              ? 'Dispatch & merge'
+              : parentTaskId
+                ? 'Submit follow-up'
+                : 'Dispatch'}
           </button>
         </div>
       </div>
@@ -950,6 +1013,7 @@ function TaskDetailModal({
   onClose,
   onChanged,
   onRetask,
+  onFollowUp,
 }: {
   taskId: string;
   detail: (TaskDTO & { logs: TaskLogDTO[] }) | null;
@@ -958,6 +1022,7 @@ function TaskDetailModal({
   onClose: () => void;
   onChanged: () => void;
   onRetask: (detail: TaskDTO) => void;
+  onFollowUp: (detail: TaskDTO) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [activeAction, setActiveAction] = useState<string | null>(null);
@@ -1242,6 +1307,17 @@ function TaskDetailModal({
                   )}
                   Undo
                 </button>
+                {detail && (
+                  <button
+                    onClick={() => onFollowUp(detail)}
+                    disabled={busy}
+                    className="ml-auto flex items-center gap-1.5 px-3 py-1.5 bg-portal-accent/10 border border-portal-accent/30 text-portal-accent hover:bg-portal-accent/20 disabled:opacity-50 disabled:cursor-not-allowed rounded-md text-xs transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
+                    title="Open the dispatcher pre-linked to this task as a follow-up"
+                  >
+                    <MessageSquarePlus className="h-3.5 w-3.5" />
+                    Submit follow-up
+                  </button>
+                )}
               </>
             ) : (
               <>
@@ -1293,6 +1369,15 @@ function TaskDetailModal({
                 )}
                 {isTerminal && detail && (
                   <div className="ml-auto flex items-center gap-2">
+                    <button
+                      onClick={() => onFollowUp(detail)}
+                      disabled={busy || deleting}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-portal-accent/10 border border-portal-accent/30 text-portal-accent hover:bg-portal-accent/20 disabled:opacity-50 disabled:cursor-not-allowed rounded-md text-xs transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
+                      title="Open the dispatcher pre-linked to this task as a follow-up"
+                    >
+                      <MessageSquarePlus className="h-3.5 w-3.5" />
+                      Submit follow-up
+                    </button>
                     {canRetask && (
                       <button
                         onClick={() => onRetask(detail)}
