@@ -8,6 +8,7 @@ import {
   AlertTriangle,
   Bot,
   Briefcase,
+  Check,
   ChevronDown,
   ChevronRight,
   ExternalLink,
@@ -60,6 +61,7 @@ const STATUS_LABEL: Record<TaskDTO['status'], string> = {
   pending: 'Queued',
   queued: 'Queued',
   in_progress: 'In progress',
+  needs_review: 'Needs review',
   completed: 'Completed',
   failed: 'Failed',
   cancelled: 'Cancelled',
@@ -69,6 +71,7 @@ const STATUS_CLASS: Record<TaskDTO['status'], string> = {
   pending: 'bg-blue-500/10 text-blue-300 border-blue-500/30',
   queued: 'bg-blue-500/10 text-blue-300 border-blue-500/30',
   in_progress: 'bg-yellow-500/10 text-yellow-300 border-yellow-500/30',
+  needs_review: 'bg-purple-500/10 text-purple-300 border-purple-500/30',
   completed: 'bg-green-500/10 text-green-300 border-green-500/30',
   failed: 'bg-red-500/10 text-red-300 border-red-500/30',
   cancelled: 'bg-zinc-500/10 text-zinc-400 border-zinc-500/30',
@@ -172,7 +175,7 @@ export default function AgentsPage() {
   const fetchTasks = useCallback(() => {
     const url =
       statusFilter === 'active'
-        ? '/api/ai-hub/tasks?status=pending,queued,in_progress&limit=200'
+        ? '/api/ai-hub/tasks?status=pending,queued,in_progress,needs_review&limit=200'
         : '/api/ai-hub/tasks?limit=200';
     fetch(url)
       .then((r) => r.json())
@@ -269,9 +272,17 @@ export default function AgentsPage() {
   }, [tasks]);
 
   const stats = useMemo(() => {
-    const counts = {
+    const counts: {
+      queued: number;
+      in_progress: number;
+      needs_review: number;
+      completed: number;
+      failed: number;
+      cancelled: number;
+    } = {
       queued: 0,
       in_progress: 0,
+      needs_review: 0,
       completed: 0,
       failed: 0,
       cancelled: 0,
@@ -418,11 +429,12 @@ export default function AgentsPage() {
           )}
 
           {/* Stat strip */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-6 text-xs">
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-2 mb-6 text-xs">
             {(
               [
                 ['queued', 'Queued'],
                 ['in_progress', 'In progress'],
+                ['needs_review', 'Needs review'],
                 ['completed', 'Completed'],
                 ['failed', 'Failed'],
                 ['cancelled', 'Cancelled'],
@@ -948,12 +960,17 @@ function TaskDetailModal({
   onRetask: (detail: TaskDTO) => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const [activeAction, setActiveAction] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function callPatch(body: Record<string, unknown>) {
+  async function callPatch(body: Record<string, unknown>): Promise<boolean> {
     setBusy(true);
+    const actionName =
+      typeof body.action === 'string' ? body.action : null;
+    setActiveAction(actionName);
     setError(null);
+    let ok = false;
     try {
       const res = await fetch(`/api/ai-hub/tasks/${taskId}`, {
         method: 'PATCH',
@@ -966,13 +983,17 @@ function TaskDetailModal({
       const data = await res.json();
       if (!res.ok || !data.ok) {
         setError(data.error || `Failed (${res.status})`);
+      } else {
+        ok = true;
       }
       onChanged();
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setBusy(false);
+      setActiveAction(null);
     }
+    return ok;
   }
 
   async function deleteTask() {
@@ -1007,8 +1028,39 @@ function TaskDetailModal({
 
   const isTerminal = detail ? TERMINAL.includes(detail.status) : false;
   const isInFlight = detail?.status === 'in_progress';
+  const isNeedsReview = detail?.status === 'needs_review';
+  const isMerged = !!detail?.mergedAt;
   const canRetask =
     detail?.status === 'failed' || detail?.status === 'cancelled';
+  const showMergeAndReview =
+    isNeedsReview && !isMerged && detail?.resultType === 'pr';
+
+  async function handleMarkReviewed() {
+    const ok = await callPatch({ action: 'mark_reviewed' });
+    if (ok) onClose();
+  }
+
+  async function handleMergeAndReview() {
+    if (
+      !window.confirm(
+        'Merge this PR into the working branch and mark the task reviewed?'
+      )
+    )
+      return;
+    const ok = await callPatch({ action: 'merge_and_review' });
+    if (ok) onClose();
+  }
+
+  async function handleUndo() {
+    if (
+      !window.confirm(
+        'Undo this task? If a PR is still open it will be closed. Merged work is NOT auto-reverted.'
+      )
+    )
+      return;
+    const ok = await callPatch({ action: 'undo' });
+    if (ok) onClose();
+  }
 
   return (
     <ModalShell onClose={onClose} title={detail?.title ?? 'Loading task…'} wide>
@@ -1136,80 +1188,137 @@ function TaskDetailModal({
             </div>
           )}
 
+          {/* Review helper banner */}
+          {isNeedsReview && (
+            <div className="bg-portal-accent/5 border border-portal-accent/20 rounded-md px-3 py-2 text-xs text-portal-text">
+              {isMerged
+                ? 'PR already merged — confirm the change is good to close out this task.'
+                : detail.resultType === 'pr'
+                  ? "Worker opened a PR. Review it on GitHub, then merge it here when you're happy."
+                  : 'Summary-only result — no merge needed. Review and close out the task.'}
+            </div>
+          )}
+
           {/* Action row */}
           <div className="flex items-center gap-2 pt-2 border-t border-portal-border">
-            {!isTerminal && (
-              <button
-                onClick={() => callPatch({ action: 'cancel' })}
-                disabled={busy}
-                className="flex items-center gap-1 px-3 py-1.5 bg-red-500/10 border border-red-500/30 text-red-300 hover:bg-red-500/20 rounded-md text-xs disabled:opacity-50 transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-400"
-              >
-                <StopCircle className="h-3.5 w-3.5" />
-                Cancel
-              </button>
-            )}
-            {!isInFlight && !isTerminal && (
+            {isNeedsReview ? (
               <>
-                <select
-                  onChange={(e) => {
-                    if (e.target.value)
-                      callPatch({ action: 'reassign', agentProfileId: e.target.value });
-                  }}
-                  defaultValue=""
-                  disabled={busy}
-                  className="bg-portal-bg border border-portal-border rounded-md px-2 py-1.5 text-xs text-portal-text cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
-                >
-                  <option value="">Reassign to…</option>
-                  {agents.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.name} · {a.role}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  onChange={(e) => {
-                    if (e.target.value)
-                      callPatch({ action: 'reprioritize', priority: e.target.value });
-                  }}
-                  defaultValue=""
-                  disabled={busy}
-                  className="bg-portal-bg border border-portal-border rounded-md px-2 py-1.5 text-xs text-portal-text cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
-                >
-                  <option value="">Change priority…</option>
-                  {(['low', 'normal', 'high', 'urgent'] as TaskPriority[]).map((p) => (
-                    <option key={p} value={p}>
-                      {p}
-                    </option>
-                  ))}
-                </select>
-              </>
-            )}
-            {isTerminal && detail && (
-              <div className="ml-auto flex items-center gap-2">
-                {canRetask && (
+                {showMergeAndReview ? (
                   <button
-                    onClick={() => onRetask(detail)}
-                    disabled={busy || deleting}
+                    onClick={handleMergeAndReview}
+                    disabled={busy}
                     className="flex items-center gap-1.5 px-3 py-1.5 bg-portal-accent hover:bg-portal-accent/80 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-md text-xs transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
-                    title="Open a pre-filled dispatcher to edit and re-dispatch this task"
                   >
-                    <RotateCcw className="h-3.5 w-3.5" />
-                    Re-task
+                    {busy && activeAction === 'merge_and_review' ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <GitMerge className="h-3.5 w-3.5" />
+                    )}
+                    Merge &amp; mark reviewed
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleMarkReviewed}
+                    disabled={busy}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-green-500/20 border border-green-500/40 text-green-200 hover:bg-green-500/30 disabled:opacity-50 disabled:cursor-not-allowed rounded-md text-xs transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-green-400"
+                  >
+                    {busy && activeAction === 'mark_reviewed' ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Check className="h-3.5 w-3.5" />
+                    )}
+                    Mark as reviewed
                   </button>
                 )}
                 <button
-                  onClick={deleteTask}
-                  disabled={deleting || busy}
-                  className="flex items-center gap-1 px-3 py-1.5 bg-red-500/10 border border-red-500/30 text-red-300 hover:bg-red-500/20 rounded-md text-xs disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-400"
+                  onClick={handleUndo}
+                  disabled={busy}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-red-500/10 border border-red-500/30 text-red-300 hover:bg-red-500/20 disabled:opacity-50 disabled:cursor-not-allowed rounded-md text-xs transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-400"
                 >
-                  {deleting ? (
+                  {busy && activeAction === 'undo' ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   ) : (
-                    <Trash2 className="h-3.5 w-3.5" />
+                    <RotateCcw className="h-3.5 w-3.5" />
                   )}
-                  Delete
+                  Undo
                 </button>
-              </div>
+              </>
+            ) : (
+              <>
+                {!isTerminal && (
+                  <button
+                    onClick={() => callPatch({ action: 'cancel' })}
+                    disabled={busy}
+                    className="flex items-center gap-1 px-3 py-1.5 bg-red-500/10 border border-red-500/30 text-red-300 hover:bg-red-500/20 rounded-md text-xs disabled:opacity-50 transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-400"
+                  >
+                    <StopCircle className="h-3.5 w-3.5" />
+                    Cancel
+                  </button>
+                )}
+                {!isInFlight && !isTerminal && (
+                  <>
+                    <select
+                      onChange={(e) => {
+                        if (e.target.value)
+                          callPatch({ action: 'reassign', agentProfileId: e.target.value });
+                      }}
+                      defaultValue=""
+                      disabled={busy}
+                      className="bg-portal-bg border border-portal-border rounded-md px-2 py-1.5 text-xs text-portal-text cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
+                    >
+                      <option value="">Reassign to…</option>
+                      {agents.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.name} · {a.role}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      onChange={(e) => {
+                        if (e.target.value)
+                          callPatch({ action: 'reprioritize', priority: e.target.value });
+                      }}
+                      defaultValue=""
+                      disabled={busy}
+                      className="bg-portal-bg border border-portal-border rounded-md px-2 py-1.5 text-xs text-portal-text cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
+                    >
+                      <option value="">Change priority…</option>
+                      {(['low', 'normal', 'high', 'urgent'] as TaskPriority[]).map((p) => (
+                        <option key={p} value={p}>
+                          {p}
+                        </option>
+                      ))}
+                    </select>
+                  </>
+                )}
+                {isTerminal && detail && (
+                  <div className="ml-auto flex items-center gap-2">
+                    {canRetask && (
+                      <button
+                        onClick={() => onRetask(detail)}
+                        disabled={busy || deleting}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-portal-accent hover:bg-portal-accent/80 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-md text-xs transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
+                        title="Open a pre-filled dispatcher to edit and re-dispatch this task"
+                      >
+                        <RotateCcw className="h-3.5 w-3.5" />
+                        Re-task
+                      </button>
+                    )}
+                    <button
+                      onClick={deleteTask}
+                      disabled={deleting || busy}
+                      className="flex items-center gap-1 px-3 py-1.5 bg-red-500/10 border border-red-500/30 text-red-300 hover:bg-red-500/20 rounded-md text-xs disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-400"
+                    >
+                      {deleting ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-3.5 w-3.5" />
+                      )}
+                      Delete
+                    </button>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
