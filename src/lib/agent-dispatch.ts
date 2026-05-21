@@ -18,6 +18,9 @@ export interface DispatchInput {
   /** When true, the worker auto-merges the PR after opening it. Only
    *  honored when the resolved project has allowWrite=true. */
   autoMerge?: boolean;
+  /** When set, this task is a follow-up of an existing task. The parent
+   *  must belong to the same resolved project and SHOULD be terminal. */
+  parentTaskId?: string | null;
 }
 
 export interface DispatchResult {
@@ -42,6 +45,8 @@ export class DispatchError extends Error {
     this.name = 'DispatchError';
   }
 }
+
+const TERMINAL_STATUSES = new Set(['completed', 'failed', 'cancelled', 'needs_review']);
 
 export async function dispatchTask(input: DispatchInput): Promise<DispatchResult> {
   const projectQuery = input.projectName.trim().toLowerCase();
@@ -70,6 +75,26 @@ export async function dispatchTask(input: DispatchInput): Promise<DispatchResult
       'PROJECT_NOT_FOUND',
       `No project matches "${input.projectName}". Configure it in the admin Projects page first.`
     );
+  }
+
+  let parentTask: { id: string; title: string; projectId: string; status: string } | null = null;
+  if (input.parentTaskId) {
+    parentTask = await prisma.task.findUnique({
+      where: { id: input.parentTaskId },
+      select: { id: true, title: true, projectId: true, status: true },
+    });
+    if (!parentTask) {
+      throw new DispatchError('INVALID_INPUT', `Parent task ${input.parentTaskId} not found`);
+    }
+    if (parentTask.projectId !== project.id) {
+      throw new DispatchError(
+        'INVALID_INPUT',
+        'Parent task belongs to a different project than the resolved project'
+      );
+    }
+    if (!TERMINAL_STATUSES.has(parentTask.status)) {
+      throw new DispatchError('INVALID_INPUT', 'Parent task is still in flight');
+    }
   }
 
   // Agent resolution
@@ -129,14 +154,16 @@ export async function dispatchTask(input: DispatchInput): Promise<DispatchResult
       priority: input.priority ?? 'normal',
       status: 'pending',
       autoMerge: wantsAutoMerge,
+      parentTaskId: parentTask?.id ?? null,
     },
   });
 
+  const followUpSuffix = parentTask ? ` (follow-up of ${parentTask.title})` : '';
   await prisma.taskLog.create({
     data: {
       taskId: task.id,
       level: 'info',
-      message: `Task dispatched to project "${project.name}" with agent "${matchedAgentSlug}"`,
+      message: `Task dispatched to project "${project.name}" with agent "${matchedAgentSlug}"${followUpSuffix}`,
     },
   });
 

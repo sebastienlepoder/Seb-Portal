@@ -33,6 +33,41 @@ interface ExecuteParams {
   workerId: string;
 }
 
+async function buildParentContextBlock(parentTaskId: string): Promise<string | null> {
+  const parent = await prisma.task.findUnique({
+    where: { id: parentTaskId },
+    include: { agentProfile: true, project: true },
+  });
+  if (!parent) return null;
+  const lines: string[] = [
+    '## Prior task context (this is a follow-up)',
+    '',
+    `**Original task title:** ${parent.title}`,
+    `**Status:** ${parent.status}`,
+  ];
+  if (parent.agentProfile) {
+    lines.push(`**Handled by:** ${parent.agentProfile.name} (${parent.agentProfile.slug})`);
+  }
+  if (parent.resultType) lines.push(`**Result type:** ${parent.resultType}`);
+  if (parent.resultUrl) lines.push(`**Result URL:** ${parent.resultUrl}`);
+  lines.push('', '### Original instructions', parent.description.trim());
+  if (parent.resultSummary?.trim()) {
+    lines.push('', '### What was done', parent.resultSummary.trim());
+  }
+  if (parent.errorMessage?.trim()) {
+    lines.push('', '### Error from prior run', parent.errorMessage.trim());
+  }
+  lines.push(
+    '',
+    '---',
+    '',
+    '## Follow-up task',
+    '',
+    'The user is asking you to continue from the prior task above. Read the relevant files first to understand the current state of the code before making changes.'
+  );
+  return lines.join('\n');
+}
+
 /**
  * Resolve every ProjectSecretMapping for the project into a Record<envName, value>.
  * Values are NEVER logged — only names appear in TaskLog entries.
@@ -152,7 +187,7 @@ export async function executeTask({ taskId, workerId }: ExecuteParams): Promise<
 
     const isOrchestrator = agentProfile?.slug === 'orchestrator';
 
-    const userMessage = [
+    let userMessage = [
       `# Task: ${task.title}`,
       '',
       task.description,
@@ -167,6 +202,14 @@ export async function executeTask({ taskId, workerId }: ExecuteParams): Promise<
         ? 'Plan a sequence of sub-tasks for specialist agents. Each sub-task you dispatch shares this branch — its commits accumulate before the next sub-task runs. When you have nothing left to dispatch, call `finish` with a paragraph describing what each sub-task accomplished.'
         : 'Use the read_file / list_directory / run_bash / write_file tools to inspect and edit code, then call `finish` with a summary. Stay focused on the task above.',
     ].join('\n');
+
+    if (task.parentTaskId) {
+      const ctx = await buildParentContextBlock(task.parentTaskId);
+      if (ctx) {
+        userMessage = ctx + '\n\n' + userMessage;
+        await logger.info(taskId, `Follow-up of task ${task.parentTaskId} — prepended parent context`);
+      }
+    }
 
     let result: { ok: boolean; summary: string; filesTouched: string[]; error?: string };
     let subtaskIds: string[] = [];

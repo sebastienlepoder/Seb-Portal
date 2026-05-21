@@ -18,6 +18,7 @@ const dispatchSchema = z.object({
   agent_role: z.string().max(120).optional().nullable(),
   priority: z.enum(['low', 'normal', 'high', 'urgent']).optional(),
   auto_merge: z.boolean().optional(),
+  parent_task_id: z.string().uuid().optional().nullable(),
   attachments: z
     .array(
       z.object({
@@ -90,6 +91,7 @@ export async function POST(request: Request) {
         agentRole: d.agent_role,
         priority: d.priority,
         autoMerge: d.auto_merge,
+        parentTaskId: d.parent_task_id ?? null,
         createdById: user.id === 'amonis-worker' ? null : user.id,
       });
 
@@ -109,6 +111,7 @@ export async function POST(request: Request) {
           project: result.matchedProjectSlug,
           agent: result.matchedAgentSlug,
           attachmentCount: attachmentRows.length,
+          parentTaskId: d.parent_task_id ?? null,
         },
         ipAddress: getClientIp(request),
       });
