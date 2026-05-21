@@ -4,6 +4,7 @@ export type TaskStatus =
   | 'pending'
   | 'queued'
   | 'in_progress'
+  | 'needs_review'
   | 'completed'
   | 'failed'
   | 'cancelled';
@@ -77,6 +78,8 @@ export interface TaskDTO {
   workerId: string | null;
   workerStartedAt: string | null;
   completedAt: string | null;
+  reviewedAt: string | null;
+  mergedAt: string | null;
   resultType: TaskResultType | null;
   resultUrl: string | null;
   resultSummary: string | null;
@@ -105,6 +108,7 @@ export const TASK_STATUSES: TaskStatus[] = [
   'pending',
   'queued',
   'in_progress',
+  'needs_review',
   'completed',
   'failed',
   'cancelled',

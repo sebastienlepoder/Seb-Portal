@@ -247,6 +247,7 @@ export async function executeTask({ taskId, workerId }: ExecuteParams): Promise<
             resultType: 'summary',
             resultUrl: null,
             resultSummary: result.summary,
+            mergedAt: null,
           });
           return;
         }
@@ -288,6 +289,7 @@ export async function executeTask({ taskId, workerId }: ExecuteParams): Promise<
 
       if (pr) {
         let summary = result.summary;
+        let mergedAt: Date | null = null;
         // Auto-merge if requested. We tried in the order: PR creation → auto-merge.
         // If auto-merge fails (branch protection, conflicts, token perms), the PR
         // stays open and the user can finish it by hand — never throw away the
@@ -306,6 +308,7 @@ export async function executeTask({ taskId, workerId }: ExecuteParams): Promise<
           if (m.merged) {
             await logger.info(taskId, `Auto-merged PR #${pr.number} (sha ${m.sha ?? '?'})`);
             summary += `\n\nAuto-merged into ${clone.baseBranch} (commit ${m.sha ?? 'unknown'}).`;
+            mergedAt = new Date();
           } else {
             summary +=
               `\n\nNote: auto-merge requested but failed (${m.error ?? 'unknown'}). PR is open at ${pr.url} — finish it by hand.`;
@@ -315,6 +318,7 @@ export async function executeTask({ taskId, workerId }: ExecuteParams): Promise<
           resultType: 'pr',
           resultUrl: pr.url,
           resultSummary: summary,
+          mergedAt,
         });
       } else {
         // Push succeeded but PR creation failed — record commit + branch
@@ -327,6 +331,7 @@ export async function executeTask({ taskId, workerId }: ExecuteParams): Promise<
           resultSummary:
             result.summary +
             `\n\n(Note: PR creation failed; branch \`${clone.workBranch}\` was pushed.)`,
+          mergedAt: null,
         });
       }
     } else {
@@ -335,6 +340,7 @@ export async function executeTask({ taskId, workerId }: ExecuteParams): Promise<
         resultType: 'summary',
         resultUrl: null,
         resultSummary: result.summary,
+        mergedAt: null,
       });
     }
   } catch (e) {
@@ -348,20 +354,26 @@ export async function executeTask({ taskId, workerId }: ExecuteParams): Promise<
 
 async function complete(
   taskId: string,
-  fields: { resultType: 'commit' | 'pr' | 'summary'; resultUrl: string | null; resultSummary: string }
+  fields: {
+    resultType: 'commit' | 'pr' | 'summary';
+    resultUrl: string | null;
+    resultSummary: string;
+    mergedAt: Date | null;
+  }
 ): Promise<void> {
   await prisma.task.update({
     where: { id: taskId },
     data: {
-      status: 'completed',
+      status: 'needs_review',
       completedAt: new Date(),
+      mergedAt: fields.mergedAt,
       resultType: fields.resultType,
       resultUrl: fields.resultUrl,
       resultSummary: fields.resultSummary,
       errorMessage: null,
     },
   });
-  await logger.info(taskId, `Completed (${fields.resultType})`);
+  await logger.info(taskId, `Worker finished — task needs review (${fields.resultType})`);
 }
 
 async function fail(taskId: string, message: string, partialSummary?: string): Promise<void> {
@@ -398,7 +410,11 @@ async function buildSubtaskBlock(subtaskIds: string[]): Promise<string> {
       ? `${t.agentProfile.name} (${t.agentProfile.slug})`
       : 'unknown';
     const status =
-      t.status === 'completed' ? '✓' : t.status === 'failed' ? '✗' : `· ${t.status}`;
+      t.status === 'completed' || t.status === 'needs_review'
+        ? '✓'
+        : t.status === 'failed'
+          ? '✗'
+          : `· ${t.status}`;
     const firstLine = (t.resultSummary || '').split('\n')[0]?.trim() || '(no summary)';
     lines.push(`- ${status} **${t.title}** — ${agent}`);
     lines.push(`  ${firstLine.slice(0, 200)}`);

@@ -98,6 +98,8 @@ export function toTaskDTO(
     workerId: t.workerId,
     workerStartedAt: t.workerStartedAt?.toISOString() ?? null,
     completedAt: t.completedAt?.toISOString() ?? null,
+    reviewedAt: t.reviewedAt?.toISOString() ?? null,
+    mergedAt: t.mergedAt?.toISOString() ?? null,
     resultType: (t.resultType as TaskDTO['resultType']) ?? null,
     resultUrl: t.resultUrl,
     resultSummary: t.resultSummary,
