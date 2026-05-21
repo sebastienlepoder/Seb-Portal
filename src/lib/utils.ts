@@ -32,3 +32,63 @@ export function priorityColor(priority: string): string {
       return 'text-gray-400 bg-gray-500/10 border-gray-500/30';
   }
 }
+
+export const ALLOWED_PASTED_IMAGE_MIME = [
+  'image/png',
+  'image/jpeg',
+  'image/gif',
+  'image/webp',
+];
+export const MAX_PASTED_IMAGE_BYTES = 5 * 1024 * 1024;
+export const MAX_PASTED_IMAGES = 8;
+
+export interface PastedImage {
+  dataUri: string;
+  filename?: string;
+}
+
+/** Pull image files out of a clipboard paste, validate them, and decode to
+ *  data URIs. Returns the items that should be appended to existing state,
+ *  the most recent rejection reason (or null), and whether the paste
+ *  contained any image at all (so callers can decide whether to
+ *  `e.preventDefault()`). */
+export async function extractPastedImages(
+  clipboardData: DataTransfer,
+  existingCount: number,
+): Promise<{ items: PastedImage[]; error: string | null; hadImage: boolean }> {
+  const items: PastedImage[] = [];
+  let error: string | null = null;
+  let hadImage = false;
+
+  for (let i = 0; i < clipboardData.items.length; i++) {
+    const it = clipboardData.items[i];
+    if (it.kind !== 'file' || !it.type.startsWith('image/')) continue;
+    hadImage = true;
+    const file = it.getAsFile();
+    if (!file) continue;
+    if (!ALLOWED_PASTED_IMAGE_MIME.includes(file.type)) {
+      error = `Unsupported image type "${file.type}". Use PNG, JPEG, GIF, or WebP.`;
+      continue;
+    }
+    if (file.size > MAX_PASTED_IMAGE_BYTES) {
+      error = 'Image is larger than 5 MB.';
+      continue;
+    }
+    if (existingCount + items.length >= MAX_PASTED_IMAGES) {
+      error = `You can attach at most ${MAX_PASTED_IMAGES} images.`;
+      continue;
+    }
+    try {
+      const dataUri = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(new Error('Could not read image.'));
+        reader.readAsDataURL(file);
+      });
+      items.push({ dataUri, filename: file.name || undefined });
+    } catch {
+      error = 'Could not read pasted image.';
+    }
+  }
+  return { items, error, hadImage };
+}

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useAuth } from '@/hooks/usePortal';
 import MainSidebar from '@/components/layout/MainSidebar';
-import { cn, formatRelativeTime } from '@/lib/utils';
+import { cn, formatRelativeTime, extractPastedImages } from '@/lib/utils';
 import {
   AlertTriangle,
   Bot,
@@ -701,6 +701,27 @@ function DispatcherModal({
   const [autoMerge, setAutoMerge] = useState(initialValues?.auto_merge ?? false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [attachments, setAttachments] = useState<
+    { dataUri: string; filename?: string }[]
+  >([]);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
+
+  async function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+    if (!e.clipboardData) return;
+    const { items, error: extractError, hadImage } = await extractPastedImages(
+      e.clipboardData,
+      attachments.length,
+    );
+    if (hadImage) e.preventDefault();
+    if (items.length > 0) {
+      setAttachments((prev) => [...prev, ...items]);
+    }
+    setAttachmentError(extractError);
+  }
+
+  function removeAttachment(idx: number) {
+    setAttachments((prev) => prev.filter((_, i) => i !== idx));
+  }
 
   async function submit() {
     if (!title.trim() || !description.trim() || !projectName) return;
@@ -720,6 +741,7 @@ function DispatcherModal({
           agent_role: agentSlug || null,
           priority,
           auto_merge: autoMerge,
+          attachments: attachments.length ? attachments : undefined,
         }),
       });
       const data = await res.json();
@@ -784,11 +806,42 @@ function DispatcherModal({
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="Detailed instructions for the agent…"
+            onPaste={handlePaste}
+            placeholder="Detailed instructions for the agent… Paste a screenshot to attach an image."
             rows={6}
             className="w-full bg-portal-bg border border-portal-border rounded-md px-3 py-2 text-sm text-portal-text font-mono resize-y focus:outline-none focus:ring-2 focus:ring-portal-accent"
           />
         </Field>
+
+        {attachments.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {attachments.map((att, i) => (
+              <div
+                key={i}
+                className="relative h-16 w-16 rounded-md overflow-hidden bg-portal-bg border border-portal-border"
+                title={att.filename ?? 'Pasted screenshot'}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={att.dataUri}
+                  alt={att.filename ?? 'Pasted screenshot preview'}
+                  className="h-full w-full object-cover"
+                />
+                <button
+                  type="button"
+                  onClick={() => removeAttachment(i)}
+                  aria-label="Remove pasted image"
+                  className="absolute top-0.5 right-0.5 p-0.5 rounded-full bg-black/70 text-white hover:bg-black/90 transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        {attachmentError && (
+          <div className="text-xs text-red-300">{attachmentError}</div>
+        )}
 
         <Field label="Priority">
           <div className="flex gap-1">
@@ -990,6 +1043,33 @@ function TaskDetailModal({
           <div className="bg-portal-bg border border-portal-border rounded-md p-3 text-sm text-portal-text whitespace-pre-wrap">
             {detail.description}
           </div>
+
+          {detail.attachments && detail.attachments.length > 0 && (
+            <div>
+              <h3 className="text-xs uppercase tracking-wider text-portal-muted mb-1">
+                Attachments
+              </h3>
+              <div className="flex flex-wrap gap-2">
+                {detail.attachments.map((att) => (
+                  <a
+                    key={att.id}
+                    href={att.dataUri}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={att.filename ?? 'Task screenshot'}
+                    className="block h-16 w-16 rounded-md overflow-hidden bg-portal-bg border border-portal-border hover:border-portal-accent/50 transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={att.dataUri}
+                      alt={att.filename ?? 'Task screenshot'}
+                      className="h-full w-full object-cover"
+                    />
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
 
           {detail.resultUrl && (
             <a

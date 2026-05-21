@@ -49,6 +49,16 @@ export interface AgentSummary {
   expertise: string[];
 }
 
+export interface TaskAttachmentDTO {
+  id: string;
+  mimeType: string;
+  /** Reconstructed full data URI, ready to drop into <img src>. */
+  dataUri: string;
+  filename: string | null;
+  byteSize: number;
+  createdAt: string;
+}
+
 export interface TaskDTO {
   id: string;
   title: string;
@@ -72,6 +82,8 @@ export interface TaskDTO {
   updatedAt: string;
   project: ProjectSummary;
   agentProfile: AgentSummary | null;
+  /** Only populated on the detail endpoint. */
+  attachments?: TaskAttachmentDTO[];
 }
 
 export interface TaskLogDTO {

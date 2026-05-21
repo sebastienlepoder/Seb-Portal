@@ -17,7 +17,7 @@ import {
   PanelLeftClose,
 } from 'lucide-react';
 import Link from 'next/link';
-import { cn, formatRelativeTime } from '@/lib/utils';
+import { cn, formatRelativeTime, extractPastedImages } from '@/lib/utils';
 import type { AiMessage, AiProvider } from '@/types';
 
 interface AiChatPanelProps {
@@ -59,6 +59,8 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [renameSaving, setRenameSaving] = useState(false);
+  const [pastedImages, setPastedImages] = useState<string[]>([]);
+  const [pasteError, setPasteError] = useState<string | null>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -195,6 +197,8 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
     setThreadId(undefined);
     if (typeof window !== 'undefined') window.localStorage.removeItem(STORAGE_KEY);
     setInput('');
+    setPastedImages([]);
+    setPasteError(null);
     if (isMobile) setMobileSidebarOpen(false);
   }
 
@@ -256,13 +260,33 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
     }
   }
 
+  async function handlePaste(e: React.ClipboardEvent<HTMLInputElement>) {
+    if (!e.clipboardData) return;
+    const { items, error, hadImage } = await extractPastedImages(
+      e.clipboardData,
+      pastedImages.length,
+    );
+    if (hadImage) e.preventDefault();
+    if (items.length > 0) {
+      setPastedImages((prev) => [...prev, ...items.map((it) => it.dataUri)]);
+    }
+    setPasteError(error);
+  }
+
+  function removePastedImage(idx: number) {
+    setPastedImages((prev) => prev.filter((_, i) => i !== idx));
+  }
+
   /** Send `text` as a user message. Used both by the input field and by
    *  the multi-choice question buttons. */
   async function sendText(text: string) {
-    if (!text.trim() || loading) return;
-    const userMsg: AiMessage = { role: 'user', content: text.trim() };
+    if ((!text.trim() && pastedImages.length === 0) || loading) return;
+    const images = pastedImages.length ? pastedImages : undefined;
+    const userMsg: AiMessage = { role: 'user', content: text.trim(), images };
     setMessages((prev) => [...prev, userMsg]);
     setInput('');
+    setPastedImages([]);
+    setPasteError(null);
     setLoading(true);
     // Clear any pending question — the user has answered it.
     setPendingQuestion(null);
@@ -315,6 +339,8 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
   }
 
   const sendMessage = () => sendText(input);
+
+  const canSend = !loading && (input.trim().length > 0 || pastedImages.length > 0);
 
   const activeThread = threadId ? threads.find((t) => t.id === threadId) : undefined;
 
@@ -601,7 +627,22 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
                         : 'bg-portal-card border border-portal-border text-portal-text'
                     )}
                   >
-                    <pre className="whitespace-pre-wrap font-sans">{msg.content}</pre>
+                    {msg.images && msg.images.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mb-2">
+                        {msg.images.map((src, j) => (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            key={j}
+                            src={src}
+                            alt="Pasted screenshot"
+                            className="max-h-48 max-w-full rounded-md object-contain"
+                          />
+                        ))}
+                      </div>
+                    )}
+                    {msg.content && (
+                      <pre className="whitespace-pre-wrap font-sans">{msg.content}</pre>
+                    )}
                   </div>
                   {msg.role === 'user' && (
                     <User className="h-5 w-5 text-portal-muted flex-shrink-0 mt-1" />
@@ -684,6 +725,36 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
 
         {/* Input */}
         <div className="px-4 py-3 sm:px-6 lg:px-8 border-t border-portal-border">
+          {pastedImages.length > 0 && (
+            <div className="mx-auto w-full max-w-4xl mb-2 flex flex-wrap gap-2">
+              {pastedImages.map((src, i) => (
+                <div
+                  key={i}
+                  className="relative h-16 w-16 rounded-md overflow-hidden bg-portal-card border border-portal-border"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={src}
+                    alt="Pasted screenshot preview"
+                    className="h-full w-full object-cover"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removePastedImage(i)}
+                    aria-label="Remove pasted image"
+                    className="absolute top-0.5 right-0.5 p-0.5 rounded-full bg-black/70 text-white hover:bg-black/90 transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          {pasteError && (
+            <div className="mx-auto w-full max-w-4xl mb-2 text-xs text-red-300">
+              {pasteError}
+            </div>
+          )}
           <div className="mx-auto w-full max-w-4xl flex gap-2">
             <label htmlFor="ai-chat-input" className="sr-only">
               Message
@@ -693,17 +764,23 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
+              onPaste={handlePaste}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  if (canSend) sendMessage();
+                }
+              }}
               placeholder={
                 pendingQuestion
                   ? 'Pick an option above, or type a custom answer…'
-                  : 'Ask anything, or dispatch a task…'
+                  : 'Ask anything, paste a screenshot, or dispatch a task…'
               }
               className="flex-1 min-w-0 bg-portal-card border border-portal-border rounded-lg px-3 py-2 text-sm text-portal-text placeholder:text-portal-muted focus:outline-none focus:ring-2 focus:ring-portal-accent focus:border-portal-accent/50"
             />
             <button
               onClick={sendMessage}
-              disabled={loading || !input.trim()}
+              disabled={!canSend}
               aria-label="Send message"
               className="px-4 py-2 bg-portal-accent hover:bg-portal-accent/80 text-white rounded-lg transition-colors disabled:opacity-50 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent shrink-0"
             >
