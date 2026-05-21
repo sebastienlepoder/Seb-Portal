@@ -85,6 +85,16 @@ services:
     depends_on:
       portal:
         condition: service_started
+    # Give the worker up to 10 minutes after SIGTERM to drain in-flight
+    # tasks before Docker SIGKILLs it. The worker's main loop (see
+    # worker/index.ts) sets `shuttingDown=true` on SIGTERM, stops picking
+    # up new tasks, and waits for inFlight to reach 0. Without this
+    # override, Docker's default 10s grace period would kill the worker
+    # mid-task on every Coolify redeploy — most acutely when the
+    # "Merge to main automatically" checkbox triggers the redeploy itself.
+    # Tasks still running after 10m get killed (their DB rows are reaped
+    # as stale after 2× WORKER_TIMEOUT_MS).
+    stop_grace_period: 10m
     networks:
       - default
     volumes:
