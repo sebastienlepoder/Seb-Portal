@@ -18,3 +18,6 @@ coverage/
 # Uploaded files
 public/uploads/amonis/*
 !public/uploads/amonis/.gitkeep
+
+# Worker workdir leakage guard
+tmp/
