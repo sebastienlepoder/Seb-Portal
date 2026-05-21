@@ -177,6 +177,25 @@ function formatQuestionAsText(q: { question: string; options: string[] }): strin
   return `${q.question}\n\nOptions:\n${q.options.map((o) => `- ${o}`).join('\n')}`;
 }
 
+// ─── Image attachment limits ─────────────────────────────────
+
+const MAX_IMAGES_PER_MESSAGE = 8;
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB decoded
+const IMAGE_DATA_URI_RE = /^data:(image\/(?:png|jpeg|gif|webp));base64,(.+)$/;
+type AnthropicImageMediaType = 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp';
+
+/** Returns null if the URI is invalid or oversized. */
+function parseImageDataUri(
+  dataUri: string
+): { mediaType: AnthropicImageMediaType; data: string; byteSize: number } | null {
+  const match = IMAGE_DATA_URI_RE.exec(dataUri);
+  if (!match) return null;
+  const data = match[2]!;
+  const byteSize = Math.floor((data.length * 3) / 4);
+  if (byteSize > MAX_IMAGE_BYTES) return null;
+  return { mediaType: match[1] as AnthropicImageMediaType, data, byteSize };
+}
+
 // ─── POST handler ────────────────────────────────────────────
 
 export async function POST(request: Request) {
@@ -203,6 +222,33 @@ export async function POST(request: Request) {
 
     if (!incoming?.length) {
       return NextResponse.json({ ok: false, error: 'Messages required' }, { status: 400 });
+    }
+
+    // Validate image attachments on the final user message (the only
+    // place we forward them). Reject oversized or too-many uploads.
+    const lastIncoming = incoming[incoming.length - 1];
+    const lastImages = lastIncoming?.role === 'user' ? lastIncoming.images ?? [] : [];
+    if (lastImages.length > MAX_IMAGES_PER_MESSAGE) {
+      return NextResponse.json(
+        { ok: false, error: `Too many images (max ${MAX_IMAGES_PER_MESSAGE})` },
+        { status: 400 }
+      );
+    }
+    for (const uri of lastImages) {
+      const match = IMAGE_DATA_URI_RE.exec(uri);
+      if (!match) {
+        return NextResponse.json(
+          { ok: false, error: 'Invalid image data URI (png/jpeg/gif/webp base64 only)' },
+          { status: 400 }
+        );
+      }
+      const byteSize = Math.floor((match[2]!.length * 3) / 4);
+      if (byteSize > MAX_IMAGE_BYTES) {
+        return NextResponse.json(
+          { ok: false, error: 'Image exceeds 5 MB limit' },
+          { status: 400 }
+        );
+      }
     }
 
     let reply: string;
@@ -247,6 +293,26 @@ export async function POST(request: Request) {
         role: m.role as 'user' | 'assistant',
         content: m.content,
       }));
+
+      // If the last user message carries images, replace its plain string
+      // content with a structured block array containing the images +
+      // text. All prior messages stay as strings for backward compat.
+      const lastMsg = userAndAssistantMsgs[userAndAssistantMsgs.length - 1];
+      if (lastMsg?.role === 'user' && lastMsg.images?.length) {
+        const blocks: Anthropic.ContentBlockParam[] = [];
+        for (const dataUri of lastMsg.images) {
+          const parsed = parseImageDataUri(dataUri);
+          if (!parsed) continue;
+          blocks.push({
+            type: 'image',
+            source: { type: 'base64', media_type: parsed.mediaType, data: parsed.data },
+          });
+        }
+        if (lastMsg.content) blocks.push({ type: 'text', text: lastMsg.content });
+        if (blocks.length > 0) {
+          messages[messages.length - 1] = { role: 'user', content: blocks };
+        }
+      }
 
       const MAX_ITERS = 8;
       let finalText = '';
@@ -324,9 +390,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: 'Invalid provider' }, { status: 400 });
     }
 
-    // Persist as plain text. Tool calls/results are NOT saved — only the
-    // user-visible question and reply text. This keeps history readable
-    // and avoids re-executing tools when the thread is reloaded.
+    // Persist as plain text + (optionally) the user's image data URIs.
+    // Tool calls/results are NOT saved — only the user-visible question
+    // and reply text. This keeps history readable and avoids
+    // re-executing tools when the thread is reloaded.
     let savedThreadId = threadId;
     if (threadId) {
       const thread = await prisma.aiThread.findUnique({ where: { id: threadId } });
@@ -360,7 +427,12 @@ export async function POST(request: Request) {
     await auditLog({
       userId: user.id,
       action: 'ai_chat',
-      details: { provider, threadId: savedThreadId, tools: toolEvents },
+      details: {
+        provider,
+        threadId: savedThreadId,
+        tools: toolEvents,
+        imageCount: lastImages.length,
+      },
       ipAddress: ip,
     });
 
