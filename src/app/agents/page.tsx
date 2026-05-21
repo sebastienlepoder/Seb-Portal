@@ -16,6 +16,7 @@ import {
   Send,
   Settings,
   StopCircle,
+  Trash2,
   X,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -203,6 +204,37 @@ export default function AgentsPage() {
     return counts;
   }, [tasks]);
 
+  const csrfToken = (user as { csrfToken?: string } | null)?.csrfToken;
+
+  const deleteTask = useCallback(
+    async (taskId: string) => {
+      const isOrchestrator =
+        tasks.find((x) => x.id === taskId)?.agentProfile?.slug === 'orchestrator';
+      const message = isOrchestrator
+        ? 'Delete this orchestrator task and all of its sub-tasks? This cannot be undone.'
+        : 'Delete this task? This cannot be undone.';
+      if (!window.confirm(message)) return;
+      try {
+        const res = await fetch(`/api/ai-hub/tasks/${taskId}`, {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
+          },
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          window.alert(data.error || `Delete failed (${res.status})`);
+          return;
+        }
+        fetchTasks();
+      } catch (e) {
+        window.alert((e as Error).message);
+      }
+    },
+    [tasks, csrfToken, fetchTasks]
+  );
+
   if (authLoading || !user) {
     return (
       <div className="min-h-dvh flex items-center justify-center bg-portal-bg">
@@ -210,8 +242,6 @@ export default function AgentsPage() {
       </div>
     );
   }
-
-  const csrfToken = (user as { csrfToken?: string }).csrfToken;
 
   const closeDispatcher = () => {
     setShowDispatcher(false);
@@ -230,6 +260,7 @@ export default function AgentsPage() {
     setOpenTaskId(null);
     setShowDispatcher(true);
   };
+
 
   return (
     <div className="h-dvh bg-portal-bg flex overflow-hidden">
@@ -376,10 +407,19 @@ export default function AgentsPage() {
                     const childCount = isOrchestrator
                       ? tasks.filter((x) => x.parentTaskId === t.id).length
                       : 0;
+                    const isTerminal = TERMINAL.includes(t.status);
                     return (
-                      <button
+                      <div
                         key={t.id}
+                        role="button"
+                        tabIndex={0}
                         onClick={() => setOpenTaskId(t.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            if (e.key === ' ') e.preventDefault();
+                            setOpenTaskId(t.id);
+                          }
+                        }}
                         className={cn(
                           'w-full text-left p-3 hover:bg-portal-card-hover/50 transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent focus:ring-inset',
                           t.parentTaskId && 'pl-8'
@@ -443,8 +483,23 @@ export default function AgentsPage() {
                           {t.status === 'in_progress' && (
                             <Loader2 className="h-4 w-4 animate-spin text-yellow-300 shrink-0 mt-1" />
                           )}
+                          {isTerminal && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                deleteTask(t.id);
+                              }}
+                              onKeyDown={(e) => e.stopPropagation()}
+                              aria-label="Delete task"
+                              title="Delete task"
+                              className="shrink-0 p-1.5 rounded text-portal-muted hover:text-red-300 hover:bg-red-500/10 transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-400"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          )}
                         </div>
-                      </button>
+                      </div>
                     );
                   })
                 )}
@@ -729,6 +784,7 @@ function TaskDetailModal({
   onRetask: (detail: TaskDTO) => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function callPatch(body: Record<string, unknown>) {
@@ -752,6 +808,36 @@ function TaskDetailModal({
       setError((e as Error).message);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function deleteTask() {
+    const isOrchestrator = detail?.agentProfile?.slug === 'orchestrator';
+    const message = isOrchestrator
+      ? 'Delete this orchestrator task and all of its sub-tasks? This cannot be undone.'
+      : 'Delete this task? This cannot be undone.';
+    if (!window.confirm(message)) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/ai-hub/tasks/${taskId}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
+        },
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        setError(data.error || `Delete failed (${res.status})`);
+        setDeleting(false);
+        return;
+      }
+      onChanged();
+      onClose();
+    } catch (e) {
+      setError((e as Error).message);
+      setDeleting(false);
     }
   }
 
@@ -907,15 +993,32 @@ function TaskDetailModal({
                 </select>
               </>
             )}
-            {canRetask && (
-              <button
-                onClick={() => onRetask(detail)}
-                className="ml-auto flex items-center gap-1.5 px-3 py-1.5 bg-portal-accent hover:bg-portal-accent/80 text-white rounded-md text-xs transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
-                title="Open a pre-filled dispatcher to edit and re-dispatch this task"
-              >
-                <RotateCcw className="h-3.5 w-3.5" />
-                Re-task
-              </button>
+            {isTerminal && detail && (
+              <div className="ml-auto flex items-center gap-2">
+                {canRetask && (
+                  <button
+                    onClick={() => onRetask(detail)}
+                    disabled={busy || deleting}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-portal-accent hover:bg-portal-accent/80 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-md text-xs transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
+                    title="Open a pre-filled dispatcher to edit and re-dispatch this task"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    Re-task
+                  </button>
+                )}
+                <button
+                  onClick={deleteTask}
+                  disabled={deleting || busy}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-red-500/10 border border-red-500/30 text-red-300 hover:bg-red-500/20 rounded-md text-xs disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-400"
+                >
+                  {deleting ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-3.5 w-3.5" />
+                  )}
+                  Delete
+                </button>
+              </div>
             )}
           </div>
         </div>
