@@ -351,7 +351,7 @@ async function dispatchSubtask(params: {
   await prisma.task.update({
     where: { id: subtask.id },
     data: {
-      status: 'completed',
+      status: 'needs_review',
       completedAt: new Date(),
       resultType: changed ? 'commit' : 'summary',
       resultUrl: null,

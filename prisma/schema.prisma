@@ -418,7 +418,7 @@ model Task {
   title           String
   description     String    // detailed instructions for the agent
   priority        String    @default("normal") // low | normal | high | urgent
-  status          String    @default("pending") // pending | queued | in_progress | completed | failed | cancelled
+  status          String    @default("pending") // pending | queued | in_progress | needs_review | completed | failed | cancelled
   /**
    * When true and the project is write-enabled, the worker auto-merges
    * the PR it opens via GitHub API after creation. Set per-task from
@@ -430,6 +430,13 @@ model Task {
   workerId        String?   // set when a worker locks the task
   workerStartedAt DateTime?
   completedAt     DateTime?
+
+  // Review tracking — when the worker finishes, status goes to
+  // needs_review; the user then transitions it to completed via the
+  // mark_reviewed / merge_and_review PATCH actions.
+  reviewedAt      DateTime?
+  reviewedById    String?
+  mergedAt        DateTime?
 
   // Result
   resultType      String?   // "commit" | "pr" | "summary"
