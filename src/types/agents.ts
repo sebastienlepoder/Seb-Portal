@@ -71,6 +71,9 @@ export interface TaskDTO {
    *  always show "sub-task of …" even when the parent isn't in the
    *  current list (e.g. parent completed and filtered out). */
   parentTitle: string | null;
+  /** When true and the project is write-enabled, the worker auto-merges
+   *  the PR it opens via GitHub API after creation. */
+  autoMerge: boolean;
   workerId: string | null;
   workerStartedAt: string | null;
   completedAt: string | null;
