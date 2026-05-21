@@ -69,6 +69,7 @@ export function toTaskDTO(
   t: PrismaTask & {
     project: PrismaProject;
     agentProfile: PrismaAgentProfile | null;
+    parent?: { title: string } | null;
   }
 ): TaskDTO {
   return {
@@ -78,6 +79,7 @@ export function toTaskDTO(
     status: t.status as TaskStatus,
     priority: t.priority as TaskPriority,
     parentTaskId: t.parentTaskId ?? null,
+    parentTitle: t.parent?.title ?? null,
     workerId: t.workerId,
     workerStartedAt: t.workerStartedAt?.toISOString() ?? null,
     completedAt: t.completedAt?.toISOString() ?? null,
