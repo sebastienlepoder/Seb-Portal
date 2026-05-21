@@ -96,13 +96,26 @@ services:
     env_file:
       - .env
     environment:
+      # DATABASE_URL must point at the shared portal-data bind. Hardcoded
+      # because it's tied to the compose volume mount above.
       - DATABASE_URL=file:/app/data/portal.db
-      - WORKER_ID=portal-worker-1
-      - WORKER_POLL_INTERVAL_MS=5000
-      - WORKER_TIMEOUT_MS=300000
-      - WORKER_MAX_ITERATIONS=40
-      - WORKER_CONCURRENCY=1
-      # ANTHROPIC_API_KEY, ANTHROPIC_BASE_URL, GITHUB_TOKEN come from .env
+      # All tunables fall through to .env (Coolify-managed env vars). The
+      # worker code provides sensible defaults via process.env.X || 'N',
+      # so anything that's not set in .env still works. Do NOT hardcode
+      # these here — that would mask user overrides because compose's
+      # `environment:` overrides `env_file:`.
+      #   WORKER_ID                  — unique id (default hostname-pid)
+      #   WORKER_POLL_INTERVAL_MS    — default 5000
+      #   WORKER_TIMEOUT_MS          — default 300000 (5 min) per-task hard cap
+      #   WORKER_MAX_ITERATIONS      — default 40 tool-loop budget
+      #   WORKER_CONCURRENCY         — default 1 simultaneous task
+      #   WORKER_DEFAULT_MODEL       — default claude-sonnet-4-6
+      #   WORKER_NPM_INSTALL_TIMEOUT_MS — default 300000
+      #   WORKER_SKIP_NPM_INSTALL    — default false
+      #   MAESTRO_TIMEOUT_MS         — default 4 × WORKER_TIMEOUT_MS
+      #   MAESTRO_MAX_ITERATIONS     — default 30
+      #   MAESTRO_MAX_SUBTASKS       — default 5
+      #   ANTHROPIC_API_KEY, ANTHROPIC_BASE_URL, GITHUB_TOKEN
     command: sh -lc "npx tsx worker/index.ts"
 
 volumes:
