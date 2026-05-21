@@ -8,6 +8,8 @@ import {
   AlertTriangle,
   Bot,
   Briefcase,
+  ChevronDown,
+  ChevronRight,
   ExternalLink,
   GitMerge,
   HelpCircle,
@@ -96,6 +98,39 @@ export default function AgentsPage() {
   const [openTaskDetail, setOpenTaskDetail] = useState<
     (TaskDTO & { logs: TaskLogDTO[] }) | null
   >(null);
+  /** Parent task ids whose sub-tasks are hidden. Persisted in localStorage. */
+  const [collapsedParents, setCollapsedParents] = useState<Set<string>>(new Set());
+
+  // Hydrate collapsed-parents from localStorage on mount
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const stored = window.localStorage.getItem('agents:collapsed-parents');
+      if (stored) {
+        const arr = JSON.parse(stored);
+        if (Array.isArray(arr)) setCollapsedParents(new Set(arr.map(String)));
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  function toggleCollapse(parentId: string) {
+    setCollapsedParents((prev) => {
+      const next = new Set(prev);
+      if (next.has(parentId)) next.delete(parentId);
+      else next.add(parentId);
+      try {
+        window.localStorage.setItem(
+          'agents:collapsed-parents',
+          JSON.stringify(Array.from(next))
+        );
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }
 
   const handleLogout = () => {
     fetch('/api/auth/logout', { method: 'POST' }).then(() => {
@@ -188,6 +223,50 @@ export default function AgentsPage() {
       clearInterval(id);
     };
   }, [openTaskId]);
+
+  /**
+   * Render order: each top-level task is followed by its sub-tasks
+   * (oldest-first, in dispatch order). Orphan sub-tasks (whose parent
+   * isn't in the current view) appear at the end so the user still
+   * sees them. Sub-tasks under collapsed parents are skipped.
+   */
+  const displayedTasks = useMemo(() => {
+    const childrenByParent = new Map<string, TaskDTO[]>();
+    for (const t of tasks) {
+      if (t.parentTaskId) {
+        const arr = childrenByParent.get(t.parentTaskId) ?? [];
+        arr.push(t);
+        childrenByParent.set(t.parentTaskId, arr);
+      }
+    }
+    for (const arr of childrenByParent.values()) {
+      arr.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    }
+    const visibleIds = new Set(tasks.map((t) => t.id));
+    const out: TaskDTO[] = [];
+    for (const t of tasks) {
+      if (t.parentTaskId) continue;
+      out.push(t);
+      if (collapsedParents.has(t.id)) continue;
+      out.push(...(childrenByParent.get(t.id) ?? []));
+    }
+    // Orphans: sub-tasks whose parent isn't visible in current view
+    for (const t of tasks) {
+      if (!t.parentTaskId) continue;
+      if (!visibleIds.has(t.parentTaskId)) out.push(t);
+    }
+    return out;
+  }, [tasks, collapsedParents]);
+
+  /** Count of sub-tasks for each parent id (across the full tasks list, not just visible). */
+  const childCountByParent = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const t of tasks) {
+      if (!t.parentTaskId) continue;
+      m.set(t.parentTaskId, (m.get(t.parentTaskId) ?? 0) + 1);
+    }
+    return m;
+  }, [tasks]);
 
   const stats = useMemo(() => {
     const counts = {
@@ -399,14 +478,21 @@ export default function AgentsPage() {
                     </button>
                   </div>
                 ) : (
-                  tasks.map((t) => {
+                  displayedTasks.map((t) => {
                     const isOrchestrator = t.agentProfile?.slug === 'orchestrator';
+                    // Prefer the parent's title from the in-memory tasks (live
+                    // updates), fall back to the server-provided parentTitle
+                    // so orphan sub-tasks still show context.
                     const parentTitle = t.parentTaskId
-                      ? tasks.find((x) => x.id === t.parentTaskId)?.title ?? null
+                      ? tasks.find((x) => x.id === t.parentTaskId)?.title ??
+                        t.parentTitle ??
+                        null
                       : null;
                     const childCount = isOrchestrator
-                      ? tasks.filter((x) => x.parentTaskId === t.id).length
+                      ? childCountByParent.get(t.id) ?? 0
                       : 0;
+                    const hasChildren = childCount > 0;
+                    const isCollapsed = collapsedParents.has(t.id);
                     const isTerminal = TERMINAL.includes(t.status);
                     return (
                       <div
@@ -422,11 +508,35 @@ export default function AgentsPage() {
                         }}
                         className={cn(
                           'w-full text-left p-3 hover:bg-portal-card-hover/50 transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent focus:ring-inset',
-                          t.parentTaskId && 'pl-8'
+                          t.parentTaskId && 'pl-8 border-l-2 border-portal-accent/20 ml-3'
                         )}
                       >
                         <div className="flex items-start gap-3">
-                          {t.parentTaskId ? (
+                          {hasChildren ? (
+                            <span
+                              role="button"
+                              tabIndex={0}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleCollapse(t.id);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  toggleCollapse(t.id);
+                                }
+                              }}
+                              title={isCollapsed ? 'Expand sub-tasks' : 'Collapse sub-tasks'}
+                              className="shrink-0 mt-0.5 p-0.5 -ml-1 rounded hover:bg-portal-card-hover text-portal-muted hover:text-portal-text cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
+                            >
+                              {isCollapsed ? (
+                                <ChevronRight className="h-4 w-4" />
+                              ) : (
+                                <ChevronDown className="h-4 w-4" />
+                              )}
+                            </span>
+                          ) : t.parentTaskId ? (
                             <div className="text-portal-muted text-sm shrink-0 mt-0.5">↳</div>
                           ) : (
                             <div className="text-lg shrink-0 mt-0.5">
@@ -458,6 +568,7 @@ export default function AgentsPage() {
                                 <span className="text-[10px] rounded-full px-2 py-0.5 border bg-portal-accent/10 text-portal-accent border-portal-accent/30">
                                   orchestrated · {childCount}{' '}
                                   {childCount === 1 ? 'sub-task' : 'sub-tasks'}
+                                  {hasChildren && isCollapsed && ' (hidden)'}
                                 </span>
                               )}
                             </div>

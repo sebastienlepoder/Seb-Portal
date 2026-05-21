@@ -57,6 +57,10 @@ export interface TaskDTO {
   priority: TaskPriority;
   /** When set, this is a sub-task dispatched by an Orchestrator agent. */
   parentTaskId: string | null;
+  /** Title of the parent task (when this is a sub-task), so the UI can
+   *  always show "sub-task of …" even when the parent isn't in the
+   *  current list (e.g. parent completed and filtered out). */
+  parentTitle: string | null;
   workerId: string | null;
   workerStartedAt: string | null;
   completedAt: string | null;

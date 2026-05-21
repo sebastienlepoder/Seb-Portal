@@ -81,7 +81,7 @@ export async function PATCH(request: Request, { params }: { params: { taskId: st
           completedAt: new Date(),
           errorMessage: task.errorMessage ?? 'Cancelled by user',
         },
-        include: { project: true, agentProfile: true },
+        include: { project: true, agentProfile: true, parent: { select: { title: true } } },
       });
       await prisma.taskLog.create({
         data: {
@@ -124,7 +124,7 @@ export async function PATCH(request: Request, { params }: { params: { taskId: st
       const updated = await prisma.task.update({
         where: { id: params.taskId },
         data: { agentProfileId: agent.id },
-        include: { project: true, agentProfile: true },
+        include: { project: true, agentProfile: true, parent: { select: { title: true } } },
       });
       await prisma.taskLog.create({
         data: {
@@ -152,7 +152,7 @@ export async function PATCH(request: Request, { params }: { params: { taskId: st
       const updated = await prisma.task.update({
         where: { id: params.taskId },
         data: { priority: parsed.data.priority },
-        include: { project: true, agentProfile: true },
+        include: { project: true, agentProfile: true, parent: { select: { title: true } } },
       });
       await prisma.taskLog.create({
         data: {
