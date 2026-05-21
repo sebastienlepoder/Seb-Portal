@@ -90,6 +90,11 @@ export type AiProvider = 'openai' | 'anthropic';
 export interface AiMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
+  /** Optional base64 data URIs (e.g. data:image/png;base64,...). Only
+   *  meaningful on user messages; the chat route forwards them to
+   *  Anthropic on the final user turn and persists them with the
+   *  message so reload restores the UI. */
+  images?: string[];
 }
 
 export interface AiChatRequest {

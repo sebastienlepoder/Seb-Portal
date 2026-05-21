@@ -8,6 +8,9 @@ import { dispatchTask, DispatchError } from '@/lib/agent-dispatch';
 import { toTaskDTO } from '@/lib/agents';
 import { isTaskPriority, isTaskStatus, type TaskPriority, type TaskStatus } from '@/types/agents';
 
+const IMAGE_DATA_URI_RE = /^data:image\/(png|jpeg|gif|webp);base64,(.+)$/;
+const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024; // 5 MB decoded
+
 const dispatchSchema = z.object({
   project_name: z.string().min(1).max(200),
   task_title: z.string().min(1).max(200),
@@ -15,6 +18,15 @@ const dispatchSchema = z.object({
   agent_role: z.string().max(120).optional().nullable(),
   priority: z.enum(['low', 'normal', 'high', 'urgent']).optional(),
   auto_merge: z.boolean().optional(),
+  attachments: z
+    .array(
+      z.object({
+        dataUri: z.string().regex(IMAGE_DATA_URI_RE),
+        filename: z.string().max(255).optional(),
+      })
+    )
+    .max(8)
+    .optional(),
 });
 
 /**
@@ -42,6 +54,34 @@ export async function POST(request: Request) {
       );
     }
     const d = parsed.data;
+
+    // Pre-parse attachments so we can reject oversized payloads before
+    // dispatching the task. Each entry yields the row we'll insert.
+    const attachmentRows: {
+      mimeType: string;
+      dataBase64: string;
+      filename: string | null;
+      byteSize: number;
+    }[] = [];
+    for (const a of d.attachments ?? []) {
+      const m = IMAGE_DATA_URI_RE.exec(a.dataUri)!;
+      const mimeType = `image/${m[1]}`;
+      const dataBase64 = m[2]!;
+      const byteSize = Math.floor((dataBase64.length * 3) / 4);
+      if (byteSize > MAX_ATTACHMENT_BYTES) {
+        return NextResponse.json(
+          { ok: false, error: 'Attachment exceeds 5 MB limit' },
+          { status: 400 }
+        );
+      }
+      attachmentRows.push({
+        mimeType,
+        dataBase64,
+        filename: a.filename ?? null,
+        byteSize,
+      });
+    }
+
     try {
       const result = await dispatchTask({
         projectName: d.project_name,
@@ -52,6 +92,13 @@ export async function POST(request: Request) {
         autoMerge: d.auto_merge,
         createdById: user.id === 'amonis-worker' ? null : user.id,
       });
+
+      if (attachmentRows.length > 0) {
+        await prisma.taskAttachment.createMany({
+          data: attachmentRows.map((row) => ({ ...row, taskId: result.taskId })),
+        });
+      }
+
       await auditLog({
         userId: user.id,
         action: 'admin_action',
@@ -61,6 +108,7 @@ export async function POST(request: Request) {
           taskId: result.taskId,
           project: result.matchedProjectSlug,
           agent: result.matchedAgentSlug,
+          attachmentCount: attachmentRows.length,
         },
         ipAddress: getClientIp(request),
       });

@@ -445,6 +445,7 @@ model Task {
   parent       Task?         @relation("TaskHierarchy", fields: [parentTaskId], references: [id], onDelete: SetNull)
   children     Task[]        @relation("TaskHierarchy")
   logs         TaskLog[]
+  attachments  TaskAttachment[]
 
   @@index([status, priority, createdAt])
   @@index([projectId, status])
@@ -463,6 +464,20 @@ model TaskLog {
   task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
   @@index([taskId, createdAt])
+}
+
+model TaskAttachment {
+  id         String   @id @default(uuid())
+  taskId     String
+  mimeType   String   // e.g. image/png
+  dataBase64 String   // raw base64 (no data URI prefix)
+  filename   String?  // optional original name
+  byteSize   Int
+  createdAt  DateTime @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
 }
 
 // ─── 1Password Connect Integration ───────────────────────────

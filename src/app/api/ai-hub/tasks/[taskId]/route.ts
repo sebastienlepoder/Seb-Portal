@@ -21,6 +21,7 @@ export async function GET(_request: Request, { params }: { params: { taskId: str
         project: true,
         agentProfile: true,
         logs: { orderBy: { createdAt: 'asc' }, take: 1000 },
+        attachments: { orderBy: { createdAt: 'asc' } },
       },
     });
     if (!task) {

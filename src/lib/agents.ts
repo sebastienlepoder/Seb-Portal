@@ -2,12 +2,14 @@ import type {
   AgentProfile as PrismaAgentProfile,
   Project as PrismaProject,
   Task as PrismaTask,
+  TaskAttachment as PrismaTaskAttachment,
   TaskLog as PrismaTaskLog,
 } from '@prisma/client';
 import type {
   AgentProfileDTO,
   AgentSummary,
   ProjectSummary,
+  TaskAttachmentDTO,
   TaskDTO,
   TaskLogDTO,
   TaskPriority,
@@ -65,14 +67,26 @@ export function toProjectSummary(p: PrismaProject): ProjectSummary {
   };
 }
 
+export function toTaskAttachmentDTO(a: PrismaTaskAttachment): TaskAttachmentDTO {
+  return {
+    id: a.id,
+    mimeType: a.mimeType,
+    dataUri: `data:${a.mimeType};base64,${a.dataBase64}`,
+    filename: a.filename,
+    byteSize: a.byteSize,
+    createdAt: a.createdAt.toISOString(),
+  };
+}
+
 export function toTaskDTO(
   t: PrismaTask & {
     project: PrismaProject;
     agentProfile: PrismaAgentProfile | null;
     parent?: { title: string } | null;
+    attachments?: PrismaTaskAttachment[];
   }
 ): TaskDTO {
-  return {
+  const dto: TaskDTO = {
     id: t.id,
     title: t.title,
     description: t.description,
@@ -93,6 +107,10 @@ export function toTaskDTO(
     project: toProjectSummary(t.project),
     agentProfile: t.agentProfile ? toAgentSummary(t.agentProfile) : null,
   };
+  if (t.attachments) {
+    dto.attachments = t.attachments.map(toTaskAttachmentDTO);
+  }
+  return dto;
 }
 
 export function toTaskLogDTO(l: PrismaTaskLog): TaskLogDTO {
