@@ -44,6 +44,15 @@ interface WorkerStatus {
   hasGithubToken: boolean;
 }
 
+interface DispatcherInitialValues {
+  project_name: string;
+  agent_slug: string;
+  title: string;
+  description: string;
+  priority: TaskPriority;
+  auto_merge: boolean;
+}
+
 const STATUS_LABEL: Record<TaskDTO['status'], string> = {
   pending: 'Queued',
   queued: 'Queued',
@@ -80,6 +89,8 @@ export default function AgentsPage() {
   const [anyWorkerActive, setAnyWorkerActive] = useState<boolean | null>(null);
   const [statusFilter, setStatusFilter] = useState<'active' | 'all'>('active');
   const [showDispatcher, setShowDispatcher] = useState(false);
+  const [dispatcherInitialValues, setDispatcherInitialValues] =
+    useState<DispatcherInitialValues | null>(null);
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
   const [openTaskDetail, setOpenTaskDetail] = useState<
     (TaskDTO & { logs: TaskLogDTO[] }) | null
@@ -202,6 +213,24 @@ export default function AgentsPage() {
 
   const csrfToken = (user as { csrfToken?: string }).csrfToken;
 
+  const closeDispatcher = () => {
+    setShowDispatcher(false);
+    setDispatcherInitialValues(null);
+  };
+
+  const handleRetask = (d: TaskDTO) => {
+    setDispatcherInitialValues({
+      project_name: d.project.slug,
+      agent_slug: d.agentProfile?.slug ?? '',
+      title: d.title,
+      description: d.description,
+      priority: d.priority,
+      auto_merge: false,
+    });
+    setOpenTaskId(null);
+    setShowDispatcher(true);
+  };
+
   return (
     <div className="h-dvh bg-portal-bg flex overflow-hidden">
       <MainSidebar user={user} onLogout={handleLogout} />
@@ -228,7 +257,10 @@ export default function AgentsPage() {
                 <HelpCircle className="h-4 w-4" />
               </Link>
               <button
-                onClick={() => setShowDispatcher(true)}
+                onClick={() => {
+                  setDispatcherInitialValues(null);
+                  setShowDispatcher(true);
+                }}
                 className="flex items-center gap-2 px-4 py-2 bg-portal-accent hover:bg-portal-accent/80 text-white rounded-lg transition-colors duration-200 text-sm cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
               >
                 <Send className="h-4 w-4" />
@@ -326,7 +358,10 @@ export default function AgentsPage() {
                   <div className="p-6 text-center text-sm text-portal-muted">
                     No tasks {statusFilter === 'active' ? 'in flight' : 'yet'}.{' '}
                     <button
-                      onClick={() => setShowDispatcher(true)}
+                      onClick={() => {
+                        setDispatcherInitialValues(null);
+                        setShowDispatcher(true);
+                      }}
                       className="text-portal-accent hover:underline cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent rounded"
                     >
                       Dispatch one →
@@ -421,12 +456,13 @@ export default function AgentsPage() {
 
       {showDispatcher && (
         <DispatcherModal
-          onClose={() => setShowDispatcher(false)}
+          onClose={closeDispatcher}
           projects={projects}
           agents={agents}
           csrfToken={csrfToken}
+          initialValues={dispatcherInitialValues}
           onDispatched={(taskId) => {
-            setShowDispatcher(false);
+            closeDispatcher();
             fetchTasks();
             setOpenTaskId(taskId);
           }}
@@ -441,10 +477,7 @@ export default function AgentsPage() {
           csrfToken={csrfToken}
           onClose={() => setOpenTaskId(null)}
           onChanged={fetchTasks}
-          onTaskCreated={(newTaskId) => {
-            fetchTasks();
-            setOpenTaskId(newTaskId);
-          }}
+          onRetask={handleRetask}
         />
       )}
     </div>
@@ -479,21 +512,27 @@ function DispatcherModal({
   projects,
   agents,
   csrfToken,
+  initialValues,
   onClose,
   onDispatched,
 }: {
   projects: ProjectSummary[];
   agents: AgentListItem[];
   csrfToken: string | undefined;
+  initialValues: DispatcherInitialValues | null;
   onClose: () => void;
   onDispatched: (taskId: string) => void;
 }) {
-  const [projectName, setProjectName] = useState(projects[0]?.slug ?? '');
-  const [agentSlug, setAgentSlug] = useState<string>(''); // empty = auto
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [priority, setPriority] = useState<TaskPriority>('normal');
-  const [autoMerge, setAutoMerge] = useState(false);
+  const [projectName, setProjectName] = useState(
+    initialValues?.project_name ?? projects[0]?.slug ?? ''
+  );
+  const [agentSlug, setAgentSlug] = useState<string>(initialValues?.agent_slug ?? '');
+  const [title, setTitle] = useState(initialValues?.title ?? '');
+  const [description, setDescription] = useState(initialValues?.description ?? '');
+  const [priority, setPriority] = useState<TaskPriority>(
+    initialValues?.priority ?? 'normal'
+  );
+  const [autoMerge, setAutoMerge] = useState(initialValues?.auto_merge ?? false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -679,7 +718,7 @@ function TaskDetailModal({
   csrfToken,
   onClose,
   onChanged,
-  onTaskCreated,
+  onRetask,
 }: {
   taskId: string;
   detail: (TaskDTO & { logs: TaskLogDTO[] }) | null;
@@ -687,10 +726,9 @@ function TaskDetailModal({
   csrfToken: string | undefined;
   onClose: () => void;
   onChanged: () => void;
-  onTaskCreated: (taskId: string) => void;
+  onRetask: (detail: TaskDTO) => void;
 }) {
   const [busy, setBusy] = useState(false);
-  const [restarting, setRestarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function callPatch(body: Record<string, unknown>) {
@@ -717,40 +755,10 @@ function TaskDetailModal({
     }
   }
 
-  async function restart() {
-    if (!detail) return;
-    setRestarting(true);
-    setError(null);
-    try {
-      const res = await fetch('/api/ai-hub/dispatch-task', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
-        },
-        body: JSON.stringify({
-          project_name: detail.project.slug,
-          task_title: detail.title,
-          task_description: detail.description,
-          agent_role: detail.agentProfile?.slug ?? null,
-          priority: detail.priority,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.ok) {
-        setError(data.error || `Restart failed (${res.status})`);
-        setRestarting(false);
-        return;
-      }
-      onTaskCreated(data.taskId);
-    } catch (e) {
-      setError((e as Error).message);
-      setRestarting(false);
-    }
-  }
-
   const isTerminal = detail ? TERMINAL.includes(detail.status) : false;
   const isInFlight = detail?.status === 'in_progress';
+  const canRetask =
+    detail?.status === 'failed' || detail?.status === 'cancelled';
 
   return (
     <ModalShell onClose={onClose} title={detail?.title ?? 'Loading task…'} wide>
@@ -899,19 +907,14 @@ function TaskDetailModal({
                 </select>
               </>
             )}
-            {detail.status === 'failed' && (
+            {canRetask && (
               <button
-                onClick={restart}
-                disabled={restarting}
-                className="ml-auto flex items-center gap-1.5 px-3 py-1.5 bg-portal-accent hover:bg-portal-accent/80 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-md text-xs transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
-                title="Re-dispatch this task with the same project, agent, priority and description"
+                onClick={() => onRetask(detail)}
+                className="ml-auto flex items-center gap-1.5 px-3 py-1.5 bg-portal-accent hover:bg-portal-accent/80 text-white rounded-md text-xs transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
+                title="Open a pre-filled dispatcher to edit and re-dispatch this task"
               >
-                {restarting ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <RotateCcw className="h-3.5 w-3.5" />
-                )}
-                Restart task
+                <RotateCcw className="h-3.5 w-3.5" />
+                Re-task
               </button>
             )}
           </div>
