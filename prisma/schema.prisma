@@ -251,8 +251,9 @@ model Project {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  sessions ProjectSession[]
-  tasks    Task[]
+  sessions        ProjectSession[]
+  tasks           Task[]
+  secretMappings  ProjectSecretMapping[]
 }
 
 model ProjectSession {
@@ -456,4 +457,39 @@ model TaskLog {
   task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
   @@index([taskId, createdAt])
+}
+
+// ─── 1Password Connect Integration ───────────────────────────
+
+model OnePasswordConnection {
+  id              String    @id @default(uuid())
+  // Single-row config (we only support one Connect server). Use a fixed slug "default".
+  slug            String    @unique @default("default")
+  connectHost     String    // e.g. http://onepassword-connect:8080
+  encryptedToken  String    // AES-256-GCM ciphertext, base64
+  tokenIv         String    // base64
+  tokenTag        String    // base64
+  defaultVaultId  String?
+  lastTestedAt    DateTime?
+  lastTestStatus  String?   // ok | failed
+  lastTestMessage String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+model ProjectSecretMapping {
+  id         String   @id @default(uuid())
+  projectId  String
+  envName    String   // e.g. OPENAI_API_KEY — the name the worker will export
+  vaultId    String
+  itemId     String
+  fieldLabel String   // 1Password field label, e.g. "credential" or "password"
+  note       String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, envName])
+  @@index([projectId])
 }

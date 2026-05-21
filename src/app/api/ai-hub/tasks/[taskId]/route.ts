@@ -170,6 +170,39 @@ export async function PATCH(request: Request, { params }: { params: { taskId: st
   }
 }
 
+export async function DELETE(request: Request, { params }: { params: { taskId: string } }) {
+  try {
+    const user = await requireApiAuth();
+    if (!(await verifyCsrf(request))) {
+      return NextResponse.json(
+        { ok: false, error: 'CSRF validation failed' },
+        { status: 403 }
+      );
+    }
+    const task = await prisma.task.findUnique({ where: { id: params.taskId } });
+    if (!task) {
+      return NextResponse.json({ ok: false, error: 'Not found' }, { status: 404 });
+    }
+    if (!['completed', 'failed', 'cancelled'].includes(task.status)) {
+      return NextResponse.json(
+        { ok: false, error: `Cannot delete a task that is ${task.status}; cancel it first` },
+        { status: 409 }
+      );
+    }
+    await prisma.task.deleteMany({ where: { parentTaskId: params.taskId } });
+    await prisma.task.delete({ where: { id: params.taskId } });
+    await auditLog({
+      userId: user.id,
+      action: 'admin_action',
+      details: { resource: 'task', op: 'delete', taskId: params.taskId },
+      ipAddress: getClientIp(request),
+    });
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    return errorResponse(e);
+  }
+}
+
 function errorResponse(e: unknown): NextResponse {
   const msg = (e as Error).message;
   if (msg === 'UNAUTHORIZED') {

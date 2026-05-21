@@ -13,6 +13,8 @@ export interface AgentRunOptions {
   maxIterations: number;
   /** Hard timeout in ms for the entire agent run. */
   timeoutMs: number;
+  /** Extra env vars injected into child processes spawned by run_bash. Never logged. */
+  extraEnv?: Record<string, string>;
 }
 
 export interface AgentRunResult {
@@ -96,7 +98,8 @@ async function handleTool(
   taskId: string,
   workdir: string,
   name: string,
-  input: Record<string, unknown>
+  input: Record<string, unknown>,
+  extraEnv?: Record<string, string>
 ): Promise<{ result: string; touchedFile?: string; isError: boolean; finished?: { summary: string } }> {
   if (name === 'finish') {
     const summary = String(input.summary ?? '').trim() || 'Task complete.';
@@ -148,8 +151,12 @@ async function handleTool(
     // Run via /bin/sh -c so the model can use pipes/&&. We trust the model
     // because it only has access to the cloned workdir; the worker container
     // is the security boundary.
+    const childEnv =
+      extraEnv && Object.keys(extraEnv).length > 0
+        ? { ...process.env, ...extraEnv }
+        : process.env;
     const res = await Promise.race([
-      run('/bin/sh', ['-c', cmd], { cwd: workdir, taskId }),
+      run('/bin/sh', ['-c', cmd], { cwd: workdir, taskId, env: childEnv }),
       new Promise<{ code: number; stdout: string; stderr: string }>((resolve) =>
         setTimeout(() => resolve({ code: 124, stdout: '', stderr: 'timeout after 60s' }), 60000)
       ),
@@ -164,7 +171,7 @@ async function handleTool(
 }
 
 export async function runAgent(opts: AgentRunOptions): Promise<AgentRunResult> {
-  const { taskId, workdir, systemPrompt, userMessage, model, maxIterations, timeoutMs } = opts;
+  const { taskId, workdir, systemPrompt, userMessage, model, maxIterations, timeoutMs, extraEnv } = opts;
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     return { ok: false, summary: '', filesTouched: [], error: 'ANTHROPIC_API_KEY not set' };
@@ -235,7 +242,7 @@ export async function runAgent(opts: AgentRunOptions): Promise<AgentRunResult> {
     let finished: { summary: string } | null = null;
     for (const block of resp.content) {
       if (block.type !== 'tool_use') continue;
-      const out = await handleTool(taskId, workdir, block.name, block.input as Record<string, unknown>);
+      const out = await handleTool(taskId, workdir, block.name, block.input as Record<string, unknown>, extraEnv);
       if (out.touchedFile) filesTouched.add(out.touchedFile);
       if (out.finished) finished = out.finished;
       toolResultBlocks.push({
