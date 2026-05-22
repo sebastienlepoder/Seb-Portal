@@ -10,7 +10,7 @@ import {
 import { runAgent } from './claude-agent';
 import { runOrchestrator } from './orchestrator';
 import { logger } from './logger';
-import { getConnection, resolveSecret } from '../src/lib/onepassword';
+import { resolveProjectSecrets } from '../src/lib/onepassword';
 
 const DEFAULT_MODEL = process.env.WORKER_DEFAULT_MODEL || 'claude-sonnet-4-6';
 const TIMEOUT_MS = parseInt(process.env.WORKER_TIMEOUT_MS || '300000', 10) || 300000;
@@ -33,42 +33,17 @@ interface ExecuteParams {
   workerId: string;
 }
 
-/**
- * Resolve every ProjectSecretMapping for the project into a Record<envName, value>.
- * Values are NEVER logged — only names appear in TaskLog entries.
- */
-async function resolveProjectSecrets(
+// 1Password Connect-resolved secrets are passed only to spawned tools; they are never logged.
+async function loadProjectSecrets(
   taskId: string,
   projectId: string
 ): Promise<Record<string, string>> {
-  const mappings = await prisma.projectSecretMapping.findMany({ where: { projectId } });
-  if (mappings.length === 0) return {};
-  const conn = await getConnection();
-  if (!conn) {
-    await logger.warn(
-      taskId,
-      `Project has ${mappings.length} secret mapping(s) but no 1Password connection is configured — skipping`
-    );
-    return {};
+  const env = await resolveProjectSecrets(projectId);
+  const names = Object.keys(env);
+  if (names.length > 0) {
+    await logger.info(taskId, `Injected secrets from 1Password: ${names.join(', ')}`);
   }
-  const out: Record<string, string> = {};
-  const resolved: string[] = [];
-  const failed: string[] = [];
-  for (const m of mappings) {
-    try {
-      out[m.envName] = await resolveSecret(m.vaultId, m.itemId, m.fieldLabel);
-      resolved.push(m.envName);
-    } catch (e) {
-      failed.push(`${m.envName} (${(e as Error).message})`);
-    }
-  }
-  if (resolved.length > 0) {
-    await logger.info(taskId, `Injected secrets from 1Password: ${resolved.join(', ')}`);
-  }
-  if (failed.length > 0) {
-    await logger.warn(taskId, `Failed to resolve secrets: ${failed.join('; ')}`);
-  }
-  return out;
+  return env;
 }
 
 export async function executeTask({ taskId, workerId }: ExecuteParams): Promise<void> {
@@ -141,10 +116,8 @@ export async function executeTask({ taskId, workerId }: ExecuteParams): Promise<
       }
     }
 
-    // Resolve 1Password-backed secrets for this project. extraEnv is passed
-    // into the agent's run_bash child env so commands like `npm test` can
-    // see the API keys without us writing them to disk.
-    const extraEnv = await resolveProjectSecrets(taskId, project.id);
+    // 1Password Connect-resolved secrets are passed only to spawned tools; they are never logged.
+    const extraEnv = await loadProjectSecrets(taskId, project.id);
 
     const systemPrompt =
       agentProfile?.systemPrompt ??

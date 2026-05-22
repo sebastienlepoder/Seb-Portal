@@ -143,3 +143,38 @@ export async function resolveSecret(
   }
   return match.value;
 }
+
+/**
+ * Resolve every ProjectSecretMapping for a project into a Record<envName, value>.
+ * Failures on individual mappings are logged (without the value) and skipped so
+ * one broken field doesn't kill the whole task. Returns {} when no connection
+ * is configured or no mappings exist.
+ */
+export async function resolveProjectSecrets(
+  projectId: string
+): Promise<Record<string, string>> {
+  const mappings = await prisma.projectSecretMapping.findMany({
+    where: { projectId },
+    select: { envName: true, vaultId: true, itemId: true, fieldLabel: true },
+  });
+  if (mappings.length === 0) return {};
+  const conn = await getConnection();
+  if (!conn) {
+    console.error(
+      `[onepassword] resolveProjectSecrets: project ${projectId} has ${mappings.length} mapping(s) but no Connect server is configured`
+    );
+    return {};
+  }
+  const out: Record<string, string> = {};
+  for (const m of mappings) {
+    try {
+      out[m.envName] = await resolveSecret(m.vaultId, m.itemId, m.fieldLabel);
+    } catch (e) {
+      console.error(
+        `[onepassword] resolveProjectSecrets: failed to resolve ${m.envName} ` +
+          `(vault=${m.vaultId} item=${m.itemId} field=${m.fieldLabel}): ${(e as Error).message}`
+      );
+    }
+  }
+  return out;
+}
