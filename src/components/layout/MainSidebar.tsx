@@ -28,6 +28,7 @@ import {
   Briefcase,
   TrendingUp,
   Bot,
+  HelpCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -119,6 +120,12 @@ const NAV_GROUPS: NavGroup[] = [
         href: '/admin/reports',
         label: 'Reports',
         icon: <BarChart3 className="h-3.5 w-3.5" />,
+      },
+      {
+        href: '/manage/help',
+        label: 'Help',
+        icon: <HelpCircle className="h-3.5 w-3.5" />,
+        match: (p) => p.startsWith('/manage/help') || p.startsWith('/agents/help'),
       },
     ],
   },
