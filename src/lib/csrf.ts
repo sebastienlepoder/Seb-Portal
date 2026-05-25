@@ -1,7 +1,8 @@
 import { randomBytes, createHmac } from 'crypto';
 import { getSession } from './auth';
 
-const CSRF_SECRET = process.env.CSRF_SECRET || process.env.AUTH_SECRET || 'csrf-fallback-secret';
+if (!process.env.CSRF_SECRET) throw new Error('CSRF_SECRET env var is required');
+const CSRF_SECRET = process.env.CSRF_SECRET;
 
 export function generateCsrfToken(): string {
   const nonce = randomBytes(16).toString('hex');

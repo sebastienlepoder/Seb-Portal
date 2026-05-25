@@ -3,11 +3,14 @@ import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import type { SessionData, SessionUser } from '@/types';
 
+if (!process.env.AMONIS_API_TOKEN) throw new Error('AMONIS_API_TOKEN env var is required');
+if (!process.env.AUTH_SECRET) throw new Error('AUTH_SECRET env var is required');
+
 // API token for the Amonis worker daemon
-const AMONIS_API_TOKEN = process.env.AMONIS_API_TOKEN || 'amonis-claw-2026';
+const AMONIS_API_TOKEN = process.env.AMONIS_API_TOKEN;
 
 const SESSION_OPTIONS = {
-  password: process.env.AUTH_SECRET || 'CHANGE_ME_GENERATE_A_RANDOM_64_CHAR_HEX_STRING_AT_LEAST_32',
+  password: process.env.AUTH_SECRET,
   cookieName: 'lepoder_session',
   cookieOptions: {
     secure: process.env.SESSION_COOKIE_SECURE === 'true',

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSessionUser } from '@/lib/auth';
+import { requireApiAdmin } from '@/lib/auth';
 import prisma from '@/lib/db';
 
 const PORTAL_TODOS = [
@@ -18,56 +18,34 @@ const PORTAL_TODOS = [
   { title: "AI Chat Panel", description: "Embedded ChatGPT/Claude in portal", category: "Portal", priority: 0 },
 ];
 
-const SEED_SECRET = 'lepoder-seed-2026';
-
 export async function POST(req: NextRequest) {
+  let user;
   try {
-    const url = new URL(req.url);
-    const secret = url.searchParams.get('secret');
-    
-    let userId: string;
-    
-    if (secret === SEED_SECRET) {
-      // Find any admin user
-      const admin = await prisma.user.findFirst({
-        where: { OR: [{ role: 'admin' }, { role: 'Admin' }, { role: 'ADMIN' }] }
-      });
-      if (!admin) {
-        // List all users for debugging
-        const users = await prisma.user.findMany({ select: { id: true, email: true, role: true } });
-        return NextResponse.json({ 
-          ok: false, 
-          error: 'No admin user found',
-          users: users.map(u => ({ email: u.email, role: u.role }))
-        }, { status: 400 });
-      }
-      userId = admin.id;
-    } else {
-      const user = await getSessionUser();
-      if (!user || user.role?.toLowerCase() !== 'admin') {
-        return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
-      }
-      userId = user.id;
+    user = await requireApiAdmin();
+  } catch (error) {
+    if (error instanceof Error && error.message === 'FORBIDDEN') {
+      return NextResponse.json({ ok: false, error: 'Forbidden' }, { status: 403 });
     }
+    return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
+  }
 
-    // Check if already seeded
+  try {
     const existing = await prisma.todo.count({
-      where: { userId, category: 'Portal' }
+      where: { userId: user.id, category: 'Portal' },
     });
 
     if (existing > 0) {
-      return NextResponse.json({ 
-        ok: false, 
-        error: `Already have ${existing} Portal todos` 
+      return NextResponse.json({
+        ok: false,
+        error: `Already have ${existing} Portal todos`,
       }, { status: 400 });
     }
 
-    // Create todos one by one to catch errors
     let created = 0;
     for (const t of PORTAL_TODOS) {
       await prisma.todo.create({
         data: {
-          userId,
+          userId: user.id,
           title: t.title,
           description: t.description,
           category: t.category,
@@ -78,15 +56,12 @@ export async function POST(req: NextRequest) {
       created++;
     }
 
-    return NextResponse.json({ 
-      ok: true, 
-      message: `Created ${created} Portal todos` 
+    return NextResponse.json({
+      ok: true,
+      message: `Created ${created} Portal todos`,
     });
   } catch (error) {
     console.error('Seed error:', error);
-    return NextResponse.json({ 
-      ok: false, 
-      error: 'Seed failed: ' + (error instanceof Error ? error.message : String(error))
-    }, { status: 500 });
+    return NextResponse.json({ ok: false, error: 'Seed failed' }, { status: 500 });
   }
 }
