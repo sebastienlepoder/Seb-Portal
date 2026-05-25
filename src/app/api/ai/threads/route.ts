@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
+import { z } from 'zod';
 import { requireApiAuth } from '@/lib/auth';
+import { verifyCsrf } from '@/lib/csrf';
 import prisma from '@/lib/db';
 
 // GET /api/ai/threads — list current user's threads, newest first
@@ -42,6 +44,65 @@ export async function GET(request: Request) {
       return NextResponse.json({ ok: false, error: 'Not authenticated' }, { status: 401 });
     }
     console.error('[ai/threads] error:', e);
+    return NextResponse.json({ ok: false, error: 'Server error' }, { status: 500 });
+  }
+}
+
+const createSchema = z.object({
+  title: z.string().max(200).optional(),
+  provider: z.enum(['openai', 'anthropic']).default('anthropic'),
+});
+
+// POST /api/ai/threads — create an empty thread so the client can
+// render it in the sidebar before the first AI response arrives.
+export async function POST(request: Request) {
+  try {
+    const user = await requireApiAuth();
+    if (!(await verifyCsrf(request))) {
+      return NextResponse.json({ ok: false, error: 'CSRF' }, { status: 403 });
+    }
+    const parsed = createSchema.safeParse(await request.json().catch(() => ({})));
+    if (!parsed.success) {
+      return NextResponse.json(
+        { ok: false, error: 'Validation failed', details: parsed.error.flatten() },
+        { status: 400 }
+      );
+    }
+    const title = parsed.data.title?.trim().slice(0, 200) || null;
+    const thread = await prisma.aiThread.create({
+      data: {
+        userId: user.id,
+        provider: parsed.data.provider,
+        title,
+        messages: '[]',
+      },
+      select: {
+        id: true,
+        title: true,
+        provider: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+    return NextResponse.json(
+      {
+        ok: true,
+        data: {
+          id: thread.id,
+          title: thread.title,
+          provider: thread.provider,
+          messageCount: 0,
+          createdAt: thread.createdAt.toISOString(),
+          updatedAt: thread.updatedAt.toISOString(),
+        },
+      },
+      { status: 201 }
+    );
+  } catch (e) {
+    if ((e as Error).message === 'UNAUTHORIZED') {
+      return NextResponse.json({ ok: false, error: 'Not authenticated' }, { status: 401 });
+    }
+    console.error('[ai/threads] POST error:', e);
     return NextResponse.json({ ok: false, error: 'Server error' }, { status: 500 });
   }
 }
