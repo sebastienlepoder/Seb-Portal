@@ -8,6 +8,8 @@ import type { SessionUser } from '@/types';
 import prisma from '@/lib/db';
 import { dispatchTask, DispatchError } from '@/lib/agent-dispatch';
 import type { TaskPriority } from '@/types/agents';
+import { githubTools } from './github-tools';
+import { portalTools } from './portal-tools';
 
 export interface McpToolDef {
   name: string;
@@ -173,6 +175,11 @@ toolRegistry.push({
     }
   },
 });
+
+// ─── External tool modules ───────────────────────────────────
+
+for (const t of githubTools) toolRegistry.push(t);
+for (const t of portalTools) toolRegistry.push(t);
 
 // ─── Registry Functions ──────────────────────────────────────
 
