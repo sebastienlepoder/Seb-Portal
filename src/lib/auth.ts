@@ -3,14 +3,15 @@ import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import type { SessionData, SessionUser } from '@/types';
 
-if (!process.env.AMONIS_API_TOKEN) throw new Error('AMONIS_API_TOKEN env var is required');
-if (!process.env.AUTH_SECRET) throw new Error('AUTH_SECRET env var is required');
-
-// API token for the Amonis worker daemon
+// Secrets are validated at first use rather than module load so that
+// `next build` (which runs without runtime env vars) doesn't blow up while
+// collecting page data. At request time, a missing AMONIS_API_TOKEN means
+// bearer-token auth never matches, and a missing AUTH_SECRET causes
+// iron-session itself to reject every session call — both fail-closed.
 const AMONIS_API_TOKEN = process.env.AMONIS_API_TOKEN;
 
 const SESSION_OPTIONS = {
-  password: process.env.AUTH_SECRET,
+  password: process.env.AUTH_SECRET ?? '',
   cookieName: 'lepoder_session',
   cookieOptions: {
     secure: process.env.SESSION_COOKIE_SECURE === 'true',
@@ -74,7 +75,7 @@ export async function getApiUser(): Promise<SessionUser | null> {
   const authHeader = headersList.get('authorization');
   if (authHeader?.startsWith('Bearer ')) {
     const token = authHeader.slice(7);
-    if (token === AMONIS_API_TOKEN) {
+    if (AMONIS_API_TOKEN && token === AMONIS_API_TOKEN) {
       return { id: 'amonis-worker', email: 'worker@amonis.local', role: 'admin' };
     }
   }

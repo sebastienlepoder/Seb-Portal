@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { name, slug, description, repoUrl, icon, color, kind } = body;
+    const { name, slug, description, repoUrl, icon, color } = body;
 
     if (!name || !slug) {
       return NextResponse.json(
@@ -58,8 +58,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const normalizedKind = kind === 'physical' ? 'physical' : 'digital';
-
     const project = await prisma.project.create({
       data: {
         name,
@@ -68,7 +66,6 @@ export async function POST(req: NextRequest) {
         repoUrl,
         icon,
         color,
-        kind: normalizedKind,
       },
     });
 

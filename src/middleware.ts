@@ -4,8 +4,9 @@ import type { NextRequest } from 'next/server';
 // Protect all routes except login, API auth, and static assets
 const PUBLIC_PATHS = ['/login', '/api/auth/login', '/api/webhook/urgent', '/api/todos/debug', '/api/icons/serve', '/api/debug', '/api/amonis/tasks/pending', '/api/amonis/tasks/update', '/api/amonis/tasks/trigger', '/api/amonis/tasks/revert', '/api/amonis/agents/', '/_next', '/favicon.ico'];
 
-if (!process.env.AMONIS_API_TOKEN) throw new Error('AMONIS_API_TOKEN env var is required');
-// API token for Amonis worker daemon
+// API token for Amonis worker daemon. Must be set in the environment; if it's
+// missing, bearer-token auth simply never matches (fail-closed). The build
+// itself doesn't have env vars loaded, so we can't throw at module load.
 const AMONIS_API_TOKEN = process.env.AMONIS_API_TOKEN;
 
 export function middleware(request: NextRequest) {
@@ -28,7 +29,7 @@ export function middleware(request: NextRequest) {
 
   // Check for Bearer token auth (for Amonis worker)
   const authHeader = request.headers.get('authorization');
-  if (authHeader?.startsWith('Bearer ') && authHeader.slice(7) === AMONIS_API_TOKEN) {
+  if (AMONIS_API_TOKEN && authHeader?.startsWith('Bearer ') && authHeader.slice(7) === AMONIS_API_TOKEN) {
     return NextResponse.next();
   }
 
