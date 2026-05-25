@@ -82,8 +82,9 @@ export const webhookLimiter: RateLimitConfig = {
   windowSec: 60,
 };
 
-// Cleanup stale entries periodically
-setInterval(() => {
+// Cleanup stale entries periodically.
+// .unref() so the interval doesn't keep the Node process (or HMR worker) alive.
+const cleanupInterval = setInterval(() => {
   for (const storeName of Object.keys(stores)) {
     const store = stores[storeName]!;
     const now = Date.now();
@@ -93,3 +94,4 @@ setInterval(() => {
     }
   }
 }, 60_000);
+cleanupInterval.unref?.();

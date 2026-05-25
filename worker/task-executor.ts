@@ -10,7 +10,7 @@ import {
 import { runAgent } from './claude-agent';
 import { runOrchestrator } from './orchestrator';
 import { logger } from './logger';
-import { getConnection, resolveSecret } from '../src/lib/onepassword';
+import { resolveProjectSecrets } from '../src/lib/onepassword';
 
 const DEFAULT_MODEL = process.env.WORKER_DEFAULT_MODEL || 'claude-sonnet-4-6';
 const TIMEOUT_MS = parseInt(process.env.WORKER_TIMEOUT_MS || '300000', 10) || 300000;
@@ -33,42 +33,52 @@ interface ExecuteParams {
   workerId: string;
 }
 
-/**
- * Resolve every ProjectSecretMapping for the project into a Record<envName, value>.
- * Values are NEVER logged — only names appear in TaskLog entries.
- */
-async function resolveProjectSecrets(
+async function buildParentContextBlock(parentTaskId: string): Promise<string | null> {
+  const parent = await prisma.task.findUnique({
+    where: { id: parentTaskId },
+    include: { agentProfile: true, project: true },
+  });
+  if (!parent) return null;
+  const lines: string[] = [
+    '## Prior task context (this is a follow-up)',
+    '',
+    `**Original task title:** ${parent.title}`,
+    `**Status:** ${parent.status}`,
+  ];
+  if (parent.agentProfile) {
+    lines.push(`**Handled by:** ${parent.agentProfile.name} (${parent.agentProfile.slug})`);
+  }
+  if (parent.resultType) lines.push(`**Result type:** ${parent.resultType}`);
+  if (parent.resultUrl) lines.push(`**Result URL:** ${parent.resultUrl}`);
+  lines.push('', '### Original instructions', parent.description.trim());
+  if (parent.resultSummary?.trim()) {
+    lines.push('', '### What was done', parent.resultSummary.trim());
+  }
+  if (parent.errorMessage?.trim()) {
+    lines.push('', '### Error from prior run', parent.errorMessage.trim());
+  }
+  lines.push(
+    '',
+    '---',
+    '',
+    '## Follow-up task',
+    '',
+    'The user is asking you to continue from the prior task above. Read the relevant files first to understand the current state of the code before making changes.'
+  );
+  return lines.join('\n');
+}
+
+// 1Password Connect-resolved secrets are passed only to spawned tools; they are never logged.
+async function loadProjectSecrets(
   taskId: string,
   projectId: string
 ): Promise<Record<string, string>> {
-  const mappings = await prisma.projectSecretMapping.findMany({ where: { projectId } });
-  if (mappings.length === 0) return {};
-  const conn = await getConnection();
-  if (!conn) {
-    await logger.warn(
-      taskId,
-      `Project has ${mappings.length} secret mapping(s) but no 1Password connection is configured — skipping`
-    );
-    return {};
+  const env = await resolveProjectSecrets(projectId);
+  const names = Object.keys(env);
+  if (names.length > 0) {
+    await logger.info(taskId, `Injected secrets from 1Password: ${names.join(', ')}`);
   }
-  const out: Record<string, string> = {};
-  const resolved: string[] = [];
-  const failed: string[] = [];
-  for (const m of mappings) {
-    try {
-      out[m.envName] = await resolveSecret(m.vaultId, m.itemId, m.fieldLabel);
-      resolved.push(m.envName);
-    } catch (e) {
-      failed.push(`${m.envName} (${(e as Error).message})`);
-    }
-  }
-  if (resolved.length > 0) {
-    await logger.info(taskId, `Injected secrets from 1Password: ${resolved.join(', ')}`);
-  }
-  if (failed.length > 0) {
-    await logger.warn(taskId, `Failed to resolve secrets: ${failed.join('; ')}`);
-  }
-  return out;
+  return env;
 }
 
 export async function executeTask({ taskId, workerId }: ExecuteParams): Promise<void> {
@@ -141,10 +151,8 @@ export async function executeTask({ taskId, workerId }: ExecuteParams): Promise<
       }
     }
 
-    // Resolve 1Password-backed secrets for this project. extraEnv is passed
-    // into the agent's run_bash child env so commands like `npm test` can
-    // see the API keys without us writing them to disk.
-    const extraEnv = await resolveProjectSecrets(taskId, project.id);
+    // 1Password Connect-resolved secrets are passed only to spawned tools; they are never logged.
+    const extraEnv = await loadProjectSecrets(taskId, project.id);
 
     const systemPrompt =
       agentProfile?.systemPrompt ??
@@ -152,7 +160,7 @@ export async function executeTask({ taskId, workerId }: ExecuteParams): Promise<
 
     const isOrchestrator = agentProfile?.slug === 'orchestrator';
 
-    const userMessage = [
+    let userMessage = [
       `# Task: ${task.title}`,
       '',
       task.description,
@@ -167,6 +175,14 @@ export async function executeTask({ taskId, workerId }: ExecuteParams): Promise<
         ? 'Plan a sequence of sub-tasks for specialist agents. Each sub-task you dispatch shares this branch — its commits accumulate before the next sub-task runs. When you have nothing left to dispatch, call `finish` with a paragraph describing what each sub-task accomplished.'
         : 'Use the read_file / list_directory / run_bash / write_file tools to inspect and edit code, then call `finish` with a summary. Stay focused on the task above.',
     ].join('\n');
+
+    if (task.parentTaskId) {
+      const ctx = await buildParentContextBlock(task.parentTaskId);
+      if (ctx) {
+        userMessage = ctx + '\n\n' + userMessage;
+        await logger.info(taskId, `Follow-up of task ${task.parentTaskId} — prepended parent context`);
+      }
+    }
 
     let result: { ok: boolean; summary: string; filesTouched: string[]; error?: string };
     let subtaskIds: string[] = [];

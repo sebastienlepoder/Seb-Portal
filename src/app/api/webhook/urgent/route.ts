@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { checkRateLimit, webhookLimiter } from '@/lib/rate-limit';
 import { getClientIp } from '@/lib/audit';
+import { verifyCsrf } from '@/lib/csrf';
 import prisma from '@/lib/db';
 import type { UrgentItemPayload } from '@/types';
 
@@ -84,8 +85,26 @@ export async function GET(request: Request) {
 export async function PATCH(request: Request) {
   const { requireApiAuth } = await import('@/lib/auth');
   try {
-    await requireApiAuth();
+    const user = await requireApiAuth();
+
+    if (!(await verifyCsrf(request))) {
+      return NextResponse.json({ ok: false, error: 'CSRF' }, { status: 403 });
+    }
+
     const { id, done } = (await request.json()) as { id: string; done: boolean };
+
+    // Ownership: items with a userId may only be mutated by their owner.
+    // Shared items (userId=null, e.g. n8n webhook ingest) remain mutable by any user.
+    const item = await prisma.urgentItem.findUnique({
+      where: { id },
+      select: { userId: true },
+    });
+    if (!item) {
+      return NextResponse.json({ ok: false, error: 'Not found' }, { status: 404 });
+    }
+    if (item.userId && item.userId !== user.id) {
+      return NextResponse.json({ ok: false, error: 'Forbidden' }, { status: 403 });
+    }
 
     await prisma.urgentItem.update({
       where: { id },

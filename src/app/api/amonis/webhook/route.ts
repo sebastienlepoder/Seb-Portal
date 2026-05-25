@@ -52,15 +52,19 @@ export async function POST(request: Request) {
         }),
       });
 
-      // Log the trigger
-      await prisma.amonisAgentLog.create({
-        data: {
-          agentId: task.agentId!,
-          taskId: task.id,
-          type: 'info',
-          message: `Task triggered: ${action || 'work'}`,
-        },
-      });
+      // Log the trigger (agentId may be null if the task hasn't been assigned;
+      // in that case we skip the agent-scoped log since AmonisAgentLog requires one).
+      const agentId = task.agentId ?? null;
+      if (agentId) {
+        await prisma.amonisAgentLog.create({
+          data: {
+            agentId,
+            taskId: task.id,
+            type: 'info',
+            message: `Task triggered: ${action || 'work'}`,
+          },
+        });
+      }
 
       // Update task status to in_progress
       if (task.status === 'assigned' || task.status === 'pending') {

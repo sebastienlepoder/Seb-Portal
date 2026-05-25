@@ -2,10 +2,11 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 // Protect all routes except login, API auth, and static assets
-const PUBLIC_PATHS = ['/login', '/api/auth/login', '/api/webhook/urgent', '/api/todos/seed', '/api/todos/debug', '/api/icons/serve', '/api/debug', '/api/amonis/tasks/pending', '/api/amonis/tasks/update', '/api/amonis/tasks/trigger', '/api/amonis/tasks/revert', '/api/amonis/agents/', '/_next', '/favicon.ico'];
+const PUBLIC_PATHS = ['/login', '/api/auth/login', '/api/webhook/urgent', '/api/todos/debug', '/api/icons/serve', '/api/debug', '/api/amonis/tasks/pending', '/api/amonis/tasks/update', '/api/amonis/tasks/trigger', '/api/amonis/tasks/revert', '/api/amonis/agents/', '/_next', '/favicon.ico'];
 
+if (!process.env.AMONIS_API_TOKEN) throw new Error('AMONIS_API_TOKEN env var is required');
 // API token for Amonis worker daemon
-const AMONIS_API_TOKEN = process.env.AMONIS_API_TOKEN || 'amonis-claw-2026';
+const AMONIS_API_TOKEN = process.env.AMONIS_API_TOKEN;
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
