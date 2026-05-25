@@ -292,6 +292,43 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
     setPendingQuestion(null);
     setLastToolEvents([]);
 
+    let currentThreadId = threadId;
+
+    // Optimistically create a thread for new conversations so the sidebar
+    // entry appears before the AI response completes.
+    if (!currentThreadId) {
+      const placeholderTitle = text.trim().slice(0, 60) || 'New chat';
+      try {
+        const createRes = await fetch('/api/ai/threads', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
+          },
+          body: JSON.stringify({ title: placeholderTitle, provider }),
+        });
+        if (createRes.ok) {
+          const createData = await createRes.json();
+          if (createData.ok && createData.data?.id) {
+            const summary = createData.data as ThreadSummary;
+            currentThreadId = summary.id;
+            setThreadId(summary.id);
+            if (typeof window !== 'undefined') {
+              window.localStorage.setItem(STORAGE_KEY, summary.id);
+            }
+            const optimistic: ThreadSummary = {
+              ...summary,
+              messageCount: 1,
+              updatedAt: new Date().toISOString(),
+            };
+            setThreads((prev) => [optimistic, ...prev.filter((t) => t.id !== summary.id)]);
+          }
+        }
+      } catch {
+        // Silently fall back — the chat endpoint will create the thread server-side.
+      }
+    }
+
     try {
       const res = await fetch('/api/ai/chat', {
         method: 'POST',
@@ -302,13 +339,13 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
         body: JSON.stringify({
           provider,
           messages: [...messages, userMsg],
-          threadId,
+          threadId: currentThreadId,
         }),
       });
       const data = await res.json();
       if (data.ok) {
         setMessages((prev) => [...prev, { role: 'assistant', content: data.data.reply }]);
-        if (data.data.threadId && data.data.threadId !== threadId) {
+        if (data.data.threadId && data.data.threadId !== currentThreadId) {
           setThreadId(data.data.threadId);
           if (typeof window !== 'undefined') {
             window.localStorage.setItem(STORAGE_KEY, data.data.threadId);
