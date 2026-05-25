@@ -27,7 +27,7 @@ async function runClaudeAgent(
 
     const stream = anthropic.messages.stream({
       model: ANTHROPIC_MODELS.sonnet,
-      max_tokens: 8096,
+      max_tokens: 8192,
       system:
         systemPrompt ||
         'You are a software engineer working on a mobile finance app. Analyze the task and provide a detailed plan and implementation summary.',

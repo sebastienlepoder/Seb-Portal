@@ -1,19 +1,20 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/hooks/usePortal';
 import MainSidebar from '@/components/layout/MainSidebar';
-import { 
-  FolderGit2, 
-  Plus, 
-  ExternalLink,
+import {
+  FolderGit2,
+  Plus,
   GitBranch,
   Clock,
   CheckCircle2,
   PauseCircle,
-  Archive
+  Archive,
+  ListTodo,
 } from 'lucide-react';
 import Link from 'next/link';
+import { cn } from '@/lib/utils';
 
 interface Project {
   id: string;
@@ -27,6 +28,7 @@ interface Project {
   updatedAt: string;
   _count?: {
     sessions: number;
+    tasks?: number;
   };
 }
 
@@ -37,10 +39,21 @@ const statusConfig: Record<string, { icon: typeof CheckCircle2; color: string; l
   archived: { icon: Archive, color: 'text-gray-400', label: 'Archivé' },
 };
 
+type StatusFilter = 'all' | 'active' | 'paused' | 'completed' | 'archived';
+
+const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
+  { value: 'all', label: 'Tous' },
+  { value: 'active', label: 'Actif' },
+  { value: 'paused', label: 'En pause' },
+  { value: 'completed', label: 'Terminé' },
+  { value: 'archived', label: 'Archivé' },
+];
+
 export default function ProjectsPage() {
   const { user, loading } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(true);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
 
   useEffect(() => {
     if (!loading && !user) window.location.href = '/login';
@@ -64,6 +77,25 @@ export default function ProjectsPage() {
     });
   };
 
+  const filteredProjects = useMemo(() => {
+    if (statusFilter === 'all') return projects;
+    return projects.filter((p) => p.status === statusFilter);
+  }, [projects, statusFilter]);
+
+  const filterCounts = useMemo(() => {
+    const counts: Record<StatusFilter, number> = {
+      all: projects.length,
+      active: 0,
+      paused: 0,
+      completed: 0,
+      archived: 0,
+    };
+    for (const p of projects) {
+      if (p.status in counts) counts[p.status as StatusFilter]++;
+    }
+    return counts;
+  }, [projects]);
+
   if (loading || !user) {
     return (
       <div className="min-h-dvh flex items-center justify-center bg-portal-bg">
@@ -79,7 +111,7 @@ export default function ProjectsPage() {
       <div className="flex-1 overflow-y-auto p-6">
         <div className="max-w-6xl mx-auto">
           {/* Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center gap-4 mb-8">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-4 mb-6">
             <div className="pl-12 sm:pl-0 min-w-0">
               <h1 className="text-2xl font-bold text-portal-text flex items-center gap-2">
                 <FolderGit2 className="h-6 w-6 text-portal-accent" />
@@ -99,6 +131,37 @@ export default function ProjectsPage() {
             )}
           </div>
 
+          {/* Status filter chips */}
+          <div className="flex flex-wrap gap-2 mb-6">
+            {STATUS_FILTERS.map((f) => {
+              const active = statusFilter === f.value;
+              return (
+                <button
+                  key={f.value}
+                  type="button"
+                  onClick={() => setStatusFilter(f.value)}
+                  className={cn(
+                    'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs border transition-colors cursor-pointer',
+                    active
+                      ? 'bg-portal-accent/10 border-portal-accent/40 text-portal-accent'
+                      : 'bg-portal-card border-portal-border text-portal-muted hover:text-portal-text hover:border-portal-accent/30'
+                  )}
+                  aria-pressed={active}
+                >
+                  <span>{f.label}</span>
+                  <span
+                    className={cn(
+                      'px-1.5 py-0.5 rounded-full text-[10px]',
+                      active ? 'bg-portal-accent/20' : 'bg-portal-bg'
+                    )}
+                  >
+                    {filterCounts[f.value]}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
         {/* Projects Grid */}
         {loadingProjects ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -110,14 +173,18 @@ export default function ProjectsPage() {
               </div>
             ))}
           </div>
-        ) : projects.length === 0 ? (
+        ) : filteredProjects.length === 0 ? (
           <div className="bg-portal-card border border-portal-border rounded-xl p-12 text-center">
             <FolderGit2 className="h-12 w-12 text-portal-muted mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-portal-text mb-2">Aucun projet</h3>
+            <h3 className="text-lg font-medium text-portal-text mb-2">
+              {projects.length === 0 ? 'Aucun projet' : 'Aucun projet pour ce filtre'}
+            </h3>
             <p className="text-sm text-portal-muted mb-4">
-              Commencez par créer votre premier projet pour organiser votre documentation.
+              {projects.length === 0
+                ? 'Commencez par créer votre premier projet pour organiser votre documentation.'
+                : 'Essayez un autre filtre de statut.'}
             </p>
-            {user.role?.toLowerCase() === 'admin' && (
+            {projects.length === 0 && user.role?.toLowerCase() === 'admin' && (
               <Link
                 href="/projects/new"
                 className="inline-flex items-center gap-2 px-4 py-2 bg-portal-accent hover:bg-portal-accent-dark text-white rounded-lg transition-colors text-sm"
@@ -129,9 +196,10 @@ export default function ProjectsPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {projects.map(project => {
+            {filteredProjects.map(project => {
               const status = statusConfig[project.status] || statusConfig.active;
               const StatusIcon = status.icon;
+              const taskCount = project._count?.tasks ?? 0;
               
               return (
                 <Link
@@ -158,7 +226,7 @@ export default function ProjectsPage() {
                     </p>
                   )}
                   
-                  <div className="flex items-center gap-4 text-xs text-portal-muted">
+                  <div className="flex items-center gap-4 text-xs text-portal-muted flex-wrap">
                     {project.repoUrl && (
                       <span className="flex items-center gap-1">
                         <GitBranch className="h-3.5 w-3.5" />
@@ -171,6 +239,12 @@ export default function ProjectsPage() {
                     </span>
                     {project._count?.sessions && project._count.sessions > 0 && (
                       <span>{project._count.sessions} sessions</span>
+                    )}
+                    {taskCount > 0 && (
+                      <span className="flex items-center gap-1">
+                        <ListTodo className="h-3.5 w-3.5" />
+                        {taskCount} open task{taskCount === 1 ? '' : 's'}
+                      </span>
                     )}
                   </div>
                 </Link>
