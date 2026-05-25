@@ -29,6 +29,7 @@ import {
   TrendingUp,
   Bot,
   HelpCircle,
+  Bookmark,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -64,6 +65,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/mail', label: 'Mail', icon: <Mail className="h-3.5 w-3.5" /> },
       { href: '/todos', label: 'Todo List', icon: <CheckSquare className="h-3.5 w-3.5" /> },
       { href: '/onenote', label: 'OneNote', icon: <NotebookText className="h-3.5 w-3.5" /> },
+      { href: '/bookmarks', label: 'Bookmarks', icon: <Bookmark className="h-3.5 w-3.5" /> },
     ],
   },
   {
@@ -121,15 +123,16 @@ const NAV_GROUPS: NavGroup[] = [
         label: 'Reports',
         icon: <BarChart3 className="h-3.5 w-3.5" />,
       },
-      {
-        href: '/manage/help',
-        label: 'Help',
-        icon: <HelpCircle className="h-3.5 w-3.5" />,
-        match: (p) => p.startsWith('/manage/help') || p.startsWith('/agents/help'),
-      },
     ],
   },
 ];
+
+const HELP_ITEM: NavItem = {
+  href: '/manage/help',
+  label: 'Help',
+  icon: <HelpCircle className="h-3.5 w-3.5" />,
+  match: (p) => p.startsWith('/manage/help') || p.startsWith('/agents/help'),
+};
 
 const OPEN_GROUP_STORAGE_KEY = 'sidebar.openGroup';
 
@@ -331,6 +334,13 @@ export default function MainSidebar({ user, onLogout }: MainSidebarProps) {
             collapsed ? 'p-2 flex flex-col items-center' : 'p-3'
           )}
         >
+          <SidebarLink
+            collapsed={collapsed}
+            href={HELP_ITEM.href}
+            label={HELP_ITEM.label}
+            icon={HELP_ITEM.icon}
+            active={isItemActive(HELP_ITEM, pathname)}
+          />
           <SidebarLink
             collapsed={collapsed}
             href="/settings"

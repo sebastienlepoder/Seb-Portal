@@ -6,6 +6,8 @@ import path from 'path';
 
 const PROJECTS_DIR = process.env.PROJECTS_DIR || path.join(process.cwd(), 'projects');
 
+const SLUG_RE = /^[a-z0-9-]+$/;
+
 // GET - Read any markdown file content
 export async function GET(
   req: NextRequest,
@@ -18,6 +20,9 @@ export async function GET(
     }
 
     const { slug, filepath } = params;
+    if (!SLUG_RE.test(slug)) {
+      return NextResponse.json({ ok: false, error: 'invalid slug' }, { status: 400 });
+    }
     const relativePath = filepath.join('/');
     
     // Security: ensure path doesn't escape project dir

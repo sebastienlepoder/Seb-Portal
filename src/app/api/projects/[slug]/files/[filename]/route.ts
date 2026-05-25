@@ -9,6 +9,8 @@ const PROJECTS_DIR = process.env.PROJECTS_DIR || path.join(process.cwd(), 'proje
 // Allowed files to read/write
 const ALLOWED_FILES = ['README.md', 'CLAW-NOTES.md', 'CHANGELOG.md', 'SESSIONS.md'];
 
+const SLUG_RE = /^[a-z0-9-]+$/;
+
 // GET - Read file content
 export async function GET(
   req: NextRequest,
@@ -21,6 +23,9 @@ export async function GET(
     }
 
     const { slug, filename } = params;
+    if (!SLUG_RE.test(slug)) {
+      return NextResponse.json({ ok: false, error: 'invalid slug' }, { status: 400 });
+    }
     const decodedFilename = decodeURIComponent(filename);
 
     // Validate filename
@@ -91,6 +96,9 @@ export async function PUT(
     }
 
     const { slug, filename } = params;
+    if (!SLUG_RE.test(slug)) {
+      return NextResponse.json({ ok: false, error: 'invalid slug' }, { status: 400 });
+    }
     const decodedFilename = decodeURIComponent(filename);
 
     // Validate filename
