@@ -21,3 +21,6 @@ public/uploads/amonis/*
 
 # Worker workdir leakage guard
 tmp/
+
+# TypeScript incremental build artifact — regenerated on every build
+tsconfig.tsbuildinfo
