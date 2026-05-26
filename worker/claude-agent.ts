@@ -13,7 +13,11 @@ export interface AgentRunOptions {
   maxIterations: number;
   /** Hard timeout in ms for the entire agent run. */
   timeoutMs: number;
-  /** Extra env vars injected into child processes spawned by run_bash. Never logged. */
+  /**
+   * Project secrets resolved from 1Password. Accepted for API compatibility
+   * but intentionally NOT forwarded to the agent's `run_bash` shell — see
+   * `sanitizeShellEnv` below for the rationale.
+   */
   extraEnv?: Record<string, string>;
 }
 
@@ -22,6 +26,71 @@ export interface AgentRunResult {
   summary: string;
   filesTouched: string[];
   error?: string;
+}
+
+const RUN_BASH_TIMEOUT_MS = 60_000;
+
+/**
+ * Env keys that must never reach the agent's `/bin/sh -c` shell. The agent
+ * has write access to the workdir and `git add -A` runs unattended, so any
+ * variable in `process.env` can be exfiltrated via `env > leak.txt`.
+ *
+ * Includes:
+ *   - portal session / CSRF / API secrets
+ *   - the GitHub PAT used for clone+push (H2: also no longer in .git/config)
+ *   - LLM provider keys (the agent talks to Anthropic via the parent process,
+ *     it does not need its own key)
+ *   - 1Password Connect credentials
+ *   - admin/bootstrap credentials and DB URL
+ *   - third-party integration tokens that happen to be in the worker env
+ */
+const SENSITIVE_ENV_KEYS = new Set([
+  'AUTH_SECRET',
+  'CSRF_SECRET',
+  'AMONIS_API_TOKEN',
+  'AMONIS_WEBHOOK_SECRET',
+  'OPENCLAW_WEBHOOK_SECRET',
+  'WEBHOOK_AUTH_TOKEN',
+  'GITHUB_TOKEN',
+  'ANTHROPIC_API_KEY',
+  'OPENAI_API_KEY',
+  'ONEPASSWORD_ENCRYPTION_KEY',
+  'OP_CONNECT_TOKEN',
+  'OP_CONNECT_HOST',
+  'MCP_AUTH_TOKEN',
+  'ADMIN_PASSWORD',
+  'ADMIN_TOTP_SECRET',
+  'DATABASE_URL',
+  'MSFT_CLIENT_SECRET',
+  'SHOPIFY_ACCESS_TOKEN',
+  'HA_TOKEN',
+  'WEATHER_API_KEY',
+  'MARKET_DATA_API_KEY',
+  'SYNOLOGY_PASSWORD',
+  'GUACAMOLE_PASS',
+  'RUSTDESK_PUBLIC_KEY',
+]);
+
+const SENSITIVE_KEY_PATTERN = /(SECRET|TOKEN|PASSWORD|API_KEY|PRIVATE_KEY)/i;
+
+/**
+ * Build the env passed to the agent's `run_bash` shell. Both the explicit
+ * sensitive allowlist and a fuzzy `SECRET|TOKEN|…` regex are stripped, and
+ * `extraEnv` (1Password-resolved project secrets) is dropped entirely —
+ * if a future tool needs them, it should pass them via a dedicated channel
+ * (file mount, scoped run-test tool, etc.), never through the general-
+ * purpose shell.
+ */
+function sanitizeShellEnv(extraEnv?: Record<string, string>): NodeJS.ProcessEnv {
+  void extraEnv;
+  const env: Record<string, string> = {};
+  for (const [k, v] of Object.entries(process.env)) {
+    if (v === undefined) continue;
+    if (SENSITIVE_ENV_KEYS.has(k)) continue;
+    if (SENSITIVE_KEY_PATTERN.test(k)) continue;
+    env[k] = v;
+  }
+  return env as NodeJS.ProcessEnv;
 }
 
 /**
@@ -98,8 +167,7 @@ async function handleTool(
   taskId: string,
   workdir: string,
   name: string,
-  input: Record<string, unknown>,
-  extraEnv?: Record<string, string>
+  input: Record<string, unknown>
 ): Promise<{ result: string; touchedFile?: string; isError: boolean; finished?: { summary: string } }> {
   if (name === 'finish') {
     const summary = String(input.summary ?? '').trim() || 'Task complete.';
@@ -148,19 +216,17 @@ async function handleTool(
   if (name === 'run_bash') {
     const cmd = String(input.command ?? '').trim();
     if (!cmd) return { result: 'Error: empty command', isError: true };
-    // Run via /bin/sh -c so the model can use pipes/&&. We trust the model
-    // because it only has access to the cloned workdir; the worker container
-    // is the security boundary.
-    const childEnv =
-      extraEnv && Object.keys(extraEnv).length > 0
-        ? { ...process.env, ...extraEnv }
-        : process.env;
-    const res = await Promise.race([
-      run('/bin/sh', ['-c', cmd], { cwd: workdir, taskId, env: childEnv }),
-      new Promise<{ code: number; stdout: string; stderr: string }>((resolve) =>
-        setTimeout(() => resolve({ code: 124, stdout: '', stderr: 'timeout after 60s' }), 60000)
-      ),
-    ]);
+    // /bin/sh -c lets the model use pipes/&&. The workdir is the trust
+    // boundary: the env is scrubbed (sanitizeShellEnv) so no portal,
+    // GitHub, LLM, or 1Password secret is reachable from this shell, and
+    // `timeoutMs` is forwarded to `run` so a runaway child is killed
+    // (SIGTERM → SIGKILL) instead of leaking as a zombie.
+    const res = await run('/bin/sh', ['-c', cmd], {
+      cwd: workdir,
+      taskId,
+      env: sanitizeShellEnv(),
+      timeoutMs: RUN_BASH_TIMEOUT_MS,
+    });
     const tail = (s: string) => (s.length > 8000 ? '…' + s.slice(-8000) : s);
     return {
       result: `exit ${res.code}\n--- stdout ---\n${tail(res.stdout)}\n--- stderr ---\n${tail(res.stderr)}`,
@@ -171,7 +237,7 @@ async function handleTool(
 }
 
 export async function runAgent(opts: AgentRunOptions): Promise<AgentRunResult> {
-  const { taskId, workdir, systemPrompt, userMessage, model, maxIterations, timeoutMs, extraEnv } = opts;
+  const { taskId, workdir, systemPrompt, userMessage, model, maxIterations, timeoutMs } = opts;
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     return { ok: false, summary: '', filesTouched: [], error: 'ANTHROPIC_API_KEY not set' };
@@ -242,7 +308,7 @@ export async function runAgent(opts: AgentRunOptions): Promise<AgentRunResult> {
     let finished: { summary: string } | null = null;
     for (const block of resp.content) {
       if (block.type !== 'tool_use') continue;
-      const out = await handleTool(taskId, workdir, block.name, block.input as Record<string, unknown>, extraEnv);
+      const out = await handleTool(taskId, workdir, block.name, block.input as Record<string, unknown>);
       if (out.touchedFile) filesTouched.add(out.touchedFile);
       if (out.finished) finished = out.finished;
       toolResultBlocks.push({

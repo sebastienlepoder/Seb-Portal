@@ -269,7 +269,7 @@ export async function executeTask({ taskId, workerId }: ExecuteParams): Promise<
         }
       }
 
-      await pushBranch({ taskId, workdir: clone.workdir, branch: clone.workBranch });
+      await pushBranch({ taskId, workdir: clone.workdir, branch: clone.workBranch, token: githubToken });
 
       // Build a body that lists sub-task summaries for orchestrator runs.
       const subtaskBlock = isOrchestrator
