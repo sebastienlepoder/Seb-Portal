@@ -82,11 +82,32 @@ export function run(cmd: string, args: string[], opts: RunOptions): Promise<RunR
   });
 }
 
-function cloneUrl(owner: string, name: string, token: string | undefined): string {
-  if (token) {
-    return `https://x-access-token:${token}@github.com/${owner}/${name}.git`;
-  }
+function cloneUrl(owner: string, name: string): string {
   return `https://github.com/${owner}/${name}.git`;
+}
+
+/**
+ * Build a child-process env that authenticates git over HTTPS via
+ * `http.extraheader` instead of embedding the token in the remote URL.
+ *
+ * Why: a URL like `https://x-access-token:${token}@github.com/...` is
+ * persisted into the working tree's `.git/config` (e.g. by `git clone` or
+ * `git remote set-url`). For reused clone dirs that token then survives
+ * across tasks and is readable by the agent's `read_file` tool. Setting
+ * the auth header via `GIT_CONFIG_*` env vars keeps it process-scoped:
+ * never written to disk, never visible in argv / `ps`.
+ *
+ * Requires git ≥ 2.31 for the `GIT_CONFIG_COUNT`/`KEY_<n>`/`VALUE_<n>`
+ * env interface.
+ */
+function gitAuthEnv(token: string | undefined): NodeJS.ProcessEnv {
+  if (!token) return process.env;
+  return {
+    ...process.env,
+    GIT_CONFIG_COUNT: '1',
+    GIT_CONFIG_KEY_0: 'http.extraheader',
+    GIT_CONFIG_VALUE_0: `AUTHORIZATION: bearer ${token}`,
+  };
 }
 
 /**
@@ -141,6 +162,8 @@ export async function cloneRepo(params: {
     name,
     presetPath,
   });
+  const remoteUrl = cloneUrl(owner, name);
+  const authEnv = gitAuthEnv(token);
 
   // If the dir already has a checkout (preset path), do a fetch+checkout
   // instead of a fresh clone.
@@ -154,21 +177,23 @@ export async function cloneRepo(params: {
 
   if (isExisting) {
     await logger.info(taskId, `Reusing existing checkout at ${workdir}`);
-    const remoteUrl = cloneUrl(owner, name, token);
+    // Always reset the remote to the unauthenticated URL — if a previous
+    // version of this code (or anyone else) wrote a tokened URL into
+    // .git/config, this scrubs it.
     await run('git', ['remote', 'set-url', 'origin', remoteUrl], { cwd: workdir, taskId });
     const fetchRes = await run('git', ['fetch', 'origin', baseBranch], {
       cwd: workdir,
       taskId,
+      env: authEnv,
     });
     if (fetchRes.code !== 0) throw new Error(`git fetch failed: ${fetchRes.stderr}`);
     await run('git', ['reset', '--hard', `origin/${baseBranch}`], { cwd: workdir, taskId });
   } else {
     await logger.info(taskId, `Cloning ${owner}/${name} (branch ${baseBranch}) into ${workdir}`);
-    const url = cloneUrl(owner, name, token);
     const cloneRes = await run(
       'git',
-      ['clone', '--depth', '1', '--branch', baseBranch, url, workdir],
-      { taskId }
+      ['clone', '--depth', '1', '--branch', baseBranch, remoteUrl, workdir],
+      { taskId, env: authEnv }
     );
     if (cloneRes.code !== 0) {
       throw new Error(`git clone failed: ${cloneRes.stderr || 'unknown error'}`);
@@ -320,9 +345,14 @@ export async function pushBranch(params: {
   taskId: string;
   workdir: string;
   branch: string;
+  token?: string;
 }): Promise<void> {
-  const { taskId, workdir, branch } = params;
-  const res = await run('git', ['push', '-u', 'origin', branch], { cwd: workdir, taskId });
+  const { taskId, workdir, branch, token } = params;
+  const res = await run('git', ['push', '-u', 'origin', branch], {
+    cwd: workdir,
+    taskId,
+    env: gitAuthEnv(token),
+  });
   if (res.code !== 0) throw new Error(`git push failed: ${res.stderr}`);
 }
 
