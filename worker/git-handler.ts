@@ -87,47 +87,22 @@ function cloneUrl(owner: string, name: string): string {
 }
 
 /**
- * Tokened clone URL used only for the initial `git clone`. The token is
- * scrubbed from `.git/config` immediately after via `git remote set-url`.
+ * Remote URL with the GitHub token embedded for HTTPS auth. Used for clone,
+ * fetch, push, and `git remote set-url` so headless git operations succeed
+ * without a credential helper or a TTY prompt.
  *
- * We embed credentials directly because the `GIT_CONFIG_*` extraheader path
- * is unreliable for clones across git versions / Alpine builds and surfaces
- * as "No such device or address" against private repos. Subsequent
- * fetch/push reuse the (more secure) extraheader env-var approach.
+ * The token persists in the checkout's `.git/config` until the next time
+ * we call this (with a fresh token) or set the remote back to the
+ * unauthenticated URL. Callers must keep clone dirs unreadable by other
+ * users (workdirs live under WORKER_CLONES_DIR inside the worker container).
  */
-function tokenedCloneUrl(owner: string, name: string, token: string): string {
-  return `https://x-access-token:${encodeURIComponent(token)}@github.com/${owner}/${name}.git`;
+function authedRemoteUrl(owner: string, name: string, token: string): string {
+  return `https://${token}@github.com/${owner}/${name}.git`;
 }
 
 function redactToken(text: string, token: string | undefined): string {
   if (!token || !text) return text;
-  // Cover the raw token and the URL-encoded form
-  const enc = encodeURIComponent(token);
-  return text.split(token).join('***').split(enc).join('***');
-}
-
-/**
- * Build a child-process env that authenticates git over HTTPS via
- * `http.extraheader` instead of embedding the token in the remote URL.
- *
- * Why: a URL like `https://x-access-token:${token}@github.com/...` is
- * persisted into the working tree's `.git/config` (e.g. by `git clone` or
- * `git remote set-url`). For reused clone dirs that token then survives
- * across tasks and is readable by the agent's `read_file` tool. Setting
- * the auth header via `GIT_CONFIG_*` env vars keeps it process-scoped:
- * never written to disk, never visible in argv / `ps`.
- *
- * Requires git ≥ 2.31 for the `GIT_CONFIG_COUNT`/`KEY_<n>`/`VALUE_<n>`
- * env interface.
- */
-function gitAuthEnv(token: string | undefined): NodeJS.ProcessEnv {
-  if (!token) return process.env;
-  return {
-    ...process.env,
-    GIT_CONFIG_COUNT: '1',
-    GIT_CONFIG_KEY_0: 'http.extraheader',
-    GIT_CONFIG_VALUE_0: `AUTHORIZATION: bearer ${token}`,
-  };
+  return text.split(token).join('***');
 }
 
 /**
@@ -182,8 +157,11 @@ export async function cloneRepo(params: {
     name,
     presetPath,
   });
-  const remoteUrl = cloneUrl(owner, name);
-  const authEnv = gitAuthEnv(token);
+  // Embed the token directly in the remote URL — headless git in the
+  // worker container has no TTY and no credential helper, so this is the
+  // most reliable way to authenticate clone / fetch / push. The tokened
+  // URL is stored in `.git/config` for the lifetime of the checkout.
+  const remoteUrl = token ? authedRemoteUrl(owner, name, token) : cloneUrl(owner, name);
 
   // If the dir already has a checkout (preset path), do a fetch+checkout
   // instead of a fresh clone.
@@ -197,50 +175,37 @@ export async function cloneRepo(params: {
 
   if (isExisting) {
     await logger.info(taskId, `Reusing existing checkout at ${workdir}`);
-    // Always reset the remote to the unauthenticated URL — if a previous
-    // version of this code (or anyone else) wrote a tokened URL into
-    // .git/config, this scrubs it.
-    await run('git', ['remote', 'set-url', 'origin', remoteUrl], { cwd: workdir, taskId });
+    // Overwrite the remote with the (possibly fresh) tokened URL so this
+    // task's token is used rather than whatever was cached from a prior run.
+    const setUrlRes = await run(
+      'git',
+      ['remote', 'set-url', 'origin', remoteUrl],
+      { cwd: workdir, taskId, log: false },
+    );
+    if (setUrlRes.code !== 0) {
+      throw new Error(
+        `git remote set-url failed: ${redactToken(setUrlRes.stderr, token)}`,
+      );
+    }
     const fetchRes = await run('git', ['fetch', 'origin', baseBranch], {
       cwd: workdir,
       taskId,
-      env: authEnv,
     });
-    if (fetchRes.code !== 0) throw new Error(`git fetch failed: ${fetchRes.stderr}`);
+    if (fetchRes.code !== 0) {
+      throw new Error(`git fetch failed: ${redactToken(fetchRes.stderr, token)}`);
+    }
     await run('git', ['reset', '--hard', `origin/${baseBranch}`], { cwd: workdir, taskId });
   } else {
     await logger.info(taskId, `Cloning ${owner}/${name} (branch ${baseBranch}) into ${workdir}`);
-    // Initial clone: embed the token in the URL so authentication is reliable
-    // across git versions. We pass `-c credential.helper=` to make sure no
-    // system credential helper caches the value, and `log: false` so the
-    // tokened URL never lands in TaskLog. The token is overwritten in
-    // .git/config below via `git remote set-url`.
-    const cloneRemote = token ? tokenedCloneUrl(owner, name, token) : remoteUrl;
+    // `log: false` so the tokened URL in argv is not echoed into TaskLog.
     const cloneRes = await run(
       'git',
-      [
-        '-c', 'credential.helper=',
-        'clone', '--depth', '1', '--branch', baseBranch, cloneRemote, workdir,
-      ],
-      { taskId, log: false }
+      ['clone', '--depth', '1', '--branch', baseBranch, remoteUrl, workdir],
+      { taskId, log: false },
     );
     if (cloneRes.code !== 0) {
       const stderr = redactToken(cloneRes.stderr, token);
       throw new Error(`git clone failed: ${stderr || 'unknown error'}`);
-    }
-    // Scrub the token from .git/config — subsequent fetches/pushes use the
-    // extraheader env-var approach in gitAuthEnv() instead.
-    if (token) {
-      const scrubRes = await run(
-        'git',
-        ['remote', 'set-url', 'origin', remoteUrl],
-        { cwd: workdir, taskId, log: false },
-      );
-      if (scrubRes.code !== 0) {
-        throw new Error(
-          `failed to scrub token from .git/config: ${redactToken(scrubRes.stderr, token)}`,
-        );
-      }
     }
   }
 
@@ -392,12 +357,16 @@ export async function pushBranch(params: {
   token?: string;
 }): Promise<void> {
   const { taskId, workdir, branch, token } = params;
+  // The remote URL was set with the token embedded in cloneRepo(), so a
+  // plain `git push` authenticates without needing GIT_ASKPASS or a
+  // credential helper.
   const res = await run('git', ['push', '-u', 'origin', branch], {
     cwd: workdir,
     taskId,
-    env: gitAuthEnv(token),
   });
-  if (res.code !== 0) throw new Error(`git push failed: ${res.stderr}`);
+  if (res.code !== 0) {
+    throw new Error(`git push failed: ${redactToken(res.stderr, token)}`);
+  }
 }
 
 export interface OpenPullRequestResult {
