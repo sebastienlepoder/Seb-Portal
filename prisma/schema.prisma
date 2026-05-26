@@ -24,6 +24,7 @@ model User {
   favorites        Favorite[]
   notes            AiNote[]
   aiThreads        AiThread[]
+  aiMemories       AiMemory[]
   bookmarks        Bookmark[]
   auditLogs        AuditLog[]
   clickEvents      ClickEvent[]
@@ -178,6 +179,25 @@ model AiThread {
   updatedAt DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ─── AI Assistant Memory ─────────────────────────────────────
+// Key/value scratchpad the AI assistant reads & writes via MCP
+// tools (read_memory / write_memory). Scoped per user.
+
+model AiMemory {
+  id        String   @id @default(uuid())
+  userId    String
+  key       String
+  type      String   @default("general") // user|project|feedback|reference|general
+  value     String   // free-form text payload
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, key])
+  @@index([userId, type])
 }
 
 // ─── Bookmarks (imported) ────────────────────────────────────
