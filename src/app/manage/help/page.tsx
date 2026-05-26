@@ -481,7 +481,7 @@ npm run worker`}</code></pre>
                 </ul>
                 <p>
                   Agent runs are bounded by <code>WORKER_TIMEOUT_MS</code> (default 5 min) and{' '}
-                  <code>WORKER_MAX_ITERATIONS</code> (default 40 tool-loop iterations).
+                  <code>WORKER_MAX_TURNS</code> (default 100 Claude Agent SDK turns).
                 </p>
               </Section>
 
@@ -513,9 +513,24 @@ npm run worker`}</code></pre>
                     DB) as the portal. In Docker, both services use{' '}
                     <code>file:/app/data/portal.db</code> via the shared volume.
                   </li>
+                </ul>
+                <h3>Worker — Claude auth (one of)</h3>
+                <ul>
                   <li>
-                    <code>ANTHROPIC_API_KEY</code> — your Claude API key. Without it tasks fail
-                    immediately.
+                    <strong>Claude Max OAuth (recommended).</strong> Run <code>claude login</code>{' '}
+                    once on a machine with a browser, then copy{' '}
+                    <code>~/.claude/.credentials.json</code> into{' '}
+                    <code>CLAUDE_CREDS_DIR</code> (default{' '}
+                    <code>/data/coolify/lepoder-portal/claude-creds</code>). The worker
+                    mounts it read-only at <code>/home/nextjs/.claude</code> and uses your
+                    Max subscription instead of paying per-token.
+                  </li>
+                  <li>
+                    <strong>API key fallback.</strong> Set <code>ANTHROPIC_API_KEY</code> (and
+                    optionally <code>ANTHROPIC_BASE_URL</code>) — the SDK uses these when no
+                    OAuth credentials are mounted. Note: proxies that wrap requests in a
+                    Claude Code SDK session (Meridian etc.) won&apos;t work with the worker&apos;s
+                    long agent loops.
                   </li>
                 </ul>
                 <h3>Worker — recommended</h3>
@@ -524,17 +539,13 @@ npm run worker`}</code></pre>
                     <code>GITHUB_TOKEN</code> — required to clone private repos and to open PRs.
                     Needs <code>repo</code> scope.
                   </li>
-                  <li>
-                    <code>ANTHROPIC_BASE_URL</code> — optional, point at a self-hosted
-                    Anthropic-compatible proxy (Meridian etc.).
-                  </li>
                 </ul>
                 <h3>Worker — tunables</h3>
                 <ul>
                   <li><code>WORKER_ID</code> — unique id (default <code>hostname-pid</code>)</li>
                   <li><code>WORKER_POLL_INTERVAL_MS</code> — default <code>5000</code></li>
                   <li><code>WORKER_TIMEOUT_MS</code> — per-task hard cap, default <code>300000</code></li>
-                  <li><code>WORKER_MAX_ITERATIONS</code> — agent tool-loop budget, default <code>40</code></li>
+                  <li><code>WORKER_MAX_TURNS</code> — Claude Agent SDK turn budget per subagent, default <code>100</code></li>
                   <li><code>WORKER_CONCURRENCY</code> — simultaneous tasks per worker, default <code>1</code></li>
                   <li><code>WORKER_DEFAULT_MODEL</code> — fallback when an agent has no model override, default <code>claude-sonnet-4-6</code></li>
                 </ul>

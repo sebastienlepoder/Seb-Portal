@@ -14,7 +14,6 @@ import { resolveProjectSecrets } from '../src/lib/onepassword';
 
 const DEFAULT_MODEL = process.env.WORKER_DEFAULT_MODEL || 'claude-sonnet-4-6';
 const TIMEOUT_MS = parseInt(process.env.WORKER_TIMEOUT_MS || '300000', 10) || 300000;
-const MAX_ITERATIONS = parseInt(process.env.WORKER_MAX_ITERATIONS || '40', 10) || 40;
 const NPM_INSTALL_TIMEOUT_MS =
   parseInt(process.env.WORKER_NPM_INSTALL_TIMEOUT_MS || '300000', 10) || 300000;
 const SKIP_NPM_INSTALL =
@@ -25,8 +24,6 @@ const SKIP_NPM_INSTALL =
 const ORCHESTRATOR_TIMEOUT_MS =
   parseInt(process.env.MAESTRO_TIMEOUT_MS || String(TIMEOUT_MS * 4), 10) ||
   TIMEOUT_MS * 4;
-const ORCHESTRATOR_MAX_ITERATIONS =
-  parseInt(process.env.MAESTRO_MAX_ITERATIONS || '30', 10) || 30;
 
 interface ExecuteParams {
   taskId: string;
@@ -172,8 +169,8 @@ export async function executeTask({ taskId, workerId }: ExecuteParams): Promise<
       `Write access: ${project.allowWrite && githubToken ? 'enabled — your changes will be committed' : 'disabled — produce a summary only, no commits will be made'}`,
       '',
       isOrchestrator
-        ? 'Plan a sequence of sub-tasks for specialist agents. Each sub-task you dispatch shares this branch — its commits accumulate before the next sub-task runs. When you have nothing left to dispatch, call `finish` with a paragraph describing what each sub-task accomplished.'
-        : 'Use the read_file / list_directory / run_bash / write_file tools to inspect and edit code, then call `finish` with a summary. Stay focused on the task above.',
+        ? 'Plan a sequence of sub-tasks for specialist agents using the `list_agents` and `dispatch_subtask` MCP tools. Each sub-task shares this branch — its commits accumulate before the next runs. When you have nothing left to dispatch, produce a final paragraph describing what each sub-task accomplished and stop.'
+        : 'Use the Read / LS / Glob / Grep / Edit / Write / Bash tools to inspect and edit code, then produce a short final summary. Stay focused on the task above.',
     ].join('\n');
 
     if (task.parentTaskId) {
@@ -190,7 +187,7 @@ export async function executeTask({ taskId, workerId }: ExecuteParams): Promise<
     if (isOrchestrator) {
       await logger.info(
         taskId,
-        `Starting Orchestrator loop (timeout ${Math.round(ORCHESTRATOR_TIMEOUT_MS / 1000)}s, max iterations ${ORCHESTRATOR_MAX_ITERATIONS})…`
+        `Starting Orchestrator loop (timeout ${Math.round(ORCHESTRATOR_TIMEOUT_MS / 1000)}s)…`,
       );
       const orch = await runOrchestrator({
         parentTaskId: taskId,
@@ -199,11 +196,9 @@ export async function executeTask({ taskId, workerId }: ExecuteParams): Promise<
         systemPrompt,
         userMessage,
         model: agentProfile?.model || DEFAULT_MODEL,
-        maxIterations: ORCHESTRATOR_MAX_ITERATIONS,
         timeoutMs: ORCHESTRATOR_TIMEOUT_MS,
         defaultSubagentModel: DEFAULT_MODEL,
         subagentTimeoutMs: TIMEOUT_MS,
-        subagentMaxIterations: MAX_ITERATIONS,
         extraEnv,
       });
       subtaskIds = orch.subtaskIds;
@@ -221,7 +216,6 @@ export async function executeTask({ taskId, workerId }: ExecuteParams): Promise<
         systemPrompt,
         userMessage,
         model: agentProfile?.model || DEFAULT_MODEL,
-        maxIterations: MAX_ITERATIONS,
         timeoutMs: TIMEOUT_MS,
         extraEnv,
       });

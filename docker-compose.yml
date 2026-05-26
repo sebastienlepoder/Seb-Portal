@@ -103,6 +103,11 @@ services:
       - ${PORTAL_DATA_VOLUME:-/data/coolify/lepoder-portal}:/app/data
       # Persistent clones (so subsequent runs reuse fetches)
       - portal-worker-clones:/app/worker-clones
+      # Claude Agent SDK reads $HOME/.claude/.credentials.json (populated by
+      # `claude login` on a host with a browser). Bootstrap once and the
+      # worker uses your Max subscription instead of paying API tokens.
+      # Override the host side via CLAUDE_CREDS_DIR.
+      - ${CLAUDE_CREDS_DIR:-/data/coolify/lepoder-portal/claude-creds}:/home/nextjs/.claude:ro
     env_file:
       - .env
     environment:
@@ -117,15 +122,17 @@ services:
       #   WORKER_ID                  — unique id (default hostname-pid)
       #   WORKER_POLL_INTERVAL_MS    — default 5000
       #   WORKER_TIMEOUT_MS          — default 300000 (5 min) per-task hard cap
-      #   WORKER_MAX_ITERATIONS      — default 40 tool-loop budget
+      #   WORKER_MAX_TURNS           — default 100 (Claude Agent SDK turn budget)
       #   WORKER_CONCURRENCY         — default 1 simultaneous task
       #   WORKER_DEFAULT_MODEL       — default claude-sonnet-4-6
       #   WORKER_NPM_INSTALL_TIMEOUT_MS — default 300000
       #   WORKER_SKIP_NPM_INSTALL    — default false
       #   MAESTRO_TIMEOUT_MS         — default 4 × WORKER_TIMEOUT_MS
-      #   MAESTRO_MAX_ITERATIONS     — default 30
+      #   MAESTRO_MAX_TURNS          — default 60
       #   MAESTRO_MAX_SUBTASKS       — default 5
-      #   ANTHROPIC_API_KEY, ANTHROPIC_BASE_URL, GITHUB_TOKEN
+      #   GITHUB_TOKEN               — PAT for clone/push
+      #   ANTHROPIC_API_KEY          — only used as fallback when no Max OAuth
+      #                                credentials are mounted at /home/nextjs/.claude
     command: sh -lc "npx tsx worker/index.ts"
 
 volumes:
