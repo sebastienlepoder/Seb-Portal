@@ -55,7 +55,10 @@ export async function PUT(
     }
 
     const body = await req.json();
-    const { name, description, repoUrl, status, icon, color } = body;
+    const { name, description, repoUrl, status, icon, color, kind } = body;
+
+    const normalizedKind =
+      kind === 'digital' || kind === 'physical' ? kind : undefined;
 
     const project = await prisma.project.update({
       where: { slug: params.slug },
@@ -66,6 +69,7 @@ export async function PUT(
         ...(status && { status }),
         ...(icon !== undefined && { icon }),
         ...(color !== undefined && { color }),
+        ...(normalizedKind && { kind: normalizedKind }),
       },
     });
 
