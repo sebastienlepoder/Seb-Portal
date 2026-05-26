@@ -6,7 +6,25 @@ import { auditLog, getClientIp } from '@/lib/audit';
 import prisma from '@/lib/db';
 import { getAnthropicClient, ANTHROPIC_MODELS } from '@/lib/anthropic';
 import { dispatchTask, DispatchError } from '@/lib/agent-dispatch';
-import type { TaskPriority } from '@/types/agents';
+import { toTaskDTO, toTaskLogDTO } from '@/lib/agents';
+import {
+  GithubError,
+  getCommit,
+  getFileContent,
+  getPullRequest,
+  getRepoInfo,
+  listBranches,
+  listCommits,
+  listDirectory,
+  listPullRequests,
+  resolveProjectRepo,
+} from '@/lib/github';
+import {
+  isTaskPriority,
+  isTaskStatus,
+  type TaskPriority,
+  type TaskStatus,
+} from '@/types/agents';
 import type { AiProvider, AiMessage, SessionUser } from '@/types';
 
 // ─── Tool definitions ────────────────────────────────────────
@@ -64,9 +82,221 @@ const CHAT_TOOLS = [
       required: ['question', 'options'],
     },
   },
+  {
+    name: 'list_tasks',
+    description:
+      'List dispatched tasks across all projects. Use this to audit recent work, find a specific task, or review the queue. Filter by status, project, agent, or priority. Returns summary fields per task — call get_task for full details + logs.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        status: {
+          type: 'string',
+          description:
+            'Comma-separated statuses: pending, queued, in_progress, needs_review, completed, failed, cancelled. Omit for all.',
+        },
+        project: {
+          type: 'string',
+          description: 'Project slug or name to filter to a single project.',
+        },
+        agent: {
+          type: 'string',
+          description: 'Agent slug, id, or role substring to filter by agent.',
+        },
+        priority: {
+          type: 'string',
+          enum: ['low', 'normal', 'high', 'urgent'],
+        },
+        limit: {
+          type: 'number',
+          description: 'Max tasks to return (default 30, max 200).',
+        },
+      },
+      required: [] as string[],
+    },
+  },
+  {
+    name: 'get_task',
+    description:
+      'Get full details for a single task by id, including description, status, result summary/URL, error message, and the most recent logs. Use this after list_tasks to inspect a specific task.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        task_id: { type: 'string', description: 'Task UUID' },
+        include_logs: {
+          type: 'boolean',
+          description: 'Include task logs (default true). Set false to save tokens.',
+        },
+        log_limit: {
+          type: 'number',
+          description: 'Max log entries to include (default 50, max 500).',
+        },
+      },
+      required: ['task_id'],
+    },
+  },
+  {
+    name: 'github_get_repo',
+    description:
+      'Get GitHub repo metadata (default branch, language, topics, visibility, last pushed) for a project. Pass either project (slug/name — preferred) or owner + repo explicitly.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        project: { type: 'string', description: 'Portal project slug or name' },
+        owner: { type: 'string', description: 'GitHub owner (overrides project lookup)' },
+        repo: { type: 'string', description: 'GitHub repo (overrides project lookup)' },
+      },
+      required: [] as string[],
+    },
+  },
+  {
+    name: 'github_list_branches',
+    description: 'List branches on a project repo.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        project: { type: 'string' },
+        owner: { type: 'string' },
+        repo: { type: 'string' },
+        limit: { type: 'number', description: 'Max 100, default 30' },
+      },
+      required: [] as string[],
+    },
+  },
+  {
+    name: 'github_list_commits',
+    description:
+      'List recent commits on a branch (defaults to the project working branch / repo default). Optionally filter by file path.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        project: { type: 'string' },
+        owner: { type: 'string' },
+        repo: { type: 'string' },
+        branch: { type: 'string', description: 'Branch or commit SHA. Omit for default.' },
+        path: { type: 'string', description: 'Only commits touching this path.' },
+        limit: { type: 'number', description: 'Max 100, default 20' },
+      },
+      required: [] as string[],
+    },
+  },
+  {
+    name: 'github_get_commit',
+    description: 'Get a single commit with file change list (filename, status, additions, deletions).',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        project: { type: 'string' },
+        owner: { type: 'string' },
+        repo: { type: 'string' },
+        sha: { type: 'string', description: 'Commit SHA (full or short)' },
+      },
+      required: ['sha'],
+    },
+  },
+  {
+    name: 'github_list_pull_requests',
+    description: 'List pull requests for a project repo.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        project: { type: 'string' },
+        owner: { type: 'string' },
+        repo: { type: 'string' },
+        state: {
+          type: 'string',
+          enum: ['open', 'closed', 'all'],
+          description: 'Default "all".',
+        },
+        limit: { type: 'number', description: 'Max 100, default 20' },
+      },
+      required: [] as string[],
+    },
+  },
+  {
+    name: 'github_get_pull_request',
+    description:
+      'Get a single pull request with body, merge state, and the list of changed files. Use this to verify whether a dispatched task actually changed what it claimed.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        project: { type: 'string' },
+        owner: { type: 'string' },
+        repo: { type: 'string' },
+        number: { type: 'number', description: 'PR number' },
+      },
+      required: ['number'],
+    },
+  },
+  {
+    name: 'github_get_file',
+    description:
+      'Read a file from a repo at the given ref (branch, tag, or commit SHA). Defaults to the project working branch. Large files are truncated to 200 KB.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        project: { type: 'string' },
+        owner: { type: 'string' },
+        repo: { type: 'string' },
+        path: { type: 'string', description: 'File path within the repo' },
+        ref: { type: 'string', description: 'Branch, tag, or commit SHA. Omit for default.' },
+      },
+      required: ['path'],
+    },
+  },
+  {
+    name: 'github_list_directory',
+    description: 'List entries (files + subdirs) in a repo directory at the given ref.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        project: { type: 'string' },
+        owner: { type: 'string' },
+        repo: { type: 'string' },
+        path: { type: 'string', description: 'Directory path. Omit or "" for repo root.' },
+        ref: { type: 'string', description: 'Branch, tag, or commit SHA. Omit for default.' },
+      },
+      required: [] as string[],
+    },
+  },
 ] satisfies Anthropic.Tool[];
 
 // ─── Tool executors ──────────────────────────────────────────
+
+interface RepoCoordsInput {
+  project?: unknown;
+  owner?: unknown;
+  repo?: unknown;
+}
+
+async function resolveCoords(
+  input: RepoCoordsInput
+): Promise<{ owner: string; repo: string; defaultBranch: string }> {
+  const owner = typeof input.owner === 'string' ? input.owner.trim() : '';
+  const repo = typeof input.repo === 'string' ? input.repo.trim() : '';
+  if (owner && repo) return { owner, repo, defaultBranch: 'main' };
+  const project = typeof input.project === 'string' ? input.project.trim() : '';
+  if (!project) {
+    throw new GithubError(400, 'Must provide either project (slug/name) or owner + repo');
+  }
+  return resolveProjectRepo(project);
+}
+
+function summarizeTask(t: ReturnType<typeof toTaskDTO>) {
+  return {
+    id: t.id,
+    title: t.title,
+    status: t.status,
+    priority: t.priority,
+    project: t.project.slug,
+    agent: t.agentProfile?.slug ?? null,
+    parentTaskId: t.parentTaskId,
+    resultType: t.resultType,
+    resultUrl: t.resultUrl,
+    createdAt: t.createdAt,
+    completedAt: t.completedAt,
+    errorMessage: t.errorMessage,
+  };
+}
 
 async function executeTool(
   name: string,
@@ -139,35 +369,250 @@ async function executeTool(
     }
   }
 
+  if (name === 'list_tasks') {
+    const where: {
+      status?: TaskStatus | { in: TaskStatus[] };
+      projectId?: string;
+      agentProfileId?: string;
+      priority?: TaskPriority;
+    } = {};
+
+    const statusParam = typeof input.status === 'string' ? input.status : '';
+    if (statusParam) {
+      const parts = statusParam.split(',').map((s) => s.trim()).filter(isTaskStatus);
+      if (parts.length === 1) where.status = parts[0];
+      else if (parts.length > 1) where.status = { in: parts };
+    }
+    if (typeof input.priority === 'string' && isTaskPriority(input.priority)) {
+      where.priority = input.priority;
+    }
+    if (typeof input.project === 'string' && input.project.trim()) {
+      const q = input.project.trim().toLowerCase();
+      const project =
+        (await prisma.project.findUnique({ where: { slug: q } })) ??
+        (await prisma.project.findFirst({
+          where: {
+            OR: [{ slug: { contains: q } }, { name: { contains: input.project as string } }],
+          },
+        }));
+      if (!project) {
+        return JSON.stringify({ error: `No project matches "${input.project}"` });
+      }
+      where.projectId = project.id;
+    }
+    if (typeof input.agent === 'string' && input.agent.trim()) {
+      const q = input.agent.trim().toLowerCase();
+      const agent =
+        (await prisma.agentProfile.findUnique({ where: { slug: q } })) ??
+        (await prisma.agentProfile.findUnique({ where: { id: q } }).catch(() => null)) ??
+        (await prisma.agentProfile.findFirst({ where: { role: { contains: q } } }));
+      if (!agent) {
+        return JSON.stringify({ error: `No agent matches "${input.agent}"` });
+      }
+      where.agentProfileId = agent.id;
+    }
+
+    const limit = Math.min(Math.max(Number(input.limit) || 30, 1), 200);
+    const tasks = await prisma.task.findMany({
+      where,
+      include: { project: true, agentProfile: true, parent: { select: { title: true } } },
+      orderBy: [{ createdAt: 'desc' }],
+      take: limit,
+    });
+    return JSON.stringify({
+      count: tasks.length,
+      tasks: tasks.map(toTaskDTO).map(summarizeTask),
+    });
+  }
+
+  if (name === 'get_task') {
+    const taskId = typeof input.task_id === 'string' ? input.task_id : '';
+    if (!taskId) return JSON.stringify({ error: 'task_id required' });
+    const includeLogs = input.include_logs !== false;
+    const logLimit = Math.min(Math.max(Number(input.log_limit) || 50, 1), 500);
+    const task = await prisma.task.findUnique({
+      where: { id: taskId },
+      include: {
+        project: true,
+        agentProfile: true,
+        parent: { select: { title: true } },
+        logs: includeLogs
+          ? { orderBy: { createdAt: 'desc' }, take: logLimit }
+          : false,
+        attachments: { select: { id: true, filename: true, mimeType: true, byteSize: true } },
+      },
+    });
+    if (!task) return JSON.stringify({ error: 'Not found' });
+    const { logs, attachments, ...rest } = task;
+    return JSON.stringify({
+      ...toTaskDTO(rest),
+      logs: logs ? logs.reverse().map(toTaskLogDTO) : undefined,
+      attachments,
+    });
+  }
+
+  if (name === 'github_get_repo') {
+    try {
+      const coords = await resolveCoords(input);
+      const info = await getRepoInfo(coords.owner, coords.repo);
+      return JSON.stringify(info);
+    } catch (e) {
+      return githubErrorJson(e);
+    }
+  }
+
+  if (name === 'github_list_branches') {
+    try {
+      const coords = await resolveCoords(input);
+      const limit = Math.min(Math.max(Number(input.limit) || 30, 1), 100);
+      const branches = await listBranches(coords.owner, coords.repo, limit);
+      return JSON.stringify({ branches });
+    } catch (e) {
+      return githubErrorJson(e);
+    }
+  }
+
+  if (name === 'github_list_commits') {
+    try {
+      const coords = await resolveCoords(input);
+      const limit = Math.min(Math.max(Number(input.limit) || 20, 1), 100);
+      const branch =
+        typeof input.branch === 'string' && input.branch.trim()
+          ? input.branch.trim()
+          : coords.defaultBranch;
+      const path = typeof input.path === 'string' && input.path.trim() ? input.path.trim() : undefined;
+      const commits = await listCommits(coords.owner, coords.repo, {
+        branch,
+        path,
+        perPage: limit,
+      });
+      return JSON.stringify({ branch, commits });
+    } catch (e) {
+      return githubErrorJson(e);
+    }
+  }
+
+  if (name === 'github_get_commit') {
+    try {
+      const coords = await resolveCoords(input);
+      const sha = typeof input.sha === 'string' ? input.sha.trim() : '';
+      if (!sha) return JSON.stringify({ error: 'sha required' });
+      const commit = await getCommit(coords.owner, coords.repo, sha);
+      return JSON.stringify(commit);
+    } catch (e) {
+      return githubErrorJson(e);
+    }
+  }
+
+  if (name === 'github_list_pull_requests') {
+    try {
+      const coords = await resolveCoords(input);
+      const state = (typeof input.state === 'string' ? input.state : 'all') as
+        | 'open'
+        | 'closed'
+        | 'all';
+      const limit = Math.min(Math.max(Number(input.limit) || 20, 1), 100);
+      const prs = await listPullRequests(coords.owner, coords.repo, { state, perPage: limit });
+      return JSON.stringify({ pullRequests: prs });
+    } catch (e) {
+      return githubErrorJson(e);
+    }
+  }
+
+  if (name === 'github_get_pull_request') {
+    try {
+      const coords = await resolveCoords(input);
+      const number = Number(input.number);
+      if (!Number.isFinite(number) || number <= 0) {
+        return JSON.stringify({ error: 'number required (positive integer)' });
+      }
+      const pr = await getPullRequest(coords.owner, coords.repo, number);
+      return JSON.stringify(pr);
+    } catch (e) {
+      return githubErrorJson(e);
+    }
+  }
+
+  if (name === 'github_get_file') {
+    try {
+      const coords = await resolveCoords(input);
+      const path = typeof input.path === 'string' ? input.path.trim() : '';
+      if (!path) return JSON.stringify({ error: 'path required' });
+      const ref =
+        typeof input.ref === 'string' && input.ref.trim() ? input.ref.trim() : coords.defaultBranch;
+      const file = await getFileContent(coords.owner, coords.repo, path, ref);
+      return JSON.stringify(file);
+    } catch (e) {
+      return githubErrorJson(e);
+    }
+  }
+
+  if (name === 'github_list_directory') {
+    try {
+      const coords = await resolveCoords(input);
+      const path = typeof input.path === 'string' ? input.path.trim() : '';
+      const ref =
+        typeof input.ref === 'string' && input.ref.trim() ? input.ref.trim() : coords.defaultBranch;
+      const entries = await listDirectory(coords.owner, coords.repo, path, ref);
+      return JSON.stringify({ path: path || '/', ref, entries });
+    } catch (e) {
+      return githubErrorJson(e);
+    }
+  }
+
   return JSON.stringify({ error: `Unknown tool: ${name}` });
+}
+
+function githubErrorJson(e: unknown): string {
+  if (e instanceof GithubError) {
+    return JSON.stringify({ error: e.message, status: e.status });
+  }
+  return JSON.stringify({ error: (e as Error).message });
 }
 
 // ─── System prompt ───────────────────────────────────────────
 
 function buildSystemPrompt(): string {
   return [
-    'You are the LEPODER Portal AI assistant. You help the operator (Sebastien) manage projects, agents, and dispatched tasks.',
+    'You are the LEPODER Portal AI assistant. You help the operator (Sebastien) manage projects, agents, dispatched tasks, and review the GitHub repositories those tasks operate on.',
     '',
-    'You have four tools:',
+    'Project & agent tools:',
     '- `list_projects` — see available projects and their write permissions',
     '- `list_agents` — see available agents and their expertise',
     '- `dispatch_to_project` — create a task for a project\'s agent worker',
     '- `ask_user_question` — ask a clarifying question with 2-4 options',
     '',
+    'Task history tools (use these to audit and verify completed work):',
+    '- `list_tasks` — list tasks with filters (status, project, agent, priority)',
+    '- `get_task` — full details + logs for a single task',
+    '',
+    'GitHub inspection tools (use these to verify a task actually changed what it claimed):',
+    '- `github_get_repo` — repo metadata',
+    '- `github_list_branches` — branches',
+    '- `github_list_commits` — recent commits (optionally on a branch / path)',
+    '- `github_get_commit` — single commit with file changes',
+    '- `github_list_pull_requests` — open/closed/all PRs',
+    '- `github_get_pull_request` — single PR with body + changed files',
+    '- `github_get_file` — file contents at a ref',
+    '- `github_list_directory` — directory listing at a ref',
+    '',
+    'For GitHub tools, prefer passing `project` (the portal slug) — the owner/repo/default-branch are resolved automatically. Only pass `owner`+`repo` for repos that aren\'t registered as portal projects.',
+    '',
+    'Auditing a completed task:',
+    '1. `get_task` to read the description, resultType, resultUrl, resultSummary.',
+    '2. If resultType is "pr", `github_get_pull_request` with the PR number from resultUrl to see what files changed.',
+    '3. If resultType is "commit", `github_get_commit` with the sha to see what changed.',
+    '4. Spot-check a file with `github_get_file` if you need to verify the implementation.',
+    '5. Report: did the task description match what was actually shipped?',
+    '',
     'Guidelines for dispatching tasks:',
     '- If the user clearly names a project + describes work, dispatch immediately. Do not ask redundant questions.',
-    '- If the project name is ambiguous (matches multiple, or none precisely), use `list_projects` first, then either pick the obvious match or ask via `ask_user_question`.',
-    '- If you need to pick an agent and the task type is non-obvious from keywords, use `list_agents` to see expertise tags.',
-    '- Default priority is "normal". Only use "high" or "urgent" if the user explicitly asks.',
-    '- After a successful dispatch, tell the user the task ID and the link to track it (/agents?taskId=...).',
-    '- If a project is read-only (allowWrite=false), warn the user that the agent will produce a summary only, not a commit. Don\'t refuse — many users dispatch summaries intentionally.',
+    '- If the project name is ambiguous, use `list_projects` first.',
+    '- Default priority is "normal".',
+    '- After a successful dispatch, tell the user the task ID and /agents?taskId=... link.',
     '',
-    'Guidelines for `ask_user_question`:',
-    '- Use sparingly. Only when genuinely ambiguous.',
-    '- Phrase the question concisely. Provide 2-4 short options.',
-    '- After the user picks, continue with what you were doing.',
-    '',
-    'For non-dispatch questions, just answer normally — you don\'t need to use tools.',
+    'Guidelines for `ask_user_question`: use sparingly, only when genuinely ambiguous.',
+    'For non-tool questions, just answer normally.',
   ].join('\n');
 }
 
@@ -314,7 +759,7 @@ export async function POST(request: Request) {
         }
       }
 
-      const MAX_ITERS = 8;
+      const MAX_ITERS = 12;
       let finalText = '';
       let askedQuestion: { question: string; options: string[] } | null = null;
 
