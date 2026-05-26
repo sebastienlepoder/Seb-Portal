@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { useAuth } from '@/hooks/usePortal';
 import MainSidebar from '@/components/layout/MainSidebar';
 import { cn, formatRelativeTime, extractPastedImages } from '@/lib/utils';
@@ -11,8 +11,10 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  Copy,
   CornerDownRight,
   ExternalLink,
+  FileText,
   GitMerge,
   HelpCircle,
   Loader2,
@@ -20,9 +22,12 @@ import {
   RotateCcw,
   Send,
   Settings,
+  Sparkles,
   StopCircle,
+  Terminal,
   Trash2,
   X,
+  Zap,
 } from 'lucide-react';
 import Link from 'next/link';
 import type {
@@ -1005,6 +1010,8 @@ function DispatcherModal({
   );
 }
 
+type DetailTab = 'task' | 'output' | 'logs' | 'actions';
+
 function TaskDetailModal({
   taskId,
   detail,
@@ -1028,6 +1035,10 @@ function TaskDetailModal({
   const [activeAction, setActiveAction] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<DetailTab>('task');
+  const [autoSwitched, setAutoSwitched] = useState(false);
+  const [copyOk, setCopyOk] = useState(false);
+  const logsScrollRef = useRef<HTMLDivElement>(null);
 
   async function callPatch(body: Record<string, unknown>): Promise<boolean> {
     setBusy(true);
@@ -1099,6 +1110,30 @@ function TaskDetailModal({
     detail?.status === 'failed' || detail?.status === 'cancelled';
   const showMergeAndReview =
     isNeedsReview && !isMerged && detail?.resultType === 'pr';
+  const hasOutput = !!(detail?.resultSummary || detail?.resultUrl || detail?.errorMessage);
+
+  // Auto-switch to Output tab when the task completes with output — but only
+  // if the user hasn't navigated away from the default Task tab yet.
+  useEffect(() => {
+    if (autoSwitched) return;
+    if (!detail) return;
+    if (activeTab !== 'task') {
+      setAutoSwitched(true);
+      return;
+    }
+    if (isTerminal && hasOutput) {
+      setActiveTab('output');
+      setAutoSwitched(true);
+    }
+  }, [detail, isTerminal, hasOutput, activeTab, autoSwitched]);
+
+  // Auto-scroll logs to the bottom when new log lines arrive on the Logs tab.
+  useEffect(() => {
+    if (activeTab !== 'logs') return;
+    const el = logsScrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [activeTab, detail?.logs.length]);
 
   async function handleMarkReviewed() {
     const ok = await callPatch({ action: 'mark_reviewed' });
@@ -1127,67 +1162,158 @@ function TaskDetailModal({
     if (ok) onClose();
   }
 
-  return (
-    <ModalShell onClose={onClose} title={detail?.title ?? 'Loading task…'} wide>
-      {!detail ? (
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="h-5 w-5 animate-spin text-portal-accent" />
+  async function handleCopyOutput() {
+    if (!detail?.resultSummary) return;
+    try {
+      await navigator.clipboard.writeText(detail.resultSummary);
+      setCopyOk(true);
+      setTimeout(() => setCopyOk(false), 1500);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const tabs: Array<{ id: DetailTab; label: string; icon: typeof FileText }> = [
+    { id: 'task', label: 'Task', icon: FileText },
+    { id: 'output', label: 'Output', icon: Sparkles },
+    { id: 'logs', label: 'Logs', icon: Terminal },
+    { id: 'actions', label: 'Actions', icon: Zap },
+  ];
+
+  const tabBar = (
+    <div
+      role="tablist"
+      aria-label="Task detail sections"
+      className="flex items-center gap-0 px-2 border-b border-portal-border bg-portal-card"
+    >
+      {tabs.map((t) => {
+        const Icon = t.icon;
+        const active = activeTab === t.id;
+        return (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            aria-controls={`task-detail-panel-${t.id}`}
+            id={`task-detail-tab-${t.id}`}
+            onClick={() => {
+              setActiveTab(t.id);
+              setAutoSwitched(true);
+            }}
+            className={cn(
+              'flex items-center gap-1.5 px-3 py-2 text-xs border-b-2 -mb-px transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent rounded-t-sm',
+              active
+                ? 'text-portal-accent border-portal-accent'
+                : 'text-portal-muted border-transparent hover:text-portal-text'
+            )}
+          >
+            <Icon className="h-3.5 w-3.5" />
+            {t.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+
+  // ---- Tab panels ----
+
+  const taskPanel = detail && (
+    <div
+      role="tabpanel"
+      id="task-detail-panel-task"
+      aria-labelledby="task-detail-tab-task"
+      className="space-y-4"
+    >
+      <div className="flex items-center gap-2 flex-wrap">
+        <span
+          className={cn(
+            'text-[10px] rounded-full px-2 py-0.5 border',
+            STATUS_CLASS[detail.status]
+          )}
+        >
+          {STATUS_LABEL[detail.status]}
+        </span>
+        <span className={cn('text-[10px] font-medium', PRIORITY_CLASS[detail.priority])}>
+          {detail.priority} priority
+        </span>
+        <span className="text-xs text-portal-muted">
+          {detail.project.icon ?? '📦'} {detail.project.name}
+        </span>
+        {detail.agentProfile && (
+          <span className="text-xs text-portal-muted">
+            · {detail.agentProfile.name} ({detail.agentProfile.role})
+          </span>
+        )}
+      </div>
+
+      <div>
+        <h3 className="text-xs uppercase tracking-wider text-portal-muted mb-1">
+          Instructions
+        </h3>
+        <div className="bg-portal-bg border border-portal-border rounded-md p-3 text-sm text-portal-text whitespace-pre-wrap">
+          {detail.description}
+        </div>
+      </div>
+
+      {detail.attachments && detail.attachments.length > 0 && (
+        <div>
+          <h3 className="text-xs uppercase tracking-wider text-portal-muted mb-1">
+            Attachments
+          </h3>
+          <div className="flex flex-wrap gap-2">
+            {detail.attachments.map((att) => (
+              <a
+                key={att.id}
+                href={att.dataUri}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={att.filename ?? 'Task screenshot'}
+                className="block h-16 w-16 rounded-md overflow-hidden bg-portal-bg border border-portal-border hover:border-portal-accent/50 transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={att.dataUri}
+                  alt={att.filename ?? 'Task screenshot'}
+                  className="h-full w-full object-cover"
+                />
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  const outputPanel = detail && (
+    <div
+      role="tabpanel"
+      id="task-detail-panel-output"
+      aria-labelledby="task-detail-tab-output"
+      className="space-y-4"
+    >
+      {!hasOutput ? (
+        <div className="flex flex-col items-center justify-center text-center py-10 text-portal-muted">
+          {isInFlight ? (
+            <>
+              <Loader2 className="h-5 w-5 animate-spin text-portal-accent mb-2" />
+              <div className="text-sm text-portal-text">Worker is still running…</div>
+              <div className="text-xs mt-1">Output will appear here when the task finishes.</div>
+            </>
+          ) : (
+            <>
+              <Sparkles className="h-5 w-5 mb-2 text-portal-muted" />
+              <div className="text-sm">No output yet.</div>
+              <div className="text-xs mt-1">
+                {isTerminal
+                  ? 'This task ended without producing a result summary.'
+                  : 'Output will appear here when the task finishes.'}
+              </div>
+            </>
+          )}
         </div>
       ) : (
-        <div className="space-y-4">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span
-              className={cn(
-                'text-[10px] rounded-full px-2 py-0.5 border',
-                STATUS_CLASS[detail.status]
-              )}
-            >
-              {STATUS_LABEL[detail.status]}
-            </span>
-            <span className={cn('text-[10px] font-medium', PRIORITY_CLASS[detail.priority])}>
-              {detail.priority} priority
-            </span>
-            <span className="text-xs text-portal-muted">
-              {detail.project.icon ?? '📦'} {detail.project.name}
-            </span>
-            {detail.agentProfile && (
-              <span className="text-xs text-portal-muted">
-                · {detail.agentProfile.name} ({detail.agentProfile.role})
-              </span>
-            )}
-          </div>
-
-          <div className="bg-portal-bg border border-portal-border rounded-md p-3 text-sm text-portal-text whitespace-pre-wrap">
-            {detail.description}
-          </div>
-
-          {detail.attachments && detail.attachments.length > 0 && (
-            <div>
-              <h3 className="text-xs uppercase tracking-wider text-portal-muted mb-1">
-                Attachments
-              </h3>
-              <div className="flex flex-wrap gap-2">
-                {detail.attachments.map((att) => (
-                  <a
-                    key={att.id}
-                    href={att.dataUri}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title={att.filename ?? 'Task screenshot'}
-                    className="block h-16 w-16 rounded-md overflow-hidden bg-portal-bg border border-portal-border hover:border-portal-accent/50 transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={att.dataUri}
-                      alt={att.filename ?? 'Task screenshot'}
-                      className="h-full w-full object-cover"
-                    />
-                  </a>
-                ))}
-              </div>
-            </div>
-          )}
-
+        <>
           {detail.resultUrl && (
             <a
               href={detail.resultUrl}
@@ -1205,169 +1331,299 @@ function TaskDetailModal({
           )}
 
           {detail.resultSummary && (
-            <div className="bg-green-500/5 border border-green-500/20 rounded-md p-3 text-sm text-portal-text whitespace-pre-wrap">
-              {detail.resultSummary}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="text-xs uppercase tracking-wider text-portal-muted">
+                  Result summary
+                </h3>
+                <button
+                  type="button"
+                  onClick={handleCopyOutput}
+                  className="flex items-center gap-1 text-[11px] text-portal-muted hover:text-portal-text transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent rounded px-1.5 py-0.5"
+                  aria-label="Copy result summary"
+                  title="Copy result summary"
+                >
+                  {copyOk ? (
+                    <>
+                      <Check className="h-3 w-3 text-green-300" />
+                      Copied
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-3 w-3" />
+                      Copy
+                    </>
+                  )}
+                </button>
+              </div>
+              <div className="bg-green-500/5 border border-green-500/20 rounded-md p-3 text-sm text-portal-text whitespace-pre-wrap">
+                {detail.resultSummary}
+              </div>
             </div>
           )}
 
           {detail.errorMessage && (
-            <div className="bg-red-500/10 border border-red-500/30 rounded-md p-3 text-sm text-red-300 whitespace-pre-wrap">
-              <strong>Error:</strong> {detail.errorMessage}
+            <div>
+              <h3 className="text-xs uppercase tracking-wider text-portal-muted mb-1">
+                Error
+              </h3>
+              <div className="bg-red-500/10 border border-red-500/30 rounded-md p-3 text-sm text-red-300 whitespace-pre-wrap">
+                {detail.errorMessage}
+              </div>
             </div>
           )}
+        </>
+      )}
+    </div>
+  );
 
-          {/* Logs */}
-          <div>
-            <h3 className="text-xs uppercase tracking-wider text-portal-muted mb-1">Logs</h3>
-            <div className="bg-black/40 border border-portal-border rounded-md p-2 max-h-72 overflow-y-auto font-mono text-[11px]">
-              {detail.logs.length === 0 ? (
-                <div className="text-portal-muted">No logs yet.</div>
-              ) : (
-                detail.logs.map((l) => (
-                  <div
-                    key={l.id}
-                    className={cn(
-                      'whitespace-pre-wrap',
-                      l.level === 'error'
-                        ? 'text-red-300'
-                        : l.level === 'warn'
-                          ? 'text-yellow-300'
-                          : l.level === 'stderr'
-                            ? 'text-orange-300'
-                            : 'text-portal-text'
-                    )}
-                  >
-                    <span className="text-portal-muted">
-                      [{new Date(l.createdAt).toLocaleTimeString()}]
-                    </span>{' '}
-                    {l.message}
-                  </div>
-                ))
+  const logsPanel = detail && (
+    <div
+      role="tabpanel"
+      id="task-detail-panel-logs"
+      aria-labelledby="task-detail-tab-logs"
+      className="space-y-2"
+    >
+      <div className="flex items-center justify-between">
+        <h3 className="text-xs uppercase tracking-wider text-portal-muted">
+          Streaming logs
+        </h3>
+        {isInFlight && (
+          <span className="flex items-center gap-1 text-[11px] text-yellow-300">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            Live
+          </span>
+        )}
+      </div>
+      <div
+        ref={logsScrollRef}
+        className="bg-black/40 border border-portal-border rounded-md p-2 h-[55vh] overflow-y-auto font-mono text-[11px]"
+      >
+        {detail.logs.length === 0 ? (
+          <div className="text-portal-muted">No logs yet.</div>
+        ) : (
+          detail.logs.map((l) => (
+            <div
+              key={l.id}
+              className={cn(
+                'whitespace-pre-wrap',
+                l.level === 'error'
+                  ? 'text-red-300'
+                  : l.level === 'warn'
+                    ? 'text-yellow-300'
+                    : l.level === 'stderr'
+                      ? 'text-orange-300'
+                      : 'text-portal-text'
               )}
+            >
+              <span className="text-portal-muted">
+                [{new Date(l.createdAt).toLocaleTimeString()}]
+              </span>{' '}
+              {l.message}
             </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+
+  const hasAnyAction =
+    !!detail &&
+    (isNeedsReview ||
+      !isTerminal ||
+      (isTerminal && (canRetask || true)) || // delete + follow-up always available on terminal
+      !!detail.resultUrl ||
+      !!detail.resultSummary);
+
+  const actionsPanel = detail && (
+    <div
+      role="tabpanel"
+      id="task-detail-panel-actions"
+      aria-labelledby="task-detail-tab-actions"
+      className="space-y-3"
+    >
+      {/* Review helper banner */}
+      {isNeedsReview && (
+        <div className="bg-portal-accent/5 border border-portal-accent/20 rounded-md px-3 py-2 text-xs text-portal-text">
+          {isMerged
+            ? 'PR already merged — confirm the change is good to close out this task.'
+            : detail.resultType === 'pr'
+              ? "Worker opened a PR. Review it on GitHub, then merge it here when you're happy."
+              : 'Summary-only result — no merge needed. Review and close out the task.'}
+        </div>
+      )}
+
+      {!hasAnyAction ? (
+        <div className="flex flex-col items-center justify-center text-center py-10 text-portal-muted">
+          <Zap className="h-5 w-5 mb-2 text-portal-muted" />
+          <div className="text-sm">No actions available yet.</div>
+          <div className="text-xs mt-1">
+            Actions appear once the task is dispatched or finishes.
           </div>
-
-          {error && (
-            <div className="bg-red-500/10 border border-red-500/30 text-red-300 text-xs rounded-md px-3 py-2">
-              {error}
-            </div>
-          )}
-
-          {/* Review helper banner */}
-          {isNeedsReview && (
-            <div className="bg-portal-accent/5 border border-portal-accent/20 rounded-md px-3 py-2 text-xs text-portal-text">
-              {isMerged
-                ? 'PR already merged — confirm the change is good to close out this task.'
-                : detail.resultType === 'pr'
-                  ? "Worker opened a PR. Review it on GitHub, then merge it here when you're happy."
-                  : 'Summary-only result — no merge needed. Review and close out the task.'}
-            </div>
-          )}
-
-          {/* Action row */}
-          <div className="flex items-center gap-2 pt-2 border-t border-portal-border">
-            {isNeedsReview ? (
-              <>
-                {showMergeAndReview ? (
-                  <button
-                    onClick={handleMergeAndReview}
-                    disabled={busy}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-portal-accent hover:bg-portal-accent/80 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-md text-xs transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
-                  >
-                    {busy && activeAction === 'merge_and_review' ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <GitMerge className="h-3.5 w-3.5" />
-                    )}
-                    Merge &amp; mark reviewed
-                  </button>
-                ) : (
-                  <button
-                    onClick={handleMarkReviewed}
-                    disabled={busy}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-green-500/20 border border-green-500/40 text-green-200 hover:bg-green-500/30 disabled:opacity-50 disabled:cursor-not-allowed rounded-md text-xs transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-green-400"
-                  >
-                    {busy && activeAction === 'mark_reviewed' ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <Check className="h-3.5 w-3.5" />
-                    )}
-                    Mark as reviewed
-                  </button>
-                )}
+        </div>
+      ) : (
+        <div className="flex items-center gap-2 flex-wrap">
+          {isNeedsReview ? (
+            <>
+              {showMergeAndReview ? (
                 <button
-                  onClick={handleUndo}
+                  onClick={handleMergeAndReview}
                   disabled={busy}
-                  className="flex items-center gap-1 px-3 py-1.5 bg-red-500/10 border border-red-500/30 text-red-300 hover:bg-red-500/20 disabled:opacity-50 disabled:cursor-not-allowed rounded-md text-xs transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-400"
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-portal-accent hover:bg-portal-accent/80 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-md text-xs transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
                 >
-                  {busy && activeAction === 'undo' ? (
+                  {busy && activeAction === 'merge_and_review' ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   ) : (
-                    <RotateCcw className="h-3.5 w-3.5" />
+                    <GitMerge className="h-3.5 w-3.5" />
                   )}
-                  Undo
+                  Merge &amp; mark reviewed
                 </button>
-                {detail && (
-                  <button
-                    onClick={() => onFollowUp(detail)}
+              ) : (
+                <button
+                  onClick={handleMarkReviewed}
+                  disabled={busy}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-green-500/20 border border-green-500/40 text-green-200 hover:bg-green-500/30 disabled:opacity-50 disabled:cursor-not-allowed rounded-md text-xs transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-green-400"
+                >
+                  {busy && activeAction === 'mark_reviewed' ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Check className="h-3.5 w-3.5" />
+                  )}
+                  Mark as reviewed
+                </button>
+              )}
+              <button
+                onClick={handleUndo}
+                disabled={busy}
+                className="flex items-center gap-1 px-3 py-1.5 bg-red-500/10 border border-red-500/30 text-red-300 hover:bg-red-500/20 disabled:opacity-50 disabled:cursor-not-allowed rounded-md text-xs transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-400"
+              >
+                {busy && activeAction === 'undo' ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RotateCcw className="h-3.5 w-3.5" />
+                )}
+                Undo
+              </button>
+              {detail.resultUrl && (
+                <a
+                  href={detail.resultUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-portal-bg border border-portal-border text-portal-text hover:border-portal-accent/50 rounded-md text-xs transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  {detail.resultType === 'pr' ? 'View PR' : 'View result'}
+                </a>
+              )}
+              {detail.resultSummary && (
+                <button
+                  onClick={handleCopyOutput}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-portal-bg border border-portal-border text-portal-text hover:border-portal-accent/50 rounded-md text-xs transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
+                >
+                  {copyOk ? (
+                    <>
+                      <Check className="h-3.5 w-3.5 text-green-300" />
+                      Copied
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-3.5 w-3.5" />
+                      Copy output
+                    </>
+                  )}
+                </button>
+              )}
+              <button
+                onClick={() => onFollowUp(detail)}
+                disabled={busy}
+                className="ml-auto flex items-center gap-1.5 px-3 py-1.5 bg-portal-accent/10 border border-portal-accent/30 text-portal-accent hover:bg-portal-accent/20 disabled:opacity-50 disabled:cursor-not-allowed rounded-md text-xs transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
+                title="Open the dispatcher pre-linked to this task as a follow-up"
+              >
+                <MessageSquarePlus className="h-3.5 w-3.5" />
+                Submit follow-up
+              </button>
+            </>
+          ) : (
+            <>
+              {!isTerminal && (
+                <button
+                  onClick={() => callPatch({ action: 'cancel' })}
+                  disabled={busy}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-red-500/10 border border-red-500/30 text-red-300 hover:bg-red-500/20 rounded-md text-xs disabled:opacity-50 transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-400"
+                >
+                  <StopCircle className="h-3.5 w-3.5" />
+                  Cancel
+                </button>
+              )}
+              {!isInFlight && !isTerminal && (
+                <>
+                  <select
+                    onChange={(e) => {
+                      if (e.target.value)
+                        callPatch({ action: 'reassign', agentProfileId: e.target.value });
+                    }}
+                    defaultValue=""
                     disabled={busy}
-                    className="ml-auto flex items-center gap-1.5 px-3 py-1.5 bg-portal-accent/10 border border-portal-accent/30 text-portal-accent hover:bg-portal-accent/20 disabled:opacity-50 disabled:cursor-not-allowed rounded-md text-xs transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
-                    title="Open the dispatcher pre-linked to this task as a follow-up"
+                    aria-label="Reassign to a different agent"
+                    className="bg-portal-bg border border-portal-border rounded-md px-2 py-1.5 text-xs text-portal-text cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
                   >
-                    <MessageSquarePlus className="h-3.5 w-3.5" />
-                    Submit follow-up
-                  </button>
-                )}
-              </>
-            ) : (
-              <>
-                {!isTerminal && (
-                  <button
-                    onClick={() => callPatch({ action: 'cancel' })}
+                    <option value="">Reassign to…</option>
+                    {agents.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name} · {a.role}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    onChange={(e) => {
+                      if (e.target.value)
+                        callPatch({ action: 'reprioritize', priority: e.target.value });
+                    }}
+                    defaultValue=""
                     disabled={busy}
-                    className="flex items-center gap-1 px-3 py-1.5 bg-red-500/10 border border-red-500/30 text-red-300 hover:bg-red-500/20 rounded-md text-xs disabled:opacity-50 transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-400"
+                    aria-label="Change task priority"
+                    className="bg-portal-bg border border-portal-border rounded-md px-2 py-1.5 text-xs text-portal-text cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
                   >
-                    <StopCircle className="h-3.5 w-3.5" />
-                    Cancel
-                  </button>
-                )}
-                {!isInFlight && !isTerminal && (
-                  <>
-                    <select
-                      onChange={(e) => {
-                        if (e.target.value)
-                          callPatch({ action: 'reassign', agentProfileId: e.target.value });
-                      }}
-                      defaultValue=""
-                      disabled={busy}
-                      className="bg-portal-bg border border-portal-border rounded-md px-2 py-1.5 text-xs text-portal-text cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
+                    <option value="">Change priority…</option>
+                    {(['low', 'normal', 'high', 'urgent'] as TaskPriority[]).map((p) => (
+                      <option key={p} value={p}>
+                        {p}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              )}
+              {isTerminal && (
+                <>
+                  {detail.resultUrl && (
+                    <a
+                      href={detail.resultUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-portal-bg border border-portal-border text-portal-text hover:border-portal-accent/50 rounded-md text-xs transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
                     >
-                      <option value="">Reassign to…</option>
-                      {agents.map((a) => (
-                        <option key={a.id} value={a.id}>
-                          {a.name} · {a.role}
-                        </option>
-                      ))}
-                    </select>
-                    <select
-                      onChange={(e) => {
-                        if (e.target.value)
-                          callPatch({ action: 'reprioritize', priority: e.target.value });
-                      }}
-                      defaultValue=""
-                      disabled={busy}
-                      className="bg-portal-bg border border-portal-border rounded-md px-2 py-1.5 text-xs text-portal-text cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
+                      <ExternalLink className="h-3.5 w-3.5" />
+                      {detail.resultType === 'pr' ? 'View PR' : 'View result'}
+                    </a>
+                  )}
+                  {detail.resultSummary && (
+                    <button
+                      onClick={handleCopyOutput}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-portal-bg border border-portal-border text-portal-text hover:border-portal-accent/50 rounded-md text-xs transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
                     >
-                      <option value="">Change priority…</option>
-                      {(['low', 'normal', 'high', 'urgent'] as TaskPriority[]).map((p) => (
-                        <option key={p} value={p}>
-                          {p}
-                        </option>
-                      ))}
-                    </select>
-                  </>
-                )}
-                {isTerminal && detail && (
+                      {copyOk ? (
+                        <>
+                          <Check className="h-3.5 w-3.5 text-green-300" />
+                          Copied
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="h-3.5 w-3.5" />
+                          Copy output
+                        </>
+                      )}
+                    </button>
+                  )}
                   <div className="ml-auto flex items-center gap-2">
                     <button
                       onClick={() => onFollowUp(detail)}
@@ -1402,11 +1658,39 @@ function TaskDetailModal({
                       Delete
                     </button>
                   </div>
-                )}
-              </>
-            )}
-          </div>
+                </>
+              )}
+            </>
+          )}
         </div>
+      )}
+
+      {error && (
+        <div className="bg-red-500/10 border border-red-500/30 text-red-300 text-xs rounded-md px-3 py-2">
+          {error}
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <ModalShell
+      onClose={onClose}
+      title={detail?.title ?? 'Loading task…'}
+      wide
+      tabsSlot={detail ? tabBar : null}
+    >
+      {!detail ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-5 w-5 animate-spin text-portal-accent" />
+        </div>
+      ) : (
+        <>
+          {activeTab === 'task' && taskPanel}
+          {activeTab === 'output' && outputPanel}
+          {activeTab === 'logs' && logsPanel}
+          {activeTab === 'actions' && actionsPanel}
+        </>
       )}
     </ModalShell>
   );
@@ -1416,11 +1700,13 @@ function ModalShell({
   title,
   onClose,
   wide,
+  tabsSlot,
   children,
 }: {
   title: string;
   onClose: () => void;
   wide?: boolean;
+  tabsSlot?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
@@ -1430,12 +1716,12 @@ function ModalShell({
     >
       <div
         className={cn(
-          'bg-portal-card border border-portal-border rounded-xl shadow-xl w-full overflow-hidden',
+          'bg-portal-card border border-portal-border rounded-xl shadow-xl w-full overflow-hidden flex flex-col max-h-[90vh]',
           wide ? 'max-w-3xl' : 'max-w-lg'
         )}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-4 py-3 border-b border-portal-border">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-portal-border shrink-0">
           <h2 className="text-sm font-semibold text-portal-text truncate">{title}</h2>
           <button
             onClick={onClose}
@@ -1445,7 +1731,8 @@ function ModalShell({
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="p-4 max-h-[80vh] overflow-y-auto">{children}</div>
+        {tabsSlot && <div className="shrink-0">{tabsSlot}</div>}
+        <div className="p-4 overflow-y-auto flex-1">{children}</div>
       </div>
     </div>
   );
