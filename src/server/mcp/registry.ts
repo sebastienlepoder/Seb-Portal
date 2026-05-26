@@ -10,6 +10,7 @@ import { dispatchTask, DispatchError } from '@/lib/agent-dispatch';
 import type { TaskPriority } from '@/types/agents';
 import { githubTools } from './github-tools';
 import { portalTools } from './portal-tools';
+import { memoryTools } from './memory-tools';
 
 export interface McpToolDef {
   name: string;
@@ -180,6 +181,7 @@ toolRegistry.push({
 
 for (const t of githubTools) toolRegistry.push(t);
 for (const t of portalTools) toolRegistry.push(t);
+for (const t of memoryTools) toolRegistry.push(t);
 
 // ─── Registry Functions ──────────────────────────────────────
 
