@@ -245,6 +245,7 @@ model Project {
   clonePath     String?  // optional pre-configured clone path on the worker host
   allowWrite    Boolean  @default(false) // worker may push commits / open PRs to this repo
   status        String   @default("active") // active|paused|completed|archived
+  kind          String   @default("digital") // digital|physical
   icon          String?  // emoji or icon path
   color         String?  // accent color
   sortOrder     Int      @default(0)
