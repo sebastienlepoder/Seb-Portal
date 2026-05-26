@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireApiAuth } from '@/lib/auth';
 import { verifyCsrf } from '@/lib/csrf';
+import { checkRateLimit, aiThreadCreateLimiter } from '@/lib/rate-limit';
 import prisma from '@/lib/db';
 
 // GET /api/ai/threads — list current user's threads, newest first
@@ -61,6 +62,20 @@ export async function POST(request: Request) {
     if (!(await verifyCsrf(request))) {
       return NextResponse.json({ ok: false, error: 'CSRF' }, { status: 403 });
     }
+
+    const check = checkRateLimit(aiThreadCreateLimiter, user.id);
+    if (!check.allowed) {
+      const retryAfter = check.retryAfterSec ?? 60;
+      return NextResponse.json(
+        {
+          ok: false,
+          error: 'Too many threads created. Please wait before creating another.',
+          code: 'RATE_LIMITED',
+        },
+        { status: 429, headers: { 'Retry-After': String(retryAfter) } }
+      );
+    }
+
     const parsed = createSchema.safeParse(await request.json().catch(() => ({})));
     if (!parsed.success) {
       return NextResponse.json(

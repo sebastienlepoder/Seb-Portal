@@ -76,6 +76,12 @@ export const aiChatLimiter: RateLimitConfig = {
   windowSec: 60, // 20 AI requests/min per user
 };
 
+export const aiThreadCreateLimiter: RateLimitConfig = {
+  name: 'ai_thread_create',
+  max: 10,
+  windowSec: 60, // 10 thread creations/min per user
+};
+
 export const webhookLimiter: RateLimitConfig = {
   name: 'webhook',
   max: 30,
