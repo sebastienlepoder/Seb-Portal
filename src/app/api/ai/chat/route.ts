@@ -641,11 +641,35 @@ function parseImageDataUri(
   return { mediaType: match[1] as AnthropicImageMediaType, data, byteSize };
 }
 
+// Drop a thread the client pre-created via POST /api/ai/threads when
+// the AI call fails before any messages land — otherwise it sits
+// empty in the sidebar forever.
+async function deleteThreadIfEmpty(threadId: string, userId: string): Promise<void> {
+  const t = await prisma.aiThread.findUnique({
+    where: { id: threadId },
+    select: { userId: true, messages: true },
+  });
+  if (!t || t.userId !== userId) return;
+  let isEmpty = false;
+  try {
+    const arr = JSON.parse(t.messages);
+    isEmpty = Array.isArray(arr) && arr.length === 0;
+  } catch {
+    return;
+  }
+  if (isEmpty) {
+    await prisma.aiThread.delete({ where: { id: threadId } });
+  }
+}
+
 // ─── POST handler ────────────────────────────────────────────
 
 export async function POST(request: Request) {
+  let preCreatedThreadId: string | undefined;
+  let currentUserId: string | undefined;
   try {
     const user = await requireApiAuth();
+    currentUserId = user.id;
     const ip = getClientIp(request);
 
     const check = checkRateLimit(aiChatLimiter, user.id);
@@ -664,6 +688,7 @@ export async function POST(request: Request) {
     };
 
     const { provider, messages: incoming, threadId, maxTokens = 2048 } = body;
+    preCreatedThreadId = threadId;
 
     if (!incoming?.length) {
       return NextResponse.json({ ok: false, error: 'Messages required' }, { status: 400 });
@@ -840,6 +865,7 @@ export async function POST(request: Request) {
     // and reply text. This keeps history readable and avoids
     // re-executing tools when the thread is reloaded.
     let savedThreadId = threadId;
+    let messageCount = 0;
     if (threadId) {
       const thread = await prisma.aiThread.findUnique({ where: { id: threadId } });
       if (thread && thread.userId === user.id) {
@@ -852,6 +878,9 @@ export async function POST(request: Request) {
           where: { id: threadId },
           data: { messages: JSON.stringify(existingMessages) },
         });
+        messageCount = existingMessages.length;
+        // Thread now has content — disarm the orphan-cleanup guard.
+        preCreatedThreadId = undefined;
       }
     } else {
       const allMessages: AiMessage[] = [
@@ -867,6 +896,7 @@ export async function POST(request: Request) {
         },
       });
       savedThreadId = thread.id;
+      messageCount = allMessages.length;
     }
 
     await auditLog({
@@ -886,6 +916,7 @@ export async function POST(request: Request) {
       data: {
         reply,
         threadId: savedThreadId,
+        messageCount,
         question: pendingQuestion,
         toolEvents,
       },
@@ -893,6 +924,11 @@ export async function POST(request: Request) {
   } catch (e) {
     if ((e as Error).message === 'UNAUTHORIZED') {
       return NextResponse.json({ ok: false, error: 'Not authenticated' }, { status: 401 });
+    }
+    if (preCreatedThreadId && currentUserId) {
+      await deleteThreadIfEmpty(preCreatedThreadId, currentUserId).catch((cleanupErr) => {
+        console.error('[ai/chat] orphan cleanup failed:', cleanupErr);
+      });
     }
     console.error('AI chat error:', e);
     return NextResponse.json(
