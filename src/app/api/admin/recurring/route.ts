@@ -89,7 +89,7 @@ interface ValidatedInput {
   enabled: boolean;
 }
 
-export function validateInput(
+function validateInput(
   body: Record<string, unknown>
 ): { ok: true; value: ValidatedInput } | { ok: false; error: string } {
   const title = typeof body.title === 'string' ? body.title.trim() : '';
