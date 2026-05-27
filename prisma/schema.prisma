@@ -158,6 +158,31 @@ model Activity {
   @@index([createdAt])
 }
 
+// ─── Skills Hub ──────────────────────────────────────────────
+// Local-only registry of agent skill files (.md under skills/).
+// Each row is the result of a sync pass: the file's sha256 lets
+// us skip rescans when nothing changed; the security report is
+// produced by the multi-pass scanner and gates whether the skill
+// can be enabled.
+
+model Skill {
+  id             String    @id @default(uuid())
+  source         String    @default("local")          // future: "github"
+  name           String                                 // file basename without .md
+  filePath       String                                 // relative path under skills/
+  description    String?                                // first non-heading paragraph, if any
+  contentHash    String                                 // sha256 of file bytes
+  securityStatus String    @default("unchecked")        // clean | warning | rejected | unchecked
+  securityReport String?                                // JSON-encoded ScanReport
+  enabled        Boolean   @default(false)
+  lastScannedAt  DateTime?
+  installedAt    DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([source, name])
+  @@index([securityStatus, enabled])
+}
+
 // ─── MCP Tool Call Log ───────────────────────────────────────
 // Per-call analytics for trust scoring and the admin MCP dashboard.
 // Distinct from AuditLog (which logs the same call but lacks fast

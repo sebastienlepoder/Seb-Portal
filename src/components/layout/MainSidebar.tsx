@@ -130,6 +130,11 @@ const NAV_GROUPS: NavGroup[] = [
         icon: <Shield className="h-3.5 w-3.5" />,
       },
       {
+        href: '/admin/skills',
+        label: 'Skills hub',
+        icon: <Sparkles className="h-3.5 w-3.5" />,
+      },
+      {
         href: '/admin/reports',
         label: 'Reports',
         icon: <BarChart3 className="h-3.5 w-3.5" />,
