@@ -121,12 +121,9 @@ function surfaceActivity(
     case 'ai_chat':
       return null; // chat traffic is high-volume; keep out of the feed
     case 'mcp_execute':
-      return {
-        type: 'mcp.executed',
-        description: `MCP tool "${str(d.toolName) ?? 'unknown'}" executed`,
-        entityType: 'tool',
-        entityId: str(d.toolName),
-      };
+      // executeMcpToolWithAudit emits the activity event with timing.
+      // Skip here to avoid double-firing the feed.
+      return null;
     case 'urgent_item_action':
       return { type: 'urgent.action', description: `Urgent item ${str(d.action) ?? 'changed'}` };
     case 'admin_action':

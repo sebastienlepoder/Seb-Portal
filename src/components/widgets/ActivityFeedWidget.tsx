@@ -128,6 +128,7 @@ function iconFor(type: string): { Icon: typeof ActivityIcon; tone: string } {
   if (type === 'service.deleted') return { Icon: Trash2, tone: 'text-red-400' };
   if (type === 'service.icon_regenerated') return { Icon: Sparkles, tone: 'text-portal-accent' };
   if (type === 'mcp.executed') return { Icon: Wrench, tone: 'text-portal-accent' };
+  if (type === 'mcp.failed') return { Icon: XCircle, tone: 'text-red-400' };
   if (type === 'schedule.spawned') return { Icon: Clock, tone: 'text-portal-accent' };
   if (type === 'schedule.catchup') return { Icon: CheckCircle2, tone: 'text-amber-400' };
   if (type === 'schedule.failed') return { Icon: XCircle, tone: 'text-red-400' };

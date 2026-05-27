@@ -158,6 +158,30 @@ model Activity {
   @@index([createdAt])
 }
 
+// ─── MCP Tool Call Log ───────────────────────────────────────
+// Per-call analytics for trust scoring and the admin MCP dashboard.
+// Distinct from AuditLog (which logs the same call but lacks fast
+// per-tool aggregation indexes). Inputs/results pass through a
+// secret-scrubber before persistence; size-capped to keep the table
+// from growing unbounded.
+
+model McpCallLog {
+  id            String   @id @default(uuid())
+  toolName      String
+  callerId      String?                       // user id or "scheduler"
+  callerKind    String   @default("user")     // "user" | "scheduler" | "api"
+  success       Boolean
+  durationMs    Int
+  inputJson     String?                       // sanitised, capped 2KB
+  resultPreview String?                       // first 500 chars of result, sanitised
+  error         String?                       // error message if !success
+  createdAt     DateTime @default(now())
+
+  @@index([toolName, createdAt])
+  @@index([callerId, createdAt])
+  @@index([createdAt])
+}
+
 // ─── Recurring Schedules ─────────────────────────────────────
 // Cron-driven dispatch templates. Evaluated once per minute from
 // the worker tick. Three dispatch kinds: "mcp" (call an MCP tool),

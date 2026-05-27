@@ -125,6 +125,11 @@ const NAV_GROUPS: NavGroup[] = [
         icon: <Clock className="h-3.5 w-3.5" />,
       },
       {
+        href: '/admin/mcp',
+        label: 'MCP audit',
+        icon: <Shield className="h-3.5 w-3.5" />,
+      },
+      {
         href: '/admin/reports',
         label: 'Reports',
         icon: <BarChart3 className="h-3.5 w-3.5" />,

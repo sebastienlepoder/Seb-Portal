@@ -1,5 +1,5 @@
 import prisma from '../db';
-import { executeMcpTool } from '@/server/mcp/registry';
+import { executeMcpToolWithAudit } from '../mcp/audit';
 import type { SessionUser } from '@/types';
 
 export type DispatchKind = 'mcp' | 'webhook' | 'task';
@@ -69,7 +69,9 @@ export async function dispatchScheduled(
 
 async function dispatchMcp(p: McpPayload): Promise<DispatchResult> {
   if (!p?.toolName) return { ok: false, error: 'mcp payload missing toolName' };
-  const result = await executeMcpTool(p.toolName, p.input ?? {}, SCHEDULER_USER);
+  const result = await executeMcpToolWithAudit(p.toolName, p.input ?? {}, SCHEDULER_USER, {
+    callerKind: 'scheduler',
+  });
   return { ok: true, result };
 }
 
