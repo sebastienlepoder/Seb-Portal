@@ -448,7 +448,7 @@ export default function AgentsPage() {
               </div>
             </div>
           )}
-          {anyWorkerActive === true && workers.some((w) => !w.hasAnthropicKey && !w.hasMaxOauth) && (
+          {anyWorkerActive === true && workers.some((w) => w.active && !w.hasAnthropicKey && !w.hasMaxOauth) && (
             <div className="mb-4 bg-red-500/10 border border-red-500/30 text-red-200 rounded-lg px-4 py-3 flex items-start gap-3">
               <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5 text-red-300" />
               <div className="flex-1 text-sm">
