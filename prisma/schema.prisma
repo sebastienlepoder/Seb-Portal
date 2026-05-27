@@ -465,6 +465,11 @@ model Task {
   resultSummary   String?   // markdown summary written by the agent
   errorMessage    String?
 
+  // Cost reported by the Claude Agent SDK after the run. Null = unknown
+  // (older tasks). 0 = Max OAuth path (no per-token billing). > 0 = the
+  // ANTHROPIC_API_KEY fallback path was used.
+  costUsd         Float?
+
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 

@@ -36,6 +36,9 @@ export interface OrchestratorResult {
   filesTouched: string[];
   /** Sub-task ids in order of dispatch. */
   subtaskIds: string[];
+  /** Orchestrator's own planning cost (excludes sub-task costs, which are
+   *  written to each sub-task's own Task.costUsd row). */
+  costUsd?: number;
   error?: string;
 }
 
@@ -264,6 +267,7 @@ async function dispatchSubtask(params: {
       resultUrl: null,
       resultSummary: runResult.summary,
       errorMessage: null,
+      costUsd: runResult.costUsd ?? null,
     },
   });
   await logger.info(
@@ -288,6 +292,7 @@ export async function runOrchestrator(
   let summary = '';
   let ok = false;
   let error: string | undefined;
+  let costUsd: number | undefined;
   let subtaskCount = 0;
 
   const env = sanitizeShellEnv();
@@ -420,6 +425,7 @@ export async function runOrchestrator(
           }
         }
       } else if (message.type === 'result') {
+        costUsd = message.total_cost_usd;
         if (message.subtype === 'success') {
           summary = message.result || '';
           ok = true;
@@ -452,6 +458,7 @@ export async function runOrchestrator(
     summary,
     filesTouched: Array.from(allFilesTouched),
     subtaskIds,
+    costUsd,
     error: ok ? undefined : error || 'orchestrator did not produce a result',
   };
 }

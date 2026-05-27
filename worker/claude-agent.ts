@@ -23,6 +23,10 @@ export interface AgentRunResult {
   ok: boolean;
   summary: string;
   filesTouched: string[];
+  /** Dollar cost reported by the SDK. 0 on the Max OAuth path; > 0 on the
+   *  ANTHROPIC_API_KEY fallback path. Undefined when no result message was
+   *  received (e.g. timeout or hard error). */
+  costUsd?: number;
   error?: string;
 }
 
@@ -132,6 +136,7 @@ export async function runAgent(opts: AgentRunOptions): Promise<AgentRunResult> {
   let summary = '';
   let ok = false;
   let error: string | undefined;
+  let costUsd: number | undefined;
 
   try {
     const stream: AsyncIterable<SDKMessage> = query({
@@ -167,6 +172,7 @@ export async function runAgent(opts: AgentRunOptions): Promise<AgentRunResult> {
           }
         }
       } else if (message.type === 'result') {
+        costUsd = message.total_cost_usd;
         if (message.subtype === 'success') {
           summary = message.result || '';
           ok = true;
@@ -199,6 +205,7 @@ export async function runAgent(opts: AgentRunOptions): Promise<AgentRunResult> {
     ok,
     summary,
     filesTouched: Array.from(filesTouched),
+    costUsd,
     error: ok ? undefined : error || 'agent did not produce a result',
   };
 }

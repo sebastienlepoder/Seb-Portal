@@ -181,7 +181,13 @@ export async function executeTask({ taskId, workerId }: ExecuteParams): Promise<
       }
     }
 
-    let result: { ok: boolean; summary: string; filesTouched: string[]; error?: string };
+    let result: {
+      ok: boolean;
+      summary: string;
+      filesTouched: string[];
+      costUsd?: number;
+      error?: string;
+    };
     let subtaskIds: string[] = [];
 
     if (isOrchestrator) {
@@ -206,6 +212,7 @@ export async function executeTask({ taskId, workerId }: ExecuteParams): Promise<
         ok: orch.ok,
         summary: orch.summary,
         filesTouched: orch.filesTouched,
+        costUsd: orch.costUsd,
         error: orch.error,
       };
     } else {
@@ -258,6 +265,7 @@ export async function executeTask({ taskId, workerId }: ExecuteParams): Promise<
             resultUrl: null,
             resultSummary: result.summary,
             mergedAt: null,
+            costUsd: result.costUsd ?? null,
           });
           return;
         }
@@ -329,6 +337,7 @@ export async function executeTask({ taskId, workerId }: ExecuteParams): Promise<
           resultUrl: pr.url,
           resultSummary: summary,
           mergedAt,
+          costUsd: result.costUsd ?? null,
         });
       } else {
         // Push succeeded but PR creation failed — record commit + branch
@@ -342,6 +351,7 @@ export async function executeTask({ taskId, workerId }: ExecuteParams): Promise<
             result.summary +
             `\n\n(Note: PR creation failed; branch \`${clone.workBranch}\` was pushed.)`,
           mergedAt: null,
+          costUsd: result.costUsd ?? null,
         });
       }
     } else {
@@ -351,6 +361,7 @@ export async function executeTask({ taskId, workerId }: ExecuteParams): Promise<
         resultUrl: null,
         resultSummary: result.summary,
         mergedAt: null,
+        costUsd: result.costUsd ?? null,
       });
     }
   } catch (e) {
@@ -369,6 +380,7 @@ async function complete(
     resultUrl: string | null;
     resultSummary: string;
     mergedAt: Date | null;
+    costUsd: number | null;
   }
 ): Promise<void> {
   await prisma.task.update({
@@ -381,6 +393,7 @@ async function complete(
       resultUrl: fields.resultUrl,
       resultSummary: fields.resultSummary,
       errorMessage: null,
+      costUsd: fields.costUsd,
     },
   });
   await logger.info(taskId, `Worker finished — task needs review (${fields.resultType})`);
