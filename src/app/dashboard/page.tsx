@@ -9,6 +9,7 @@ import { WeatherWidget } from '@/components/widgets/WeatherWidget';
 import { TailscaleWidget } from '@/components/widgets/TailscaleWidget';
 import { MarketsWidget } from '@/components/widgets/MarketsWidget';
 import { UrgentInboxWidget } from '@/components/widgets/UrgentInboxWidget';
+import { ActivityFeedWidget } from '@/components/widgets/ActivityFeedWidget';
 import OneNoteWidget from '@/components/widgets/OneNoteWidget';
 import OutlookWidget from '@/components/widgets/OutlookWidget';
 import { AiChatPanel } from '@/components/ai/AiChatPanel';
@@ -243,6 +244,7 @@ export default function DashboardPage() {
               <WeatherWidget />
               <MarketsWidget />
               <UrgentInboxWidget csrfToken={user.csrfToken} />
+              <ActivityFeedWidget />
               <OutlookWidget />
               <OneNoteWidget />
               <TailscaleWidget />
