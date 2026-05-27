@@ -122,6 +122,12 @@ function statusLabel(status: SessionStatus): string {
   }
 }
 
+/**
+ * Web SSH Terminal page (admin-only).
+ *
+ * Renders an Xterm.js terminal backed by a WebSocket bridge to ssh2 on the
+ * portal server. See docs/WEB-SSH-TERMINAL.md for protocol + security model.
+ */
 export default function TerminalPage() {
   const { user, loading: authLoading, logout } = useAuth();
   const [form, setForm] = useState<FormState>(DEFAULT_FORM);
@@ -140,6 +146,14 @@ export default function TerminalPage() {
   useEffect(() => {
     if (!authLoading && !user) {
       window.location.href = '/login';
+    }
+  }, [authLoading, user]);
+
+  // Admin gate — this feature is admin-only (shell access to every Tailscale
+  // host is high-blast-radius; restrict to the portal owner).
+  useEffect(() => {
+    if (!authLoading && user && user.role !== 'admin') {
+      window.location.href = '/dashboard';
     }
   }, [authLoading, user]);
 
@@ -513,7 +527,7 @@ export default function TerminalPage() {
     [canSubmit, cleanupTerminal, form, persistForm, startSession],
   );
 
-  if (authLoading || !user) {
+  if (authLoading || !user || user.role !== 'admin') {
     return (
       <div className="min-h-dvh flex items-center justify-center bg-portal-bg">
         <Loader2 className="h-8 w-8 text-portal-accent animate-spin" />
@@ -648,9 +662,11 @@ function ConnectionPanel({
           aria-hidden="true"
         />
         <p className="text-xs text-amber-200/90 leading-relaxed">
-          <span className="font-semibold text-amber-300">Heads up — </span>
-          This terminal has full shell access. Use with care: anything you type
-          runs on the remote machine.
+          <span className="font-semibold text-amber-300">Admin-only — </span>
+          This terminal has full shell access to any host reachable from the
+          portal server. Every session is audit-logged. Use with care: anything
+          you type runs on the remote machine. Disable with{' '}
+          <code className="font-mono text-amber-300">DISABLE_TERMINAL=true</code>.
         </p>
       </div>
 

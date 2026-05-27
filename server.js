@@ -4,6 +4,7 @@
 // WebSocket endpoint at /api/terminal/ws used by the in-portal SSH terminal.
 // Other upgrade requests are forwarded to Next's own upgrade handler so
 // HMR keeps working in dev.
+// See docs/WEB-SSH-TERMINAL.md for the feature overview, wire protocol, and security model.
 
 const http = require('http');
 const { parse: parseUrl } = require('url');
@@ -13,9 +14,70 @@ const { getIronSession } = require('iron-session');
 
 const { handleSshSession } = require('./src/server/terminal-ws.js');
 
+// Declare these early so the helper functions below can close over them.
 const dev = process.env.NODE_ENV !== 'production';
 const hostname = process.env.HOSTNAME || '0.0.0.0';
 const port = parseInt(process.env.PORT || '3000', 10);
+
+// ── Prisma (lazy singleton for audit logging) ────────────────────────────────
+let _prisma = null;
+function getPrismaClient() {
+  if (!_prisma) {
+    try {
+      const { PrismaClient } = require('@prisma/client');
+      _prisma = new PrismaClient();
+    } catch (e) {
+      console.warn('[server] Prisma unavailable — terminal audit logging disabled:', e && e.message);
+    }
+  }
+  return _prisma;
+}
+
+/**
+ * Persist a terminal audit log row. Never called with secret values.
+ * Failures are swallowed so they never block or crash the SSH session.
+ */
+// eslint-disable-next-line no-shadow -- `port` here is the SSH target port, distinct from the module-level HTTP server port.
+async function auditTerminalEvent({ userId, action, host, port: sshPort, username, authMethod, outcome, durationMs, ipAddress }) {
+  const prisma = getPrismaClient();
+  if (!prisma) return;
+  const details = { host, port: sshPort, username, authMethod, outcome };
+  if (durationMs != null) details.durationMs = durationMs;
+  try {
+    await prisma.auditLog.create({
+      data: {
+        userId: userId || null,
+        action,
+        details: JSON.stringify(details),
+        ipAddress: ipAddress || null,
+      },
+    });
+  } catch (e) {
+    console.error('[server] terminal audit log error:', e && e.message);
+  }
+}
+
+// ── Origin allowlist (defence-in-depth against CSRF-style WS hijacks) ────────
+// Browsers always include an Origin header on cross-origin WS upgrades.
+// If Origin is present AND we have a configured BASE_URL, it must match.
+// Same-process non-browser tools that omit Origin are allowed (dev/test).
+let _allowedOrigins = null;
+function getAllowedOrigins() {
+  if (_allowedOrigins) return _allowedOrigins;
+  _allowedOrigins = new Set();
+  if (process.env.BASE_URL) {
+    try {
+      _allowedOrigins.add(new URL(process.env.BASE_URL).origin);
+    } catch {
+      console.warn('[server] BASE_URL is not a valid URL — Origin check will be lenient');
+    }
+  }
+  if (dev) {
+    _allowedOrigins.add(`http://localhost:${port}`);
+    _allowedOrigins.add(`http://127.0.0.1:${port}`);
+  }
+  return _allowedOrigins;
+}
 
 // Keep this aligned with src/lib/auth.ts SESSION_OPTIONS.
 const SESSION_OPTIONS = {
@@ -112,6 +174,24 @@ async function bootstrap() {
       return;
     }
 
+    // Feature flag — disables the entire Web SSH Terminal if set.
+    if (process.env.DISABLE_TERMINAL === 'true') {
+      return rejectUpgrade(socket, 503, 'Service Unavailable');
+    }
+
+    // Origin check — defence-in-depth against CSRF-style WS hijacks.
+    // Browsers always send Origin on cross-origin upgrades; if it's present
+    // and doesn't match the portal host we reject immediately (before reading
+    // the session cookie).
+    const reqOrigin = (req.headers['origin'] || '').trim();
+    if (reqOrigin) {
+      const allowed = getAllowedOrigins();
+      if (allowed.size > 0 && !allowed.has(reqOrigin)) {
+        console.warn(`[server] terminal-ws: rejected upgrade from origin="${reqOrigin}"`);
+        return rejectUpgrade(socket, 403, 'Forbidden');
+      }
+    }
+
     // Validate session BEFORE upgrading so we never expose the SSH bridge
     // to anonymous clients.
     let session;
@@ -126,15 +206,28 @@ async function bootstrap() {
       return rejectUpgrade(socket, 401, 'Unauthorized');
     }
 
+    // Admin-only gate — this feature grants shell access to every host
+    // reachable from the portal server. Restrict to admin role.
+    if (session.user.role !== 'admin') {
+      console.warn(
+        `[server] terminal-ws: non-admin user "${session.user.id}" rejected`
+      );
+      return rejectUpgrade(socket, 403, 'Forbidden');
+    }
+
     const sessionUserId = session.user.id;
     const remoteAddress =
       (req.headers['x-forwarded-for'] || '').toString().split(',')[0].trim() ||
       req.socket.remoteAddress ||
       'unknown';
 
+    // Build a scoped audit callback that never has access to secret values.
+    const auditFn = (params) =>
+      auditTerminalEvent({ ipAddress: remoteAddress, userId: sessionUserId, ...params });
+
     wss.handleUpgrade(req, socket, head, (ws) => {
       try {
-        handleSshSession(ws, { remoteAddress, sessionUserId });
+        handleSshSession(ws, { remoteAddress, sessionUserId, auditFn });
       } catch (err) {
         console.error('[server] terminal-ws handler crashed:', err);
         try {

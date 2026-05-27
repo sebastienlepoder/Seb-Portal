@@ -79,7 +79,6 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/local', label: 'Local Services', icon: <HardDrive className="h-3.5 w-3.5" /> },
       { href: '/coolify', label: 'VPS Servers', icon: <Cloud className="h-3.5 w-3.5" /> },
       { href: '/remote', label: 'Remote Desktop', icon: <Monitor className="h-3.5 w-3.5" /> },
-      { href: '/terminal', label: 'Terminal', icon: <Terminal className="h-3.5 w-3.5" /> },
     ],
   },
   {
@@ -138,6 +137,11 @@ const NAV_GROUPS: NavGroup[] = [
         href: '/admin/recurring',
         label: 'Recurring tasks',
         icon: <Clock className="h-3.5 w-3.5" />,
+      },
+      {
+        href: '/terminal',
+        label: 'Web Terminal',
+        icon: <Terminal className="h-3.5 w-3.5" />,
       },
       {
         href: '/admin/mcp',
