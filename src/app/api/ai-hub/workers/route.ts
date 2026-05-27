@@ -10,6 +10,8 @@ interface WorkerStatus {
   concurrency: number;
   pollIntervalMs: number;
   hasAnthropicKey: boolean;
+  /** True when $HOME/.claude/.credentials.json is mounted — Max OAuth path. */
+  hasMaxOauth?: boolean;
   hasGithubToken: boolean;
 }
 

@@ -52,6 +52,7 @@ interface WorkerStatus {
   ageSec: number;
   active: boolean;
   hasAnthropicKey: boolean;
+  hasMaxOauth?: boolean;
   hasGithubToken: boolean;
 }
 
@@ -438,15 +439,19 @@ export default function AgentsPage() {
               </div>
             </div>
           )}
-          {anyWorkerActive === true && workers.some((w) => !w.hasAnthropicKey) && (
+          {anyWorkerActive === true && workers.some((w) => !w.hasAnthropicKey && !w.hasMaxOauth) && (
             <div className="mb-4 bg-red-500/10 border border-red-500/30 text-red-200 rounded-lg px-4 py-3 flex items-start gap-3">
               <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5 text-red-300" />
               <div className="flex-1 text-sm">
                 <div className="font-medium text-red-100">
-                  Worker is running but ANTHROPIC_API_KEY is not set.
+                  Worker has no Claude credentials.
                 </div>
                 <div className="text-red-200/80 mt-0.5">
-                  Tasks will fail immediately. Set <span className="font-mono">ANTHROPIC_API_KEY</span> in the worker's environment and restart it.
+                  Tasks will fail immediately. Either mount{' '}
+                  <span className="font-mono">~/.claude/.credentials.json</span> from{' '}
+                  <span className="font-mono">claude login</span> (Max subscription) or set{' '}
+                  <span className="font-mono">ANTHROPIC_API_KEY</span> in the worker&apos;s environment,
+                  then restart it.
                 </div>
               </div>
             </div>

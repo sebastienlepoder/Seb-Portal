@@ -27,6 +27,8 @@
  */
 
 import * as os from 'os';
+import * as path from 'path';
+import { existsSync } from 'fs';
 import prisma from '../src/lib/db';
 import { executeTask } from './task-executor';
 import { logger } from './logger';
@@ -105,6 +107,15 @@ async function reapStaleTasks(): Promise<void> {
   }
 }
 
+function detectMaxOauth(): boolean {
+  // The Claude Agent SDK reads OAuth credentials from
+  // $HOME/.claude/.credentials.json (populated by `claude login`). Presence
+  // of this file means Max-subscription auth is wired up — no per-token
+  // API key needed.
+  const home = process.env.HOME || '/root';
+  return existsSync(path.join(home, '.claude', '.credentials.json'));
+}
+
 async function heartbeat(status: 'running' | 'draining' | 'stopped'): Promise<void> {
   // Write a heartbeat row so the dashboard can show "worker online" / "no
   // worker running". Best-effort — never crash the loop if the DB is busy.
@@ -116,6 +127,7 @@ async function heartbeat(status: 'running' | 'draining' | 'stopped'): Promise<vo
     concurrency: CONCURRENCY,
     pollIntervalMs: POLL_INTERVAL_MS,
     hasAnthropicKey: !!process.env.ANTHROPIC_API_KEY,
+    hasMaxOauth: detectMaxOauth(),
     hasGithubToken: !!process.env.GITHUB_TOKEN,
   });
   try {
