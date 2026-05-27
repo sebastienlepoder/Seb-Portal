@@ -104,6 +104,7 @@ export function toTaskDTO(
     resultUrl: t.resultUrl,
     resultSummary: t.resultSummary,
     errorMessage: t.errorMessage,
+    costUsd: t.costUsd ?? null,
     createdAt: t.createdAt.toISOString(),
     updatedAt: t.updatedAt.toISOString(),
     project: toProjectSummary(t.project),

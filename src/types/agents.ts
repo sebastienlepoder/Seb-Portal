@@ -84,6 +84,9 @@ export interface TaskDTO {
   resultUrl: string | null;
   resultSummary: string | null;
   errorMessage: string | null;
+  /** Dollar cost reported by the Claude Agent SDK. 0 = Max OAuth path used;
+   *  > 0 = ANTHROPIC_API_KEY fallback. null = unknown (older rows). */
+  costUsd: number | null;
   createdAt: string;
   updatedAt: string;
   project: ProjectSummary;

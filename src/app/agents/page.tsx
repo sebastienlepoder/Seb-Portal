@@ -13,6 +13,7 @@ import {
   ChevronRight,
   Copy,
   CornerDownRight,
+  DollarSign,
   ExternalLink,
   FileText,
   GitMerge,
@@ -395,6 +396,14 @@ export default function AgentsPage() {
               </p>
             </div>
             <div className="flex items-center gap-2 ml-auto">
+              <Link
+                href="/agents/costs"
+                className="flex items-center gap-2 px-3 py-2 bg-portal-card border border-portal-border hover:border-portal-accent/50 text-portal-text rounded-lg transition-colors duration-200 text-sm cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
+                title="Cost monitoring"
+              >
+                <DollarSign className="h-4 w-4" />
+                <span className="hidden sm:inline">Costs</span>
+              </Link>
               <Link
                 href="/agents/help"
                 className="flex items-center gap-2 px-3 py-2 bg-portal-card border border-portal-border hover:border-portal-accent/50 text-portal-text rounded-lg transition-colors duration-200 text-sm cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
