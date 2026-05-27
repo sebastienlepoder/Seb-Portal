@@ -2,6 +2,7 @@ import prisma from '../src/lib/db';
 import {
   cloneRepo,
   commitAll,
+  countUnpushedCommits,
   ensureNodeModules,
   mergePullRequest,
   openPullRequest,
@@ -259,15 +260,26 @@ export async function executeTask({ taskId, workerId }: ExecuteParams): Promise<
         });
         parentCommitHash = c.commitHash;
         if (!c.changed && !hasUnpushedCommits) {
-          await logger.warn(taskId, 'No git diff after agent run — recording summary only');
-          await complete(taskId, {
-            resultType: 'summary',
-            resultUrl: null,
-            resultSummary: result.summary,
-            mergedAt: null,
-            costUsd: result.costUsd ?? null,
+          const agentCommits = await countUnpushedCommits({
+            taskId,
+            workdir: clone.workdir,
+            baseBranch: clone.baseBranch,
           });
-          return;
+          if (agentCommits === 0) {
+            await logger.warn(taskId, 'No git diff after agent run — recording summary only');
+            await complete(taskId, {
+              resultType: 'summary',
+              resultUrl: null,
+              resultSummary: result.summary,
+              mergedAt: null,
+              costUsd: result.costUsd ?? null,
+            });
+            return;
+          }
+          await logger.info(
+            taskId,
+            `Agent committed ${agentCommits} commit(s) directly — pushing branch`
+          );
         }
       }
 

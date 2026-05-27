@@ -350,6 +350,21 @@ export async function commitAll(params: {
   return { commitHash: rev.stdout.trim() || null, changed: true };
 }
 
+export async function countUnpushedCommits(params: {
+  taskId: string;
+  workdir: string;
+  baseBranch: string;
+}): Promise<number> {
+  const { taskId, workdir, baseBranch } = params;
+  const res = await run(
+    'git',
+    ['rev-list', '--count', `origin/${baseBranch}..HEAD`],
+    { cwd: workdir, taskId, log: false }
+  );
+  if (res.code !== 0) return 0;
+  return parseInt(res.stdout.trim(), 10) || 0;
+}
+
 export async function pushBranch(params: {
   taskId: string;
   workdir: string;
