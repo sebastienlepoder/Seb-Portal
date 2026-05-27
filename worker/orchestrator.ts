@@ -9,6 +9,7 @@ import prisma from '../src/lib/db';
 import { runAgent } from './claude-agent';
 import { commitAll } from './git-handler';
 import { logger } from './logger';
+import { applyAuthEnv, describeAuthMode, getWorkerAuthMode } from './auth-mode';
 
 const MAX_SUBTASKS = parseInt(process.env.MAESTRO_MAX_SUBTASKS || '5', 10) || 5;
 
@@ -65,10 +66,8 @@ function sanitizeShellEnv(): Record<string, string> {
     if (SENSITIVE_KEY_PATTERN.test(k)) continue;
     env[k] = v;
   }
-  // Same exception as the subagent: the SDK CLI subprocess needs the
-  // Anthropic creds to reach the model, but the agent's Bash shell does not.
-  if (process.env.ANTHROPIC_API_KEY) env.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-  if (process.env.ANTHROPIC_BASE_URL) env.ANTHROPIC_BASE_URL = process.env.ANTHROPIC_BASE_URL;
+  // Auth env vars are added separately by applyAuthEnv() at call time so
+  // we can consult the admin setting (which is async).
   return env;
 }
 
@@ -296,6 +295,9 @@ export async function runOrchestrator(
   let subtaskCount = 0;
 
   const env = sanitizeShellEnv();
+  const authMode = await getWorkerAuthMode();
+  applyAuthEnv(env, authMode);
+  await logger.info(opts.parentTaskId, `Auth: ${describeAuthMode(authMode)}`);
   const maxTurns = parseInt(process.env.MAESTRO_MAX_TURNS || '60', 10) || 60;
 
   const abortController = new AbortController();
