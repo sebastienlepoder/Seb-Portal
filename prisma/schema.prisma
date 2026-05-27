@@ -158,6 +158,85 @@ model Activity {
   @@index([createdAt])
 }
 
+// ─── Skills Hub ──────────────────────────────────────────────
+// Local-only registry of agent skill files (.md under skills/).
+// Each row is the result of a sync pass: the file's sha256 lets
+// us skip rescans when nothing changed; the security report is
+// produced by the multi-pass scanner and gates whether the skill
+// can be enabled.
+
+model Skill {
+  id             String    @id @default(uuid())
+  source         String    @default("local")          // future: "github"
+  name           String                                 // file basename without .md
+  filePath       String                                 // relative path under skills/
+  description    String?                                // first non-heading paragraph, if any
+  contentHash    String                                 // sha256 of file bytes
+  securityStatus String    @default("unchecked")        // clean | warning | rejected | unchecked
+  securityReport String?                                // JSON-encoded ScanReport
+  enabled        Boolean   @default(false)
+  lastScannedAt  DateTime?
+  installedAt    DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([source, name])
+  @@index([securityStatus, enabled])
+}
+
+// ─── MCP Tool Call Log ───────────────────────────────────────
+// Per-call analytics for trust scoring and the admin MCP dashboard.
+// Distinct from AuditLog (which logs the same call but lacks fast
+// per-tool aggregation indexes). Inputs/results pass through a
+// secret-scrubber before persistence; size-capped to keep the table
+// from growing unbounded.
+
+model McpCallLog {
+  id            String   @id @default(uuid())
+  toolName      String
+  callerId      String?                       // user id or "scheduler"
+  callerKind    String   @default("user")     // "user" | "scheduler" | "api"
+  success       Boolean
+  durationMs    Int
+  inputJson     String?                       // sanitised, capped 2KB
+  resultPreview String?                       // first 500 chars of result, sanitised
+  error         String?                       // error message if !success
+  createdAt     DateTime @default(now())
+
+  @@index([toolName, createdAt])
+  @@index([callerId, createdAt])
+  @@index([createdAt])
+}
+
+// ─── Recurring Schedules ─────────────────────────────────────
+// Cron-driven dispatch templates. Evaluated once per minute from
+// the worker tick. Three dispatch kinds: "mcp" (call an MCP tool),
+// "webhook" (HTTP POST), or "task" (create a Task row).
+
+model RecurringTask {
+  id            String    @id @default(uuid())
+  title         String
+  description   String?
+  naturalText   String                  // user-typed phrase, e.g. "every weekday at 9am"
+  cronExpr      String                  // resolved cron, e.g. "0 9 * * 1-5"
+  humanReadable String                  // pretty-printed cron, from cronstrue
+
+  kind          String                  // "mcp" | "webhook" | "task"
+  payload       String                  // JSON, shape depends on kind
+
+  enabled       Boolean   @default(true)
+  lastSpawnedAt DateTime?
+  nextRunAt     DateTime?
+  spawnCount    Int       @default(0)
+  lastError     String?
+  lastCatchUpAt DateTime?
+
+  createdById   String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([enabled, nextRunAt])
+}
+
 // ─── Click / Usage Events ────────────────────────────────────
 
 model ClickEvent {

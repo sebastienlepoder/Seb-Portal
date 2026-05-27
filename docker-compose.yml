@@ -29,6 +29,9 @@ services:
       - ./config:/app/config:ro
       # Project documentation files
       - ./projects:/app/projects
+      # Local agent skills (Markdown). Editable on host; sync from the
+      # Skills hub admin page picks up changes.
+      - ./skills:/app/skills
       # Update trigger/status files (for self-update feature)
       - ./data:/data
       # Tailscale socket for native integration (optional)

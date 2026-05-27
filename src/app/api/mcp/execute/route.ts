@@ -2,28 +2,35 @@ import { NextResponse } from 'next/server';
 import { requireApiAuth } from '@/lib/auth';
 import { verifyCsrf } from '@/lib/csrf';
 import { auditLog, getClientIp } from '@/lib/audit';
-import { executeMcpTool } from '@/server/mcp/registry';
+import { executeMcpToolWithAudit } from '@/lib/mcp/audit';
 
 /**
- * Execute an MCP tool action with input parameters.
+ * Execute an MCP tool action with input parameters. Wrapped in
+ * executeMcpToolWithAudit so every call lands in McpCallLog with
+ * duration, success/failure, and a secret-scrubbed payload.
  */
 export async function POST(request: Request) {
+  let user;
   try {
-    const user = await requireApiAuth();
-    if (!(await verifyCsrf(request))) {
-      return NextResponse.json({ ok: false, error: 'CSRF validation failed' }, { status: 403 });
-    }
+    user = await requireApiAuth();
+  } catch {
+    return NextResponse.json({ ok: false, error: 'Not authenticated' }, { status: 401 });
+  }
+  if (!(await verifyCsrf(request))) {
+    return NextResponse.json({ ok: false, error: 'CSRF validation failed' }, { status: 403 });
+  }
 
-    const { toolName, input } = (await request.json()) as {
-      toolName: string;
-      input: Record<string, unknown>;
-    };
+  const { toolName, input } = (await request.json()) as {
+    toolName: string;
+    input: Record<string, unknown>;
+  };
 
-    if (!toolName) {
-      return NextResponse.json({ ok: false, error: 'toolName required' }, { status: 400 });
-    }
+  if (!toolName) {
+    return NextResponse.json({ ok: false, error: 'toolName required' }, { status: 400 });
+  }
 
-    const result = await executeMcpTool(toolName, input, user);
+  try {
+    const result = await executeMcpToolWithAudit(toolName, input, user, { callerKind: 'user' });
 
     await auditLog({
       userId: user.id,
@@ -34,13 +41,11 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ ok: true, data: result });
   } catch (e) {
-    if ((e as Error).message === 'UNAUTHORIZED') {
-      return NextResponse.json({ ok: false, error: 'Not authenticated' }, { status: 401 });
-    }
-    if ((e as Error).message === 'TOOL_NOT_FOUND') {
+    const msg = (e as Error).message;
+    if (msg === 'TOOL_NOT_FOUND') {
       return NextResponse.json({ ok: false, error: 'Tool not found' }, { status: 404 });
     }
-    if ((e as Error).message === 'ADMIN_ONLY') {
+    if (msg === 'ADMIN_ONLY') {
       return NextResponse.json({ ok: false, error: 'Admin access required' }, { status: 403 });
     }
     console.error('MCP execute error:', e);

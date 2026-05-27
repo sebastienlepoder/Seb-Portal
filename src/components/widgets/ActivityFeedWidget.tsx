@@ -16,6 +16,9 @@ import {
   Upload,
   AlertTriangle,
   Sparkles,
+  Clock,
+  CheckCircle2,
+  XCircle,
 } from 'lucide-react';
 import { cn, formatRelativeTime } from '@/lib/utils';
 import { useActivityStream, type ActivityEvent } from '@/hooks/useActivityStream';
@@ -25,6 +28,7 @@ const FILTERS = [
   { id: 'auth', label: 'Auth', prefix: 'auth.' },
   { id: 'service', label: 'Services', prefix: 'service.' },
   { id: 'mcp', label: 'MCP', prefix: 'mcp.' },
+  { id: 'schedule', label: 'Schedules', prefix: 'schedule.' },
   { id: 'admin', label: 'Admin', prefix: 'admin.' },
 ] as const;
 
@@ -124,6 +128,10 @@ function iconFor(type: string): { Icon: typeof ActivityIcon; tone: string } {
   if (type === 'service.deleted') return { Icon: Trash2, tone: 'text-red-400' };
   if (type === 'service.icon_regenerated') return { Icon: Sparkles, tone: 'text-portal-accent' };
   if (type === 'mcp.executed') return { Icon: Wrench, tone: 'text-portal-accent' };
+  if (type === 'mcp.failed') return { Icon: XCircle, tone: 'text-red-400' };
+  if (type === 'schedule.spawned') return { Icon: Clock, tone: 'text-portal-accent' };
+  if (type === 'schedule.catchup') return { Icon: CheckCircle2, tone: 'text-amber-400' };
+  if (type === 'schedule.failed') return { Icon: XCircle, tone: 'text-red-400' };
   if (type === 'admin.backup_export') return { Icon: Download, tone: 'text-blue-400' };
   if (type === 'admin.backup_import') return { Icon: Upload, tone: 'text-blue-400' };
   if (type === 'urgent.action') return { Icon: AlertTriangle, tone: 'text-amber-400' };

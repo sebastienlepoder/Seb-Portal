@@ -32,6 +32,7 @@ import { existsSync } from 'fs';
 import prisma from '../src/lib/db';
 import { executeTask } from './task-executor';
 import { logger } from './logger';
+import { schedulerTick, catchUpOnBoot } from '../src/lib/schedule/runner';
 
 const WORKER_ID = process.env.WORKER_ID || `${os.hostname()}-${process.pid}`;
 const POLL_INTERVAL_MS = parseInt(process.env.WORKER_POLL_INTERVAL_MS || '5000', 10) || 5000;
@@ -143,6 +144,16 @@ async function heartbeat(status: 'running' | 'draining' | 'stopped'): Promise<vo
 
 async function tick(): Promise<void> {
   if (shuttingDown) return;
+
+  // Recurring schedules — gated internally to once per minute, safe to
+  // call on every poll. Isolated from task dispatch so a misbehaving
+  // schedule can't block stale-task reaping.
+  try {
+    await schedulerTick();
+  } catch (e) {
+    process.stderr.write(`[worker] scheduler error: ${(e as Error).message}\n`);
+  }
+
   if (inFlight.size >= CONCURRENCY) return;
 
   await reapStaleTasks();
@@ -208,6 +219,14 @@ async function main(): Promise<void> {
   });
 
   await heartbeat('running');
+
+  // One-shot catch-up: fire any recurring schedules that were due while
+  // the worker was down. Capped at one fire per schedule.
+  try {
+    await catchUpOnBoot();
+  } catch (e) {
+    process.stderr.write(`[worker] scheduler catch-up error: ${(e as Error).message}\n`);
+  }
 
   while (!shuttingDown) {
     try {
