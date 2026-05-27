@@ -31,6 +31,7 @@ import {
   HelpCircle,
   Bookmark,
   Clock,
+  ListTodo,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -90,17 +91,23 @@ const NAV_GROUPS: NavGroup[] = [
         match: (p) => p.startsWith('/projects'),
       },
       {
+        href: '/admin/recurring',
+        label: 'Scheduler',
+        icon: <Clock className="h-3.5 w-3.5" />,
+        match: (p) => p.startsWith('/admin/recurring'),
+      },
+      {
+        href: '/agents',
+        label: 'Tasks',
+        icon: <ListTodo className="h-3.5 w-3.5" />,
+        match: (p) => p.startsWith('/agents'),
+      },
+      {
         href: '/amonis',
         label: 'Amonis Finance',
         icon: <Briefcase className="h-3.5 w-3.5" />,
       },
       { href: '/insights', label: 'Insights', icon: <TrendingUp className="h-3.5 w-3.5" /> },
-      {
-        href: '/agents',
-        label: 'Agents',
-        icon: <Bot className="h-3.5 w-3.5" />,
-        match: (p) => p.startsWith('/agents'),
-      },
     ],
   },
   {
@@ -117,7 +124,13 @@ const NAV_GROUPS: NavGroup[] = [
         href: '/admin/agents',
         label: 'Manage agents',
         icon: <Bot className="h-3.5 w-3.5" />,
-        match: (p) => p.startsWith('/admin/agents') || p.startsWith('/admin/projects'),
+        match: (p) => p.startsWith('/admin/agents'),
+      },
+      {
+        href: '/admin/projects',
+        label: 'Manage projects',
+        icon: <FolderGit2 className="h-3.5 w-3.5" />,
+        match: (p) => p.startsWith('/admin/projects'),
       },
       {
         href: '/admin/recurring',
