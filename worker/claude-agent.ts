@@ -2,7 +2,12 @@ import * as path from 'path';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { logger } from './logger';
-import { applyAuthEnv, describeAuthMode, getWorkerAuthMode } from './auth-mode';
+import {
+  applyAuthEnv,
+  describeAuthMode,
+  getWorkerAuthMode,
+  type WorkerAuthMode,
+} from './auth-mode';
 
 export interface AgentRunOptions {
   taskId: string;
@@ -24,10 +29,14 @@ export interface AgentRunResult {
   ok: boolean;
   summary: string;
   filesTouched: string[];
-  /** Dollar cost reported by the SDK. 0 on the Max OAuth path; > 0 on the
-   *  ANTHROPIC_API_KEY fallback path. Undefined when no result message was
-   *  received (e.g. timeout or hard error). */
+  /** SDK-reported dollar cost (token-count × pricing estimate). The SDK
+   *  computes this number for every run regardless of auth path, so a
+   *  positive value does NOT mean the user was charged. Use `authPath`
+   *  to know whether real billing occurred. Undefined when no result
+   *  message was received (timeout / hard error). */
   costUsd?: number;
+  /** Auth path the worker used for this run. */
+  authPath?: WorkerAuthMode;
   error?: string;
 }
 
@@ -206,6 +215,7 @@ export async function runAgent(opts: AgentRunOptions): Promise<AgentRunResult> {
     summary,
     filesTouched: Array.from(filesTouched),
     costUsd,
+    authPath: authMode,
     error: ok ? undefined : error || 'agent did not produce a result',
   };
 }

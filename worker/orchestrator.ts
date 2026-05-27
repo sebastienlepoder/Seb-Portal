@@ -9,7 +9,12 @@ import prisma from '../src/lib/db';
 import { runAgent } from './claude-agent';
 import { commitAll } from './git-handler';
 import { logger } from './logger';
-import { applyAuthEnv, describeAuthMode, getWorkerAuthMode } from './auth-mode';
+import {
+  applyAuthEnv,
+  describeAuthMode,
+  getWorkerAuthMode,
+  type WorkerAuthMode,
+} from './auth-mode';
 
 const MAX_SUBTASKS = parseInt(process.env.MAESTRO_MAX_SUBTASKS || '5', 10) || 5;
 
@@ -40,6 +45,8 @@ export interface OrchestratorResult {
   /** Orchestrator's own planning cost (excludes sub-task costs, which are
    *  written to each sub-task's own Task.costUsd row). */
   costUsd?: number;
+  /** Auth path used by the orchestrator's planning calls. */
+  authPath?: WorkerAuthMode;
   error?: string;
 }
 
@@ -267,6 +274,7 @@ async function dispatchSubtask(params: {
       resultSummary: runResult.summary,
       errorMessage: null,
       costUsd: runResult.costUsd ?? null,
+      authPath: runResult.authPath ?? null,
     },
   });
   await logger.info(
@@ -461,6 +469,7 @@ export async function runOrchestrator(
     filesTouched: Array.from(allFilesTouched),
     subtaskIds,
     costUsd,
+    authPath: authMode,
     error: ok ? undefined : error || 'orchestrator did not produce a result',
   };
 }

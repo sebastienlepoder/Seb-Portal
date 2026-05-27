@@ -564,10 +564,17 @@ model Task {
   resultSummary   String?   // markdown summary written by the agent
   errorMessage    String?
 
-  // Cost reported by the Claude Agent SDK after the run. Null = unknown
-  // (older tasks). 0 = Max OAuth path (no per-token billing). > 0 = the
-  // ANTHROPIC_API_KEY fallback path was used.
+  // SDK-reported dollar cost. This is a token-count × pricing estimate
+  // the SDK computes regardless of auth path — even Max-OAuth runs report
+  // a non-zero number ("what this would have cost on the API"). It is NOT
+  // the same as what Anthropic actually billed. Use `authPath` below to
+  // tell which runs incurred real charges.
   costUsd         Float?
+
+  // Auth path the worker used for this run. Recorded at completion time so
+  // the dashboard can show real spend (sum of costs where authPath='api_key')
+  // separately from SDK estimates on OAuth runs. Null on legacy rows.
+  authPath        String?   // 'oauth' | 'api_key'
 
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt

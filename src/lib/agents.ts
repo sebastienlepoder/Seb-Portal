@@ -105,6 +105,7 @@ export function toTaskDTO(
     resultSummary: t.resultSummary,
     errorMessage: t.errorMessage,
     costUsd: t.costUsd ?? null,
+    authPath: ((t as { authPath?: string | null }).authPath ?? null) as TaskDTO['authPath'],
     createdAt: t.createdAt.toISOString(),
     updatedAt: t.updatedAt.toISOString(),
     project: toProjectSummary(t.project),

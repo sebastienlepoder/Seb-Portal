@@ -187,6 +187,7 @@ export async function executeTask({ taskId, workerId }: ExecuteParams): Promise<
       summary: string;
       filesTouched: string[];
       costUsd?: number;
+      authPath?: 'oauth' | 'api_key';
       error?: string;
     };
     let subtaskIds: string[] = [];
@@ -214,6 +215,7 @@ export async function executeTask({ taskId, workerId }: ExecuteParams): Promise<
         summary: orch.summary,
         filesTouched: orch.filesTouched,
         costUsd: orch.costUsd,
+        authPath: orch.authPath,
         error: orch.error,
       };
     } else {
@@ -273,6 +275,7 @@ export async function executeTask({ taskId, workerId }: ExecuteParams): Promise<
               resultSummary: result.summary,
               mergedAt: null,
               costUsd: result.costUsd ?? null,
+              authPath: result.authPath ?? null,
             });
             return;
           }
@@ -350,6 +353,7 @@ export async function executeTask({ taskId, workerId }: ExecuteParams): Promise<
           resultSummary: summary,
           mergedAt,
           costUsd: result.costUsd ?? null,
+              authPath: result.authPath ?? null,
         });
       } else {
         // Push succeeded but PR creation failed — record commit + branch
@@ -364,6 +368,7 @@ export async function executeTask({ taskId, workerId }: ExecuteParams): Promise<
             `\n\n(Note: PR creation failed; branch \`${clone.workBranch}\` was pushed.)`,
           mergedAt: null,
           costUsd: result.costUsd ?? null,
+              authPath: result.authPath ?? null,
         });
       }
     } else {
@@ -374,6 +379,7 @@ export async function executeTask({ taskId, workerId }: ExecuteParams): Promise<
         resultSummary: result.summary,
         mergedAt: null,
         costUsd: result.costUsd ?? null,
+              authPath: result.authPath ?? null,
       });
     }
   } catch (e) {
@@ -393,6 +399,7 @@ async function complete(
     resultSummary: string;
     mergedAt: Date | null;
     costUsd: number | null;
+    authPath: 'oauth' | 'api_key' | null;
   }
 ): Promise<void> {
   await prisma.task.update({
@@ -406,6 +413,7 @@ async function complete(
       resultSummary: fields.resultSummary,
       errorMessage: null,
       costUsd: fields.costUsd,
+      authPath: fields.authPath,
     },
   });
   await logger.info(taskId, `Worker finished — task needs review (${fields.resultType})`);
