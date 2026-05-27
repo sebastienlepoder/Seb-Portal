@@ -1,7 +1,6 @@
-import * as fs from 'fs/promises';
 import * as path from 'path';
-import Anthropic from '@anthropic-ai/sdk';
-import { run } from './git-handler';
+import { query } from '@anthropic-ai/claude-agent-sdk';
+import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { logger } from './logger';
 
 export interface AgentRunOptions {
@@ -10,12 +9,11 @@ export interface AgentRunOptions {
   systemPrompt: string;
   userMessage: string;
   model: string;
-  maxIterations: number;
   /** Hard timeout in ms for the entire agent run. */
   timeoutMs: number;
   /**
    * Project secrets resolved from 1Password. Accepted for API compatibility
-   * but intentionally NOT forwarded to the agent's `run_bash` shell — see
+   * but intentionally NOT forwarded to the agent's Bash shell — see
    * `sanitizeShellEnv` below for the rationale.
    */
   extraEnv?: Record<string, string>;
@@ -28,21 +26,10 @@ export interface AgentRunResult {
   error?: string;
 }
 
-const RUN_BASH_TIMEOUT_MS = 60_000;
-
 /**
- * Env keys that must never reach the agent's `/bin/sh -c` shell. The agent
- * has write access to the workdir and `git add -A` runs unattended, so any
- * variable in `process.env` can be exfiltrated via `env > leak.txt`.
- *
- * Includes:
- *   - portal session / CSRF / API secrets
- *   - the GitHub PAT used for clone+push (H2: also no longer in .git/config)
- *   - LLM provider keys (the agent talks to Anthropic via the parent process,
- *     it does not need its own key)
- *   - 1Password Connect credentials
- *   - admin/bootstrap credentials and DB URL
- *   - third-party integration tokens that happen to be in the worker env
+ * Env keys that must never reach the agent's Bash shell. The agent has write
+ * access to the workdir and `git add -A` runs unattended, so any variable in
+ * `process.env` can be exfiltrated via `env > leak.txt`.
  */
 const SENSITIVE_ENV_KEYS = new Set([
   'AUTH_SECRET',
@@ -74,15 +61,13 @@ const SENSITIVE_ENV_KEYS = new Set([
 const SENSITIVE_KEY_PATTERN = /(SECRET|TOKEN|PASSWORD|API_KEY|PRIVATE_KEY)/i;
 
 /**
- * Build the env passed to the agent's `run_bash` shell. Both the explicit
- * sensitive allowlist and a fuzzy `SECRET|TOKEN|…` regex are stripped, and
- * `extraEnv` (1Password-resolved project secrets) is dropped entirely —
- * if a future tool needs them, it should pass them via a dedicated channel
- * (file mount, scoped run-test tool, etc.), never through the general-
- * purpose shell.
+ * Env passed to the SDK subprocess. The SDK uses this for the CLI it spawns
+ * and for the agent's Bash tool. We strip portal/GitHub/LLM/1Password
+ * secrets so an agent that runs `env > leak.txt && git add -A` can't
+ * exfiltrate them. HOME must survive so the SDK can find OAuth credentials
+ * at `$HOME/.claude/.credentials.json`.
  */
-function sanitizeShellEnv(extraEnv?: Record<string, string>): NodeJS.ProcessEnv {
-  void extraEnv;
+function sanitizeShellEnv(): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env)) {
     if (v === undefined) continue;
@@ -90,247 +75,130 @@ function sanitizeShellEnv(extraEnv?: Record<string, string>): NodeJS.ProcessEnv 
     if (SENSITIVE_KEY_PATTERN.test(k)) continue;
     env[k] = v;
   }
-  return env as NodeJS.ProcessEnv;
+  return env;
 }
 
 /**
- * Tools given to the agent. Constrained to the workdir.
+ * Built-in tools we hand to the agent. Mirrors the tools our previous
+ * custom loop offered (read/write/edit/bash/list) plus Grep+Glob since the
+ * SDK has those for free.
  */
-const TOOLS: Anthropic.Tool[] = [
-  {
-    name: 'read_file',
-    description:
-      'Read a UTF-8 text file by path relative to the repo root. Returns up to 50,000 characters.',
-    input_schema: {
-      type: 'object',
-      properties: { path: { type: 'string' } },
-      required: ['path'],
-    },
-  },
-  {
-    name: 'write_file',
-    description:
-      'Write a UTF-8 text file. Overwrites if it exists. Creates parent dirs. `path` is relative to the repo root.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        path: { type: 'string' },
-        content: { type: 'string' },
-      },
-      required: ['path', 'content'],
-    },
-  },
-  {
-    name: 'list_directory',
-    description:
-      'List directory contents (one per line, trailing / for dirs). `path` is relative; "." for repo root.',
-    input_schema: {
-      type: 'object',
-      properties: { path: { type: 'string' } },
-      required: ['path'],
-    },
-  },
-  {
-    name: 'run_bash',
-    description:
-      'Run a shell command in the repo root. Use for `npm test`, `tsc --noEmit`, `grep`, `find`, etc. Returns stdout+stderr+exit code. 60s timeout.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        command: { type: 'string' },
-      },
-      required: ['command'],
-    },
-  },
-  {
-    name: 'finish',
-    description:
-      'Call when the task is complete. Provide a one-paragraph summary of what was done.',
-    input_schema: {
-      type: 'object',
-      properties: { summary: { type: 'string' } },
-      required: ['summary'],
-    },
-  },
-];
+const SUBAGENT_TOOLS: string[] = ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep', 'LS'];
 
-function safeJoin(workdir: string, rel: string): string | null {
-  // Resolve and ensure the result is inside workdir
-  const cleaned = rel.startsWith('/') ? rel.slice(1) : rel;
-  const abs = path.resolve(workdir, cleaned);
-  const work = path.resolve(workdir);
-  if (abs !== work && !abs.startsWith(work + path.sep)) return null;
-  return abs;
+function toRelative(workdir: string, p: string): string {
+  if (!p) return p;
+  if (path.isAbsolute(p)) {
+    const rel = path.relative(workdir, p);
+    return rel || path.basename(p);
+  }
+  return p;
 }
 
-async function handleTool(
-  taskId: string,
-  workdir: string,
-  name: string,
-  input: Record<string, unknown>
-): Promise<{ result: string; touchedFile?: string; isError: boolean; finished?: { summary: string } }> {
-  if (name === 'finish') {
-    const summary = String(input.summary ?? '').trim() || 'Task complete.';
-    return { result: summary, isError: false, finished: { summary } };
+function summarizeToolInput(name: string, input: unknown): string {
+  const i = (input as Record<string, unknown>) ?? {};
+  const trunc = (s: string, n = 100) => (s.length > n ? s.slice(0, n) + '…' : s);
+  if (name === 'Bash') return trunc(String(i.command ?? ''));
+  if (name === 'Read' || name === 'LS' || name === 'Edit' || name === 'Write') {
+    return String(i.file_path ?? i.path ?? '');
   }
-  if (name === 'read_file') {
-    const rel = String(input.path ?? '');
-    const abs = safeJoin(workdir, rel);
-    if (!abs) return { result: 'Error: path escapes workdir', isError: true };
-    try {
-      const content = await fs.readFile(abs, 'utf-8');
-      return { result: content.length > 50000 ? content.slice(0, 50000) + '\n…[truncated]' : content, isError: false };
-    } catch (e) {
-      return { result: `Error: ${(e as Error).message}`, isError: true };
-    }
+  if (name === 'Glob') return String(i.pattern ?? '');
+  if (name === 'Grep') return `${String(i.pattern ?? '')} in ${String(i.path ?? '.')}`;
+  try {
+    return trunc(JSON.stringify(i));
+  } catch {
+    return '';
   }
-  if (name === 'write_file') {
-    const rel = String(input.path ?? '');
-    const content = String(input.content ?? '');
-    const abs = safeJoin(workdir, rel);
-    if (!abs) return { result: 'Error: path escapes workdir', isError: true };
-    try {
-      await fs.mkdir(path.dirname(abs), { recursive: true });
-      await fs.writeFile(abs, content, 'utf-8');
-      return { result: `Wrote ${content.length} chars to ${rel}`, touchedFile: rel, isError: false };
-    } catch (e) {
-      return { result: `Error: ${(e as Error).message}`, isError: true };
-    }
-  }
-  if (name === 'list_directory') {
-    const rel = String(input.path ?? '.');
-    const abs = safeJoin(workdir, rel);
-    if (!abs) return { result: 'Error: path escapes workdir', isError: true };
-    try {
-      const entries = await fs.readdir(abs, { withFileTypes: true });
-      const lines = entries
-        .filter((e) => e.name !== '.git')
-        .map((e) => (e.isDirectory() ? `${e.name}/` : e.name))
-        .sort()
-        .join('\n');
-      return { result: lines || '(empty)', isError: false };
-    } catch (e) {
-      return { result: `Error: ${(e as Error).message}`, isError: true };
-    }
-  }
-  if (name === 'run_bash') {
-    const cmd = String(input.command ?? '').trim();
-    if (!cmd) return { result: 'Error: empty command', isError: true };
-    // /bin/sh -c lets the model use pipes/&&. The workdir is the trust
-    // boundary: the env is scrubbed (sanitizeShellEnv) so no portal,
-    // GitHub, LLM, or 1Password secret is reachable from this shell, and
-    // `timeoutMs` is forwarded to `run` so a runaway child is killed
-    // (SIGTERM → SIGKILL) instead of leaking as a zombie.
-    const res = await run('/bin/sh', ['-c', cmd], {
-      cwd: workdir,
-      taskId,
-      env: sanitizeShellEnv(),
-      timeoutMs: RUN_BASH_TIMEOUT_MS,
-    });
-    const tail = (s: string) => (s.length > 8000 ? '…' + s.slice(-8000) : s);
-    return {
-      result: `exit ${res.code}\n--- stdout ---\n${tail(res.stdout)}\n--- stderr ---\n${tail(res.stderr)}`,
-      isError: res.code !== 0,
-    };
-  }
-  return { result: `Unknown tool: ${name}`, isError: true };
 }
 
 export async function runAgent(opts: AgentRunOptions): Promise<AgentRunResult> {
-  const { taskId, workdir, systemPrompt, userMessage, model, maxIterations, timeoutMs } = opts;
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    return { ok: false, summary: '', filesTouched: [], error: 'ANTHROPIC_API_KEY not set' };
-  }
-  const baseURL = process.env.ANTHROPIC_BASE_URL?.trim() || undefined;
-  const client = new Anthropic(baseURL ? { apiKey, baseURL } : { apiKey });
+  const { taskId, workdir, systemPrompt, userMessage, model, timeoutMs } = opts;
 
-  const startedAt = Date.now();
-  const messages: Anthropic.MessageParam[] = [{ role: 'user', content: userMessage }];
+  // The SDK reads OAuth credentials from $HOME/.claude/.credentials.json
+  // (populated by `claude login` on the host). Falls back to
+  // ANTHROPIC_API_KEY env var when those are absent — but our SENSITIVE_ENV_KEYS
+  // strips ANTHROPIC_API_KEY from the spawned subprocess env. To allow the
+  // API-key fallback we whitelist it back in here on purpose: the subagent
+  // shell doesn't see this env, only the SDK's own CLI subprocess does.
+  const env = sanitizeShellEnv();
+  if (process.env.ANTHROPIC_API_KEY) env.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+  if (process.env.ANTHROPIC_BASE_URL) env.ANTHROPIC_BASE_URL = process.env.ANTHROPIC_BASE_URL;
+
+  const maxTurns = parseInt(process.env.WORKER_MAX_TURNS || '100', 10) || 100;
+
+  const abortController = new AbortController();
+  const timeoutHandle = setTimeout(() => abortController.abort(), timeoutMs);
+
   const filesTouched = new Set<string>();
   let summary = '';
+  let ok = false;
+  let error: string | undefined;
 
-  for (let iter = 0; iter < maxIterations; iter++) {
-    if (Date.now() - startedAt > timeoutMs) {
-      return {
-        ok: false,
-        summary,
-        filesTouched: Array.from(filesTouched),
-        error: `Agent timed out after ${timeoutMs}ms (iteration ${iter})`,
-      };
-    }
-
-    let resp: Anthropic.Message;
-    try {
-      resp = await client.messages.create({
+  try {
+    const stream: AsyncIterable<SDKMessage> = query({
+      prompt: userMessage,
+      options: {
         model,
-        max_tokens: 4096,
-        system: systemPrompt,
-        tools: TOOLS,
-        messages,
-      });
-    } catch (e) {
-      return {
-        ok: false,
-        summary,
-        filesTouched: Array.from(filesTouched),
-        error: `Anthropic API error: ${(e as Error).message}`,
-      };
-    }
-
-    await logger.info(taskId, `iteration ${iter + 1}: stop_reason=${resp.stop_reason}`, {
-      usage: resp.usage,
+        systemPrompt,
+        cwd: workdir,
+        tools: SUBAGENT_TOOLS,
+        allowedTools: SUBAGENT_TOOLS,
+        permissionMode: 'bypassPermissions',
+        allowDangerouslySkipPermissions: true,
+        env,
+        abortController,
+        maxTurns,
+      },
     });
 
-    // Surface any text the model produced
-    for (const block of resp.content) {
-      if (block.type === 'text' && block.text.trim()) {
-        await logger.info(taskId, `🤖 ${block.text.trim()}`);
+    for await (const message of stream) {
+      if (message.type === 'assistant') {
+        for (const block of message.message.content) {
+          if (block.type === 'text' && block.text.trim()) {
+            await logger.info(taskId, `🤖 ${block.text.trim()}`);
+          } else if (block.type === 'tool_use') {
+            if (block.name === 'Write' || block.name === 'Edit') {
+              const fp = (block.input as Record<string, unknown>)?.file_path;
+              if (typeof fp === 'string' && fp) filesTouched.add(toRelative(workdir, fp));
+            }
+            await logger.info(
+              taskId,
+              `→ ${block.name}(${summarizeToolInput(block.name, block.input)})`,
+            );
+          }
+        }
+      } else if (message.type === 'result') {
+        if (message.subtype === 'success') {
+          summary = message.result || '';
+          ok = true;
+          await logger.info(
+            taskId,
+            `✓ done — ${message.num_turns} turns, $${message.total_cost_usd.toFixed(4)}`,
+            { usage: message.usage },
+          );
+        } else {
+          // SDKResultError shape — pull whatever message field exists
+          const errMsg =
+            (message as Record<string, unknown>).result ||
+            (message as Record<string, unknown>).error ||
+            'agent ended in error';
+          error = String(errMsg).slice(0, 2000);
+        }
       }
     }
-
-    if (resp.stop_reason !== 'tool_use') {
-      // Model produced final text without calling finish — accept it as summary.
-      const text = resp.content
-        .filter((c): c is Anthropic.TextBlock => c.type === 'text')
-        .map((c) => c.text)
-        .join('\n')
-        .trim();
-      summary = text || summary || 'Agent stopped without producing a summary.';
-      return { ok: true, summary, filesTouched: Array.from(filesTouched) };
+  } catch (e) {
+    if (abortController.signal.aborted) {
+      error = `Agent timed out after ${timeoutMs}ms`;
+    } else {
+      error = `Claude Agent SDK error: ${(e as Error).message}`;
     }
-
-    // Append assistant turn so the next request includes it
-    messages.push({ role: 'assistant', content: resp.content });
-
-    // Execute tool calls and collect results
-    const toolResultBlocks: Anthropic.ToolResultBlockParam[] = [];
-    let finished: { summary: string } | null = null;
-    for (const block of resp.content) {
-      if (block.type !== 'tool_use') continue;
-      const out = await handleTool(taskId, workdir, block.name, block.input as Record<string, unknown>);
-      if (out.touchedFile) filesTouched.add(out.touchedFile);
-      if (out.finished) finished = out.finished;
-      toolResultBlocks.push({
-        type: 'tool_result',
-        tool_use_id: block.id,
-        content: out.result,
-        is_error: out.isError || undefined,
-      });
-    }
-
-    messages.push({ role: 'user', content: toolResultBlocks });
-
-    if (finished) {
-      summary = finished.summary;
-      return { ok: true, summary, filesTouched: Array.from(filesTouched) };
-    }
+  } finally {
+    clearTimeout(timeoutHandle);
   }
 
   return {
-    ok: false,
+    ok,
     summary,
     filesTouched: Array.from(filesTouched),
-    error: `Reached max iterations (${maxIterations}) without finishing`,
+    error: ok ? undefined : error || 'agent did not produce a result',
   };
 }

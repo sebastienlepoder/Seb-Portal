@@ -7,20 +7,28 @@
  *
  * Required env:
  *   DATABASE_URL          — same SQLite/Postgres URL as the portal
- *   ANTHROPIC_API_KEY     — Claude API key
+ *
+ * Auth: the worker uses the Claude Agent SDK. Bootstrap once with
+ * `claude login` on a machine with a browser, then copy
+ * ~/.claude/.credentials.json into CLAUDE_CREDS_DIR (mounted at
+ * /home/nextjs/.claude inside the worker container). Without those, the SDK
+ * falls back to ANTHROPIC_API_KEY and bills per-token.
  *
  * Optional env:
  *   GITHUB_TOKEN          — required for cloning private repos and opening PRs
  *   WORKER_ID             — unique id (default: hostname-pid)
  *   WORKER_POLL_INTERVAL_MS  default 5000
  *   WORKER_TIMEOUT_MS     per-task hard timeout (default 300000 = 5 min)
- *   WORKER_MAX_ITERATIONS agent tool-loop budget (default 40)
+ *   WORKER_MAX_TURNS      Claude Agent SDK turn budget (default 100)
  *   WORKER_DEFAULT_MODEL  default model id (default claude-sonnet-4-6)
  *   WORKER_CONCURRENCY    max simultaneous tasks (default 1)
- *   ANTHROPIC_BASE_URL    optional proxy
+ *   ANTHROPIC_API_KEY     fallback when no Max credentials are mounted
+ *   ANTHROPIC_BASE_URL    optional proxy (only used with the API-key fallback)
  */
 
 import * as os from 'os';
+import * as path from 'path';
+import { existsSync } from 'fs';
 import prisma from '../src/lib/db';
 import { executeTask } from './task-executor';
 import { logger } from './logger';
@@ -99,6 +107,15 @@ async function reapStaleTasks(): Promise<void> {
   }
 }
 
+function detectMaxOauth(): boolean {
+  // The Claude Agent SDK reads OAuth credentials from
+  // $HOME/.claude/.credentials.json (populated by `claude login`). Presence
+  // of this file means Max-subscription auth is wired up — no per-token
+  // API key needed.
+  const home = process.env.HOME || '/root';
+  return existsSync(path.join(home, '.claude', '.credentials.json'));
+}
+
 async function heartbeat(status: 'running' | 'draining' | 'stopped'): Promise<void> {
   // Write a heartbeat row so the dashboard can show "worker online" / "no
   // worker running". Best-effort — never crash the loop if the DB is busy.
@@ -110,6 +127,7 @@ async function heartbeat(status: 'running' | 'draining' | 'stopped'): Promise<vo
     concurrency: CONCURRENCY,
     pollIntervalMs: POLL_INTERVAL_MS,
     hasAnthropicKey: !!process.env.ANTHROPIC_API_KEY,
+    hasMaxOauth: detectMaxOauth(),
     hasGithubToken: !!process.env.GITHUB_TOKEN,
   });
   try {

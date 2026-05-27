@@ -17,7 +17,8 @@
     "postinstall": "npx prisma generate"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0",
+    "@anthropic-ai/claude-agent-sdk": "^0.3.150",
+    "@anthropic-ai/sdk": "^0.98.0",
     "@prisma/client": "^6.3.0",
     "argon2": "^0.41.1",
     "clsx": "^2.1.1",
@@ -27,7 +28,7 @@
     "js-yaml": "^4.1.0",
     "lucide-react": "^0.474.0",
     "next": "^14.2.23",
-    "openai": "^4.82.0",
+    "openai": "^6.39.0",
     "otplib": "^12.0.1",
     "qrcode": "^1.5.4",
     "react": "^18.3.1",
@@ -35,7 +36,7 @@
     "react-markdown": "^10.1.0",
     "tailwind-merge": "^3.0.1",
     "uuid": "^11.0.5",
-    "zod": "^3.24.1"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@tailwindcss/typography": "^0.5.16",
