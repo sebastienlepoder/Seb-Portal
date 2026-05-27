@@ -84,9 +84,13 @@ export interface TaskDTO {
   resultUrl: string | null;
   resultSummary: string | null;
   errorMessage: string | null;
-  /** Dollar cost reported by the Claude Agent SDK. 0 = Max OAuth path used;
-   *  > 0 = ANTHROPIC_API_KEY fallback. null = unknown (older rows). */
+  /** SDK-reported dollar cost (token-count estimate). The SDK reports a
+   *  non-zero number even on Max OAuth runs — it's "what this would have
+   *  cost on the API," not the actual billed amount. Use `authPath` to
+   *  know whether real money was spent. null on legacy rows. */
   costUsd: number | null;
+  /** Auth path the worker used. null on legacy rows. */
+  authPath: 'oauth' | 'api_key' | null;
   createdAt: string;
   updatedAt: string;
   project: ProjectSummary;
