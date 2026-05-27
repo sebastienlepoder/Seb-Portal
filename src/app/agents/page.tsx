@@ -349,19 +349,6 @@ export default function AgentsPage() {
     setDispatcherInitialValues(null);
   };
 
-  const handleRetask = (d: TaskDTO) => {
-    setDispatcherInitialValues({
-      project_name: d.project.slug,
-      agent_slug: d.agentProfile?.slug ?? '',
-      title: d.title,
-      description: d.description,
-      priority: d.priority,
-      auto_merge: false,
-    });
-    setOpenTaskId(null);
-    setShowDispatcher(true);
-  };
-
   const handleFollowUp = (d: TaskDTO) => {
     setDispatcherInitialValues({
       project_name: d.project.slug,
@@ -693,7 +680,6 @@ export default function AgentsPage() {
           csrfToken={csrfToken}
           onClose={() => setOpenTaskId(null)}
           onChanged={fetchTasks}
-          onRetask={handleRetask}
           onFollowUp={handleFollowUp}
         />
       )}
@@ -1033,7 +1019,6 @@ function TaskDetailModal({
   csrfToken,
   onClose,
   onChanged,
-  onRetask,
   onFollowUp,
 }: {
   taskId: string;
@@ -1042,7 +1027,6 @@ function TaskDetailModal({
   csrfToken: string | undefined;
   onClose: () => void;
   onChanged: () => void;
-  onRetask: (detail: TaskDTO) => void;
   onFollowUp: (detail: TaskDTO) => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -1120,8 +1104,11 @@ function TaskDetailModal({
   const isInFlight = detail?.status === 'in_progress';
   const isNeedsReview = detail?.status === 'needs_review';
   const isMerged = !!detail?.mergedAt;
-  const canRetask =
-    detail?.status === 'failed' || detail?.status === 'cancelled';
+  const canRerun =
+    detail?.status === 'completed' ||
+    detail?.status === 'failed' ||
+    detail?.status === 'cancelled' ||
+    detail?.status === 'needs_review';
   const showMergeAndReview =
     isNeedsReview && !isMerged && detail?.resultType === 'pr';
   const hasOutput = !!(detail?.resultSummary || detail?.resultUrl || detail?.errorMessage);
@@ -1162,6 +1149,17 @@ function TaskDetailModal({
     )
       return;
     const ok = await callPatch({ action: 'merge_and_review' });
+    if (ok) onClose();
+  }
+
+  async function handleRerun() {
+    if (
+      !window.confirm(
+        'Rerun this task in place? The previous result will be cleared and the worker will pick it up again. Sub-tasks from a prior orchestrator run will be deleted.'
+      )
+    )
+      return;
+    const ok = await callPatch({ action: 'rerun' });
     if (ok) onClose();
   }
 
@@ -1445,7 +1443,7 @@ function TaskDetailModal({
     !!detail &&
     (isNeedsReview ||
       !isTerminal ||
-      (isTerminal && (canRetask || true)) || // delete + follow-up always available on terminal
+      (isTerminal && (canRerun || true)) || // delete + follow-up always available on terminal
       !!detail.resultUrl ||
       !!detail.resultSummary);
 
@@ -1648,15 +1646,19 @@ function TaskDetailModal({
                       <MessageSquarePlus className="h-3.5 w-3.5" />
                       Submit follow-up
                     </button>
-                    {canRetask && (
+                    {canRerun && (
                       <button
-                        onClick={() => onRetask(detail)}
+                        onClick={handleRerun}
                         disabled={busy || deleting}
                         className="flex items-center gap-1.5 px-3 py-1.5 bg-portal-accent hover:bg-portal-accent/80 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-md text-xs transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
-                        title="Open a pre-filled dispatcher to edit and re-dispatch this task"
+                        title="Re-queue this exact task — does not create a new row"
                       >
-                        <RotateCcw className="h-3.5 w-3.5" />
-                        Re-task
+                        {activeAction === 'rerun' ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <RotateCcw className="h-3.5 w-3.5" />
+                        )}
+                        Rerun
                       </button>
                     )}
                     <button
