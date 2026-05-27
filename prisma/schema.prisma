@@ -138,6 +138,26 @@ model AuditLog {
   @@index([action, createdAt])
 }
 
+// ─── Activity Stream ─────────────────────────────────────────
+// Denormalized firehose of user-visible events surfaced in the
+// live activity feed (SSE). Distinct from AuditLog: AuditLog is
+// security-forensics-grade and links to users; Activity rows are
+// short-lived display rows safe to render verbatim.
+
+model Activity {
+  id          String   @id @default(uuid())
+  type        String   // dot-namespaced: "auth.login" | "service.launched" | "mcp.executed" | "task.created" | ...
+  entityType  String?  // "service" | "task" | "tool" | "user"
+  entityId    String?
+  actor       String?  // userId, "system", "n8n", or agent slug
+  description String   // pre-rendered, human-readable line
+  data        String?  // optional JSON payload
+  createdAt   DateTime @default(now())
+
+  @@index([type, createdAt])
+  @@index([createdAt])
+}
+
 // ─── Click / Usage Events ────────────────────────────────────
 
 model ClickEvent {
