@@ -6,7 +6,6 @@ import MainSidebar from '@/components/layout/MainSidebar';
 import { cn, formatRelativeTime, extractPastedImages } from '@/lib/utils';
 import {
   AlertTriangle,
-  Bot,
   Briefcase,
   Check,
   ChevronDown,
@@ -378,11 +377,11 @@ export default function AgentsPage() {
           <div className="flex items-start justify-between mb-6 gap-4 flex-wrap">
             <div className="pl-12 sm:pl-0">
               <h1 className="text-2xl font-bold text-portal-text flex items-center gap-2">
-                <Bot className="h-6 w-6 text-portal-accent" />
-                Agents
+                <Briefcase className="h-6 w-6 text-portal-accent" />
+                Tasks
               </h1>
               <p className="text-sm text-portal-muted">
-                Dispatch development tasks to specialized AI workers
+                Dispatch and monitor AI agent tasks across projects
               </p>
             </div>
             <div className="flex items-center gap-2 ml-auto">
