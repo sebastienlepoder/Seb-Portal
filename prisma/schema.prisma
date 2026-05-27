@@ -158,6 +158,36 @@ model Activity {
   @@index([createdAt])
 }
 
+// ─── Recurring Schedules ─────────────────────────────────────
+// Cron-driven dispatch templates. Evaluated once per minute from
+// the worker tick. Three dispatch kinds: "mcp" (call an MCP tool),
+// "webhook" (HTTP POST), or "task" (create a Task row).
+
+model RecurringTask {
+  id            String    @id @default(uuid())
+  title         String
+  description   String?
+  naturalText   String                  // user-typed phrase, e.g. "every weekday at 9am"
+  cronExpr      String                  // resolved cron, e.g. "0 9 * * 1-5"
+  humanReadable String                  // pretty-printed cron, from cronstrue
+
+  kind          String                  // "mcp" | "webhook" | "task"
+  payload       String                  // JSON, shape depends on kind
+
+  enabled       Boolean   @default(true)
+  lastSpawnedAt DateTime?
+  nextRunAt     DateTime?
+  spawnCount    Int       @default(0)
+  lastError     String?
+  lastCatchUpAt DateTime?
+
+  createdById   String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([enabled, nextRunAt])
+}
+
 // ─── Click / Usage Events ────────────────────────────────────
 
 model ClickEvent {

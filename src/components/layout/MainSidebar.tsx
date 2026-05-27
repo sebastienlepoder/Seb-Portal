@@ -30,6 +30,7 @@ import {
   Bot,
   HelpCircle,
   Bookmark,
+  Clock,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -117,6 +118,11 @@ const NAV_GROUPS: NavGroup[] = [
         label: 'Manage agents',
         icon: <Bot className="h-3.5 w-3.5" />,
         match: (p) => p.startsWith('/admin/agents') || p.startsWith('/admin/projects'),
+      },
+      {
+        href: '/admin/recurring',
+        label: 'Recurring tasks',
+        icon: <Clock className="h-3.5 w-3.5" />,
       },
       {
         href: '/admin/reports',
