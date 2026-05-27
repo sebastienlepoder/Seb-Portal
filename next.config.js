@@ -2,7 +2,19 @@
 const nextConfig = {
   output: 'standalone',
   experimental: {
-    serverComponentsExternalPackages: ['argon2'],
+    serverComponentsExternalPackages: ['argon2', 'ssh2'],
+    // The custom server (server.js at repo root) requires ssh2 and ws at
+    // runtime, but Next's trace only follows imports it sees in the app
+    // graph. Force them — plus their optional native bits — into the
+    // standalone bundle so node_modules is complete.
+    outputFileTracingIncludes: {
+      '/*': [
+        './node_modules/ssh2/**/*',
+        './node_modules/ws/**/*',
+        './node_modules/cpu-features/**/*',
+        './node_modules/sshpk/**/*',
+      ],
+    },
   },
   async headers() {
     return [

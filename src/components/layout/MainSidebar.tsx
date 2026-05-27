@@ -32,6 +32,7 @@ import {
   Bookmark,
   Clock,
   ListTodo,
+  Terminal,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -136,6 +137,11 @@ const NAV_GROUPS: NavGroup[] = [
         href: '/admin/recurring',
         label: 'Recurring tasks',
         icon: <Clock className="h-3.5 w-3.5" />,
+      },
+      {
+        href: '/terminal',
+        label: 'Web Terminal',
+        icon: <Terminal className="h-3.5 w-3.5" />,
       },
       {
         href: '/admin/mcp',

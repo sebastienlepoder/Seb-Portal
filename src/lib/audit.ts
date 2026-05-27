@@ -17,7 +17,9 @@ export type AuditAction =
   | 'totp_disable'
   | 'ai_chat'
   | 'mcp_execute'
-  | 'urgent_item_action';
+  | 'urgent_item_action'
+  | 'terminal_open'
+  | 'terminal_close';
 
 export async function auditLog(params: {
   userId?: string;
@@ -128,6 +130,16 @@ function surfaceActivity(
       return { type: 'urgent.action', description: `Urgent item ${str(d.action) ?? 'changed'}` };
     case 'admin_action':
       return { type: 'admin.action', description: `Admin: ${str(d.action) ?? 'action'}` };
+    case 'terminal_open':
+      return {
+        type: 'terminal.open',
+        description: `${who} opened SSH terminal to ${str(d.host) ?? 'unknown'}@${str(d.username) ?? '?'}`,
+      };
+    case 'terminal_close':
+      return {
+        type: 'terminal.close',
+        description: `SSH terminal session closed (${str(d.outcome) ?? 'closed'}, ${str(d.durationMs) != null ? Math.round(Number(d.durationMs) / 1000) + 's' : '?'})`,
+      };
     default:
       return null;
   }

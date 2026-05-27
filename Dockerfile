@@ -69,6 +69,11 @@ COPY --from=builder --chown=nextjs:nodejs /app/scripts ./scripts
 COPY --from=builder --chown=nextjs:nodejs /app/tsconfig.json ./tsconfig.json
 COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
 
+# Override Next's standalone-generated server.js with our custom wrapper that
+# also hosts the /api/terminal/ws SSH bridge. Must come AFTER the standalone
+# copy so we replace, not get replaced by, the auto-generated file.
+COPY --from=builder --chown=nextjs:nodejs /app/server.js ./server.js
+
 # Create runtime-only directories (small — fast chown). git, sqlite3, and
 # wget are already installed via apt above.
 RUN mkdir -p /app/data /app/public/icons/generated \
