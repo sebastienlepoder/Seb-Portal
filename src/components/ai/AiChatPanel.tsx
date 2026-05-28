@@ -25,6 +25,8 @@ import {
   Search,
   Download,
   Upload,
+  Cpu,
+  ChevronDown,
 } from 'lucide-react';
 import Link from 'next/link';
 import { cn, formatRelativeTime, extractPastedImages } from '@/lib/utils';
@@ -56,7 +58,21 @@ interface PendingQuestion {
 }
 
 const STORAGE_KEY = 'ai-hub:active-thread';
+const MODEL_STORAGE_KEY = 'ai-hub:model';
 const SIDEBAR_WIDTH_KEY = 'ai-hub:sidebar-width';
+
+interface SlashCommand {
+  cmd: string;
+  description: string;
+}
+const SLASH_COMMANDS: SlashCommand[] = [
+  { cmd: '/help', description: 'List available commands' },
+  { cmd: '/new', description: 'Start a new conversation' },
+  { cmd: '/clear', description: 'Start a new conversation' },
+  { cmd: '/model', description: 'Switch the model (e.g. /model opus)' },
+  { cmd: '/search', description: 'Search conversations (e.g. /search invoices)' },
+  { cmd: '/archive', description: 'Toggle the archived view' },
+];
 const SIDEBAR_MIN = 200;
 const SIDEBAR_MAX = 560;
 const SIDEBAR_DEFAULT = 260;
@@ -82,6 +98,9 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
   const [threadSearch, setThreadSearch] = useState('');
   const [showArchived, setShowArchived] = useState(false);
   const [tagFilter, setTagFilter] = useState<string | null>(null);
+  const [models, setModels] = useState<{ id: string; label: string; provider: string; supportsTools: boolean }[]>([]);
+  const [selectedModel, setSelectedModel] = useState<string>('claude-sonnet-4-6');
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -184,6 +203,27 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
   useEffect(() => {
     fetchThreads();
   }, [fetchThreads]);
+
+  // Load available models + restore the last-used selection.
+  useEffect(() => {
+    fetch('/api/ai/models')
+      .then((r) => r.json())
+      .then((d) => {
+        if (!d.ok) return;
+        setModels(d.data.models);
+        const stored =
+          typeof window !== 'undefined' ? window.localStorage.getItem(MODEL_STORAGE_KEY) : null;
+        const valid = d.data.models.find((m: { id: string }) => m.id === stored);
+        setSelectedModel(valid ? stored! : d.data.defaultModel || d.data.models[0]?.id || 'claude-sonnet-4-6');
+      })
+      .catch(() => {});
+  }, []);
+
+  function chooseModel(id: string) {
+    setSelectedModel(id);
+    setModelMenuOpen(false);
+    if (typeof window !== 'undefined') window.localStorage.setItem(MODEL_STORAGE_KEY, id);
+  }
 
   // On mount: load threadId from localStorage and hydrate messages
   useEffect(() => {
@@ -441,6 +481,7 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
         },
         body: JSON.stringify({
           provider,
+          model: selectedModel,
           messages: [...baseMessages, userMsg],
           threadId: currentThreadId,
         }),
@@ -546,7 +587,74 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
     }
   }
 
-  const sendMessage = () => sendText(input);
+  /** Returns true if the text was a slash command and was handled
+   *  locally (so it should NOT be sent to the model). */
+  function handleSlashCommand(text: string): boolean {
+    const trimmed = text.trim();
+    if (!trimmed.startsWith('/')) return false;
+    const [cmd, ...rest] = trimmed.split(/\s+/);
+    const arg = rest.join(' ').trim();
+
+    switch (cmd) {
+      case '/new':
+      case '/clear':
+        newChat();
+        setInput('');
+        return true;
+      case '/archive':
+        setShowArchived((v) => !v);
+        setInput('');
+        return true;
+      case '/search':
+        setThreadSearch(arg);
+        setInput('');
+        return true;
+      case '/model': {
+        if (!arg) {
+          setModelMenuOpen(true);
+          setInput('');
+          return true;
+        }
+        const match = models.find(
+          (m) => m.id === arg || m.label.toLowerCase().includes(arg.toLowerCase())
+        );
+        if (match) {
+          chooseModel(match.id);
+        } else {
+          setMessages((prev) => [
+            ...prev,
+            { role: 'assistant', content: `No model matches "${arg}". Available: ${models.map((m) => m.label).join(', ')}` },
+          ]);
+        }
+        setInput('');
+        return true;
+      }
+      case '/help':
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: 'assistant',
+            content:
+              '**Slash commands**\n\n' +
+              SLASH_COMMANDS.map((c) => `- \`${c.cmd}\` — ${c.description}`).join('\n'),
+          },
+        ]);
+        setInput('');
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  const sendMessage = () => {
+    if (handleSlashCommand(input)) return;
+    void sendText(input);
+  };
+
+  const slashMatches =
+    input.startsWith('/') && !input.includes(' ')
+      ? SLASH_COMMANDS.filter((c) => c.cmd.startsWith(input.toLowerCase()))
+      : [];
 
   function startEditMessage(index: number) {
     const msg = messages[index];
@@ -1182,37 +1290,103 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
               {pasteError}
             </div>
           )}
-          <div className="mx-auto w-full max-w-4xl flex gap-2">
-            <label htmlFor="ai-chat-input" className="sr-only">
-              Message
-            </label>
-            <input
-              id="ai-chat-input"
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onPaste={handlePaste}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  if (canSend) sendMessage();
+          <div className="mx-auto w-full max-w-4xl relative">
+            {/* Slash command autocomplete */}
+            {slashMatches.length > 0 && (
+              <div className="absolute bottom-full mb-2 left-0 right-0 bg-portal-card border border-portal-border rounded-lg shadow-xl overflow-hidden z-10">
+                {slashMatches.map((c) => (
+                  <button
+                    key={c.cmd}
+                    onClick={() => setInput(c.cmd + ' ')}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-portal-card-hover"
+                  >
+                    <span className="font-mono text-portal-accent">{c.cmd}</span>
+                    <span className="text-portal-muted">{c.description}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <label htmlFor="ai-chat-input" className="sr-only">
+                Message
+              </label>
+              <input
+                id="ai-chat-input"
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onPaste={handlePaste}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    // If a single slash command is matched, run it.
+                    if (slashMatches.length === 1 && input === slashMatches[0].cmd) {
+                      sendMessage();
+                    } else if (canSend || input.trim().startsWith('/')) {
+                      sendMessage();
+                    }
+                  }
+                }}
+                placeholder={
+                  pendingQuestion
+                    ? 'Pick an option above, or type a custom answer…'
+                    : 'Ask anything, / for commands, paste a screenshot…'
                 }
-              }}
-              placeholder={
-                pendingQuestion
-                  ? 'Pick an option above, or type a custom answer…'
-                  : 'Ask anything, paste a screenshot, or dispatch a task…'
-              }
-              className="flex-1 min-w-0 bg-portal-card border border-portal-border rounded-lg px-3 py-2 text-sm text-portal-text placeholder:text-portal-muted focus:outline-none focus:ring-2 focus:ring-portal-accent focus:border-portal-accent/50"
-            />
-            <button
-              onClick={sendMessage}
-              disabled={!canSend}
-              aria-label="Send message"
-              className="px-4 py-2 bg-portal-accent hover:bg-portal-accent/80 text-white rounded-lg transition-colors disabled:opacity-50 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent shrink-0"
-            >
-              <Send className="h-4 w-4" />
-            </button>
+                className="flex-1 min-w-0 bg-portal-card border border-portal-border rounded-lg px-3 py-2 text-sm text-portal-text placeholder:text-portal-muted focus:outline-none focus:ring-2 focus:ring-portal-accent focus:border-portal-accent/50"
+              />
+              <button
+                onClick={sendMessage}
+                disabled={!canSend && !input.trim().startsWith('/')}
+                aria-label="Send message"
+                className="px-4 py-2 bg-portal-accent hover:bg-portal-accent/80 text-white rounded-lg transition-colors disabled:opacity-50 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent shrink-0"
+              >
+                <Send className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Composer footer: model picker */}
+            <div className="flex items-center gap-2 mt-2">
+              <div className="relative">
+                <button
+                  onClick={() => setModelMenuOpen((v) => !v)}
+                  className="inline-flex items-center gap-1 text-[11px] text-portal-muted hover:text-portal-text px-2 py-1 rounded-md border border-portal-border bg-portal-card"
+                >
+                  <Cpu className="h-3 w-3" />
+                  {models.find((m) => m.id === selectedModel)?.label ?? selectedModel}
+                  <ChevronDown className="h-3 w-3" />
+                </button>
+                {modelMenuOpen && (
+                  <div className="absolute bottom-full mb-1 left-0 min-w-[200px] bg-portal-card border border-portal-border rounded-lg shadow-xl overflow-hidden z-20">
+                    {models.length === 0 ? (
+                      <div className="px-3 py-2 text-[11px] text-portal-muted">No models configured</div>
+                    ) : (
+                      models.map((m) => (
+                        <button
+                          key={m.id}
+                          onClick={() => chooseModel(m.id)}
+                          className={cn(
+                            'w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-portal-card-hover',
+                            m.id === selectedModel ? 'text-portal-accent' : 'text-portal-text'
+                          )}
+                        >
+                          <span className="flex-1">{m.label}</span>
+                          {m.supportsTools && (
+                            <span className="text-[9px] text-portal-muted" title="Supports tools">
+                              tools
+                            </span>
+                          )}
+                          {m.id === selectedModel && <Check className="h-3 w-3" />}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+              {!models.find((m) => m.id === selectedModel)?.supportsTools && (
+                <span className="text-[10px] text-portal-muted">text-only (no tools)</span>
+              )}
+            </div>
           </div>
         </div>
       </div>

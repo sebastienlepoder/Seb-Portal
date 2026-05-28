@@ -3,7 +3,7 @@ import { requireApiAuth } from '@/lib/auth';
 import { checkRateLimit, aiChatLimiter } from '@/lib/rate-limit';
 import { auditLog, getClientIp } from '@/lib/audit';
 import prisma from '@/lib/db';
-import { getAnthropicClient, ANTHROPIC_MODELS } from '@/lib/anthropic';
+import { getAnthropicClient } from '@/lib/anthropic';
 import { dispatchTask, DispatchError } from '@/lib/agent-dispatch';
 import { toTaskDTO, toTaskLogDTO } from '@/lib/agents';
 import {
@@ -25,6 +25,7 @@ import {
   type TaskStatus,
 } from '@/types/agents';
 import type { AiProvider, AiMessage, ToolCall, SessionUser } from '@/types';
+import { getModelDef, isModelAvailable, DEFAULT_MODEL_ID } from '@/lib/ai/models';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -699,17 +700,26 @@ export async function POST(request: Request) {
   }
 
   const body = (await request.json()) as {
-    provider: AiProvider;
+    provider?: AiProvider;
+    model?: string;
     messages: AiMessage[];
     threadId?: string;
     maxTokens?: number;
   };
 
-  const { provider, messages: incoming, threadId, maxTokens = 2048 } = body;
+  const { messages: incoming, threadId, maxTokens = 2048 } = body;
 
   if (!incoming?.length) {
     return errorResponse(400, 'Messages required');
   }
+
+  // Resolve the model. Prefer an explicit model id; fall back to the
+  // legacy provider field, then the default.
+  const modelDef =
+    getModelDef(body.model) ??
+    getModelDef(body.provider === 'openai' ? 'gpt-4o' : DEFAULT_MODEL_ID) ??
+    getModelDef(DEFAULT_MODEL_ID)!;
+  const provider: AiProvider = modelDef.provider === 'anthropic' ? 'anthropic' : 'openai';
 
   // Validate image attachments on the final user message (the only
   // place we forward them). Reject oversized or too-many uploads.
@@ -729,14 +739,8 @@ export async function POST(request: Request) {
     }
   }
 
-  if (provider === 'anthropic' && !getAnthropicClient()) {
-    return errorResponse(503, 'Anthropic API key not configured');
-  }
-  if (provider === 'openai' && !process.env.OPENAI_API_KEY) {
-    return errorResponse(503, 'OpenAI API key not configured');
-  }
-  if (provider !== 'anthropic' && provider !== 'openai') {
-    return errorResponse(400, 'Invalid provider');
+  if (!isModelAvailable(modelDef.id)) {
+    return errorResponse(503, `Model "${modelDef.label}" is not configured (missing ${modelDef.requiresEnv})`);
   }
 
   const encoder = new TextEncoder();
@@ -761,10 +765,11 @@ export async function POST(request: Request) {
       const toolEvents: string[] = [];
 
       try {
-        if (provider === 'anthropic') {
+        if (modelDef.provider === 'anthropic') {
           await runAnthropic({
             incoming,
             maxTokens,
+            model: modelDef.modelId,
             user,
             send,
             onText: (delta) => { assistantText += delta; },
@@ -781,6 +786,8 @@ export async function POST(request: Request) {
           await runOpenAi({
             incoming,
             maxTokens,
+            model: modelDef.modelId,
+            useOpenRouter: modelDef.provider === 'openrouter',
             send,
             onText: (delta) => { assistantText += delta; },
             signal: request.signal,
@@ -867,6 +874,7 @@ export async function POST(request: Request) {
 interface RunAnthropicArgs {
   incoming: AiMessage[];
   maxTokens: number;
+  model: string;
   user: SessionUser;
   send: (e: ChatStreamEvent) => void;
   onText: (delta: string) => void;
@@ -878,7 +886,7 @@ interface RunAnthropicArgs {
 }
 
 async function runAnthropic(args: RunAnthropicArgs): Promise<void> {
-  const { incoming, maxTokens, user, send, onText, onThinking, onToolCall, onQuestion, onToolEvent, signal } = args;
+  const { incoming, maxTokens, model, user, send, onText, onThinking, onToolCall, onQuestion, onToolEvent, signal } = args;
   const anthropic = getAnthropicClient();
   if (!anthropic) throw new Error('Anthropic API key not configured');
 
@@ -914,7 +922,7 @@ async function runAnthropic(args: RunAnthropicArgs): Promise<void> {
 
     const stream = anthropic.messages.stream(
       {
-        model: ANTHROPIC_MODELS.sonnet,
+        model,
         max_tokens: Math.min(maxTokens, 4096),
         system: systemPrompt,
         tools: CHAT_TOOLS,
@@ -1009,19 +1017,26 @@ async function runAnthropic(args: RunAnthropicArgs): Promise<void> {
 interface RunOpenAiArgs {
   incoming: AiMessage[];
   maxTokens: number;
+  model: string;
+  useOpenRouter: boolean;
   send: (e: ChatStreamEvent) => void;
   onText: (delta: string) => void;
   signal: AbortSignal;
 }
 
 async function runOpenAi(args: RunOpenAiArgs): Promise<void> {
-  const { incoming, maxTokens, send, onText, signal } = args;
+  const { incoming, maxTokens, model, useOpenRouter, send, onText, signal } = args;
   const OpenAI = (await import('openai')).default;
-  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
+  const openai = useOpenRouter
+    ? new OpenAI({
+        apiKey: process.env.OPENROUTER_API_KEY!,
+        baseURL: 'https://openrouter.ai/api/v1',
+      })
+    : new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
 
   const stream = await openai.chat.completions.create(
     {
-      model: 'gpt-4o',
+      model,
       messages: incoming.map((m) => ({
         role: m.role as 'user' | 'assistant' | 'system',
         content: m.content,
