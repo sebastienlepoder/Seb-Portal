@@ -9,10 +9,10 @@ import { cn } from '@/lib/utils';
 const PROJECT_KEY = 'quicktodo:project';
 
 /**
- * App-wide quick-capture for todos. A small floating button (left of the
- * AI Hub button) opens a popover: type a todo, pick a project, add — without
- * leaving the page you're on. The project persists so a stray thought about
- * any project can be captured in two keystrokes.
+ * App-wide quick-capture for todos. The header-mounted {@link QuickTodoTrigger}
+ * (or a `quicktodo:open` window event) opens a popover: type a todo, pick a
+ * project, add — without leaving the page you're on. The project persists so a
+ * stray thought about any project can be captured in two keystrokes.
  */
 export function QuickTodo() {
   const { user, loading } = useAuth();
@@ -44,6 +44,13 @@ export function QuickTodo() {
   useEffect(() => {
     if (open) setTimeout(() => inputRef.current?.focus(), 50);
   }, [open]);
+
+  // Allow the header trigger (and any page) to open the popover via an event.
+  useEffect(() => {
+    const onOpen = () => setOpen(true);
+    window.addEventListener('quicktodo:open', onOpen);
+    return () => window.removeEventListener('quicktodo:open', onOpen);
+  }, []);
 
   const csrfToken = (user as { csrfToken?: string } | null)?.csrfToken;
 
@@ -83,17 +90,6 @@ export function QuickTodo() {
 
   return (
     <>
-      {!open && (
-        <button
-          onClick={() => setOpen(true)}
-          aria-label="Quick add todo"
-          title="Quick add todo"
-          className="fixed top-2.5 right-[3.25rem] z-[60] inline-flex items-center justify-center h-9 w-9 rounded-full bg-portal-card border border-portal-border text-portal-muted shadow-lg hover:text-portal-text hover:border-portal-accent/40 transition-colors focus:outline-none focus:ring-2 focus:ring-portal-accent"
-        >
-          <CheckSquare className="h-4 w-4" />
-        </button>
-      )}
-
       {open && (
         <>
           <div className="fixed inset-0 z-[60]" onClick={() => setOpen(false)} aria-hidden />
@@ -144,5 +140,26 @@ export function QuickTodo() {
         </>
       )}
     </>
+  );
+}
+
+/**
+ * Header-mounted trigger that opens the globally-mounted {@link QuickTodo}
+ * popover. Kept as a plain (non-fixed) button so it can sit inline with the
+ * other header icons; it signals the popover via the `quicktodo:open` event.
+ */
+export function QuickTodoTrigger({ className }: { className?: string }) {
+  return (
+    <button
+      onClick={() => window.dispatchEvent(new CustomEvent('quicktodo:open'))}
+      aria-label="Quick add todo"
+      title="Quick add todo"
+      className={cn(
+        'p-2 text-portal-muted hover:text-portal-text hover:bg-portal-card rounded-lg transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent',
+        className
+      )}
+    >
+      <CheckSquare className="h-4 w-4" />
+    </button>
   );
 }
