@@ -159,13 +159,29 @@ function handleSshSession(ws, ctx = {}) {
   let readyTimer = null;
   let idleTimer = null;
   let lifetimeTimer = null;
+  let keepaliveTimer = null;
 
   function clearAllTimers() {
     if (configTimer)  { clearTimeout(configTimer);  configTimer  = null; }
     if (readyTimer)   { clearTimeout(readyTimer);   readyTimer   = null; }
     if (idleTimer)    { clearTimeout(idleTimer);    idleTimer    = null; }
     if (lifetimeTimer){ clearTimeout(lifetimeTimer);lifetimeTimer = null; }
+    if (keepaliveTimer){ clearInterval(keepaliveTimer); keepaliveTimer = null; }
   }
+
+  // ── WebSocket keepalive ────────────────────────────────────────────────────
+  // Reverse proxies (Traefik in some Coolify setups) drop a WebSocket that
+  // carries no traffic shortly after the upgrade — and the only window with
+  // no traffic is precisely between the client's config frame and the first
+  // byte of SSH output, while the SSH handshake to the target runs (1–2s+).
+  // Pinging on a sub-second cadence from t=0 keeps the connection non-idle
+  // through that window. ws auto-answers with pong; browsers handle the
+  // reverse direction. 750ms beats the aggressive ~1s idle drop we observed.
+  keepaliveTimer = setInterval(() => {
+    if (ws.readyState === ws.OPEN) {
+      try { ws.ping(); } catch { /* socket dying */ }
+    }
+  }, 750);
 
   // ── Idle timer (resets on every I/O event) ────────────────────────────────
   function resetIdleTimer() {
@@ -246,6 +262,12 @@ function handleSshSession(ws, ctx = {}) {
 
     cfg = result.data;
     sessionStartedAt = Date.now();
+
+    // Immediately push a server→client frame so the connection has traffic
+    // in both directions before the (potentially multi-second) SSH handshake
+    // begins — combined with the keepalive ping above, this prevents the
+    // proxy from treating the upgrade as idle and dropping it.
+    sendStatus(ws, { type: 'status', status: 'connecting' });
 
     // Do NOT include credentials in any log line.
     console.log(
