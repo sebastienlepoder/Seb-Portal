@@ -33,6 +33,7 @@ import prisma from '../src/lib/db';
 import { executeTask } from './task-executor';
 import { logger } from './logger';
 import { schedulerTick, catchUpOnBoot } from '../src/lib/schedule/runner';
+import { syncReposToProjects } from '../src/lib/github/sync';
 
 const WORKER_ID = process.env.WORKER_ID || `${os.hostname()}-${process.pid}`;
 const POLL_INTERVAL_MS = parseInt(process.env.WORKER_POLL_INTERVAL_MS || '5000', 10) || 5000;
@@ -228,9 +229,28 @@ async function main(): Promise<void> {
     process.stderr.write(`[worker] scheduler catch-up error: ${(e as Error).message}\n`);
   }
 
+  // Scheduled GitHub repo sync. GITHUB_SYNC_INTERVAL_MIN=0 disables it.
+  const githubSyncMs = (parseInt(process.env.GITHUB_SYNC_INTERVAL_MIN || '60', 10) || 0) * 60_000;
+  let lastRepoSync = 0;
+  const maybeSyncRepos = async () => {
+    if (githubSyncMs <= 0 || !process.env.GITHUB_TOKEN) return;
+    if (Date.now() - lastRepoSync < githubSyncMs) return;
+    lastRepoSync = Date.now();
+    try {
+      const r = await syncReposToProjects();
+      if (r.created > 0) {
+        process.stdout.write(`[worker] github sync: ${r.created} new project(s) from ${r.fetched} repo(s)\n`);
+      }
+    } catch (e) {
+      process.stderr.write(`[worker] github sync error: ${(e as Error).message}\n`);
+    }
+  };
+  await maybeSyncRepos();
+
   while (!shuttingDown) {
     try {
       await tick();
+      await maybeSyncRepos();
       await heartbeat('running');
     } catch (e) {
       process.stderr.write(`[worker] tick error: ${(e as Error).message}\n`);

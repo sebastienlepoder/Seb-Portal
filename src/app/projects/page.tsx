@@ -13,6 +13,8 @@ import {
   Archive,
   ListTodo,
   Pencil,
+  RefreshCw,
+  Loader2,
 } from 'lucide-react';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
@@ -58,9 +60,37 @@ export default function ProjectsPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   // null = closed, 'new' = create, otherwise the project id being edited.
   const [editorTarget, setEditorTarget] = useState<string | 'new' | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
 
   const isAdmin = user?.role?.toLowerCase() === 'admin';
   const csrfToken = (user as { csrfToken?: string } | null)?.csrfToken;
+
+  async function syncRepos() {
+    setSyncing(true);
+    setSyncMsg(null);
+    try {
+      const res = await fetch('/api/admin/github/sync', {
+        method: 'POST',
+        headers: csrfToken ? { 'x-csrf-token': csrfToken } : {},
+      });
+      const data = await res.json();
+      if (!res.ok && !data.data) {
+        setSyncMsg(data.error || 'Sync failed');
+        return;
+      }
+      const r = data.data;
+      setSyncMsg(
+        `Synced ${r.fetched} repo${r.fetched === 1 ? '' : 's'} — ${r.created} new, ${r.skipped} already linked` +
+          (r.errors?.length ? `, ${r.errors.length} error(s)` : '')
+      );
+      refresh();
+    } catch {
+      setSyncMsg('Sync request failed');
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   useEffect(() => {
     if (!loading && !user) window.location.href = '/login';
@@ -130,15 +160,33 @@ export default function ProjectsPage() {
             </div>
             
             {isAdmin && (
-              <button
-                onClick={() => setEditorTarget('new')}
-                className="sm:ml-auto flex items-center gap-2 px-4 py-2 bg-portal-accent hover:bg-portal-accent-dark text-white rounded-lg transition-colors text-sm"
-              >
-                <Plus className="h-4 w-4" />
-                Nouveau projet
-              </button>
+              <div className="sm:ml-auto flex items-center gap-2">
+                <button
+                  onClick={syncRepos}
+                  disabled={syncing}
+                  title="Pull your GitHub repos in as projects"
+                  className="flex items-center gap-2 px-3 py-2 bg-portal-card border border-portal-border hover:border-portal-accent/40 text-portal-text rounded-lg transition-colors text-sm disabled:opacity-50"
+                >
+                  {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                  Sync repos
+                </button>
+                <button
+                  onClick={() => setEditorTarget('new')}
+                  className="flex items-center gap-2 px-4 py-2 bg-portal-accent hover:bg-portal-accent-dark text-white rounded-lg transition-colors text-sm"
+                >
+                  <Plus className="h-4 w-4" />
+                  Nouveau projet
+                </button>
+              </div>
             )}
           </div>
+
+          {syncMsg && (
+            <div className="mb-4 text-xs text-portal-muted bg-portal-card border border-portal-border rounded-lg px-3 py-2 flex items-center justify-between gap-2">
+              <span>{syncMsg}</span>
+              <button onClick={() => setSyncMsg(null)} className="text-portal-muted hover:text-portal-text">✕</button>
+            </div>
+          )}
 
           {/* Status filter chips */}
           <div className="flex flex-wrap gap-2 mb-6">
