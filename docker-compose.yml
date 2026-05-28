@@ -113,7 +113,15 @@ services:
       # `claude login` on a host with a browser). Bootstrap once and the
       # worker uses your Max subscription instead of paying API tokens.
       # Override the host side via CLAUDE_CREDS_DIR.
-      - ${CLAUDE_CREDS_DIR:-/data/coolify/lepoder-portal/claude-creds}:/home/nextjs/.claude:ro
+      #
+      # MUST be read-write: Max OAuth access tokens expire (~daily) and the
+      # SDK refreshes them via the refresh token, writing the new access
+      # token back to .credentials.json. A read-only mount blocks that write,
+      # so once the first token expires every task fails with
+      # "401 Invalid authentication credentials" until the file is replaced
+      # by hand. The host dir must also be owned by uid 1001 (the container's
+      # nextjs user) so the SDK can write — see docs / CLAUDE_CREDS_DIR notes.
+      - ${CLAUDE_CREDS_DIR:-/data/coolify/lepoder-portal/claude-creds}:/home/nextjs/.claude
     env_file:
       - .env
     environment:
