@@ -28,7 +28,9 @@ import {
   Cpu,
   ChevronDown,
   FolderGit2,
+  MoreHorizontal,
 } from 'lucide-react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { cn, formatRelativeTime, extractPastedImages } from '@/lib/utils';
 import type { AiMessage, AiProvider, ToolCall } from '@/types';
@@ -127,10 +129,17 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [projects, setProjects] = useState<{ id: string; slug: string; name: string }[]>([]);
   const [selectedProject, setSelectedProject] = useState<string>('');
+  // Per-conversation actions dropdown (⋯). Rendered via a portal so the
+  // sidebar's overflow doesn't clip it. `top`/`bottom` are mutually exclusive
+  // so the menu can flip above the trigger when near the viewport bottom.
+  const [menuState, setMenuState] = useState<
+    { id: string; left: number; top?: number; bottom?: number } | null
+  >(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   // Resizable sidebar state
   const [sidebarWidth, setSidebarWidth] = useState<number>(SIDEBAR_DEFAULT);
@@ -232,6 +241,31 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
       renameInputRef.current.select();
     }
   }, [renamingId]);
+
+  // Close the per-conversation actions menu on outside click, scroll, resize,
+  // or Escape. The trigger button stops mousedown propagation so re-clicking it
+  // toggles cleanly instead of closing-then-reopening.
+  useEffect(() => {
+    if (!menuState) return;
+    const onPointerDown = (e: MouseEvent) => {
+      if (menuRef.current?.contains(e.target as Node)) return;
+      setMenuState(null);
+    };
+    const onClose = () => setMenuState(null);
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenuState(null);
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    window.addEventListener('resize', onClose);
+    window.addEventListener('scroll', onClose, true);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('resize', onClose);
+      window.removeEventListener('scroll', onClose, true);
+    };
+  }, [menuState]);
 
   // Load thread list (honours search / archived / tag filters)
   const fetchThreads = useCallback(() => {
@@ -414,6 +448,35 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
   function exportThread(id: string, format: 'md' | 'json', e: React.MouseEvent) {
     e.stopPropagation();
     window.open(`/api/ai/threads/${id}/export?format=${format}`, '_blank');
+  }
+
+  // Toggle the actions dropdown for a conversation row, anchoring it to the
+  // trigger button and flipping it above when there isn't room below.
+  const MENU_WIDTH = 184;
+  const MENU_HEIGHT = 260;
+  function toggleMenu(id: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    if (menuState?.id === id) {
+      setMenuState(null);
+      return;
+    }
+    const rect = e.currentTarget.getBoundingClientRect();
+    const left = Math.max(8, Math.min(rect.right - MENU_WIDTH, window.innerWidth - MENU_WIDTH - 8));
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const openUp = spaceBelow < MENU_HEIGHT && rect.top > MENU_HEIGHT;
+    setMenuState({
+      id,
+      left,
+      ...(openUp
+        ? { bottom: window.innerHeight - rect.top + 4 }
+        : { top: rect.bottom + 4 }),
+    });
+  }
+
+  // Run an action handler then dismiss the menu.
+  function runMenuAction(action: (e: React.MouseEvent) => void, e: React.MouseEvent) {
+    action(e);
+    setMenuState(null);
   }
 
   async function importThreadFile(file: File) {
@@ -1059,62 +1122,23 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
                       )}
                     </button>
                   ) : (
-                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
-                      <button
-                        type="button"
-                        onClick={(e) => togglePin(t, e)}
-                        aria-label={t.pinned ? 'Unpin' : 'Pin'}
-                        title={t.pinned ? 'Unpin' : 'Pin'}
-                        className="p-0.5 text-portal-muted hover:text-portal-accent rounded transition-colors cursor-pointer"
-                      >
-                        {t.pinned ? <PinOff className="h-3 w-3" /> : <Pin className="h-3 w-3" />}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => editTags(t, e)}
-                        aria-label="Edit tags"
-                        title="Edit tags"
-                        className="p-0.5 text-portal-muted hover:text-portal-text rounded transition-colors cursor-pointer"
-                      >
-                        <Tag className="h-3 w-3" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => startRename(t, e)}
-                        aria-label="Rename conversation"
-                        title="Rename conversation"
-                        className="p-0.5 text-portal-muted hover:text-portal-text rounded transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
-                      >
-                        <Pencil className="h-3 w-3" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => exportThread(t.id, 'md', e)}
-                        aria-label="Export as Markdown"
-                        title="Export as Markdown"
-                        className="p-0.5 text-portal-muted hover:text-portal-text rounded transition-colors cursor-pointer"
-                      >
-                        <Download className="h-3 w-3" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => toggleArchive(t, e)}
-                        aria-label={t.archived ? 'Unarchive' : 'Archive'}
-                        title={t.archived ? 'Unarchive' : 'Archive'}
-                        className="p-0.5 text-portal-muted hover:text-portal-text rounded transition-colors cursor-pointer"
-                      >
-                        {t.archived ? <ArchiveRestore className="h-3 w-3" /> : <Archive className="h-3 w-3" />}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => deleteThread(t.id, e)}
-                        aria-label="Delete conversation"
-                        title="Delete conversation"
-                        className="p-0.5 text-portal-muted hover:text-red-300 rounded transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onClick={(e) => toggleMenu(t.id, e)}
+                      aria-label="Conversation actions"
+                      aria-haspopup="menu"
+                      aria-expanded={menuState?.id === t.id}
+                      title="Actions"
+                      className={cn(
+                        'shrink-0 mt-0.5 p-1 rounded-md text-portal-muted hover:text-portal-text hover:bg-portal-card-hover transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent',
+                        menuState?.id === t.id
+                          ? 'opacity-100 text-portal-text bg-portal-card-hover'
+                          : 'opacity-0 group-hover:opacity-100 focus:opacity-100',
+                      )}
+                    >
+                      <MoreHorizontal className="h-4 w-4" />
+                    </button>
                   )}
                 </div>
               );
@@ -1122,6 +1146,94 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
           )}
         </div>
       </aside>
+
+      {/* Per-conversation actions dropdown — portaled to <body> so the sidebar's
+          overflow can't clip it. */}
+      {menuState &&
+        typeof document !== 'undefined' &&
+        (() => {
+          const t = threads.find((th) => th.id === menuState.id);
+          if (!t) return null;
+          const itemClass =
+            'w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs text-portal-text hover:bg-portal-card-hover transition-colors cursor-pointer focus:outline-none focus:bg-portal-card-hover';
+          return createPortal(
+            <div
+              ref={menuRef}
+              role="menu"
+              aria-label="Conversation actions"
+              style={{
+                position: 'fixed',
+                left: menuState.left,
+                width: MENU_WIDTH,
+                ...(menuState.top !== undefined
+                  ? { top: menuState.top }
+                  : { bottom: menuState.bottom }),
+              }}
+              className="z-[70] py-1 bg-portal-card border border-portal-border rounded-lg shadow-xl overflow-hidden"
+            >
+              <button
+                type="button"
+                role="menuitem"
+                onClick={(e) => runMenuAction((ev) => togglePin(t, ev), e)}
+                className={itemClass}
+              >
+                {t.pinned ? <PinOff className="h-3.5 w-3.5 shrink-0" /> : <Pin className="h-3.5 w-3.5 shrink-0" />}
+                {t.pinned ? 'Unpin' : 'Pin'}
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={(e) => runMenuAction((ev) => startRename(t, ev), e)}
+                className={itemClass}
+              >
+                <Pencil className="h-3.5 w-3.5 shrink-0" />
+                Rename
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={(e) => runMenuAction((ev) => editTags(t, ev), e)}
+                className={itemClass}
+              >
+                <Tag className="h-3.5 w-3.5 shrink-0" />
+                Edit Tags
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={(e) => runMenuAction((ev) => exportThread(t.id, 'md', ev), e)}
+                className={itemClass}
+              >
+                <Download className="h-3.5 w-3.5 shrink-0" />
+                Export as .md
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={(e) => runMenuAction((ev) => toggleArchive(t, ev), e)}
+                className={itemClass}
+              >
+                {t.archived ? (
+                  <ArchiveRestore className="h-3.5 w-3.5 shrink-0" />
+                ) : (
+                  <Archive className="h-3.5 w-3.5 shrink-0" />
+                )}
+                {t.archived ? 'Unarchive' : 'Archive'}
+              </button>
+              <div className="my-1 border-t border-portal-border" role="separator" />
+              <button
+                type="button"
+                role="menuitem"
+                onClick={(e) => runMenuAction((ev) => deleteThread(t.id, ev), e)}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer focus:outline-none focus:bg-red-500/10"
+              >
+                <Trash2 className="h-3.5 w-3.5 shrink-0" />
+                Delete
+              </button>
+            </div>,
+            document.body,
+          );
+        })()}
 
       {/* Resize handle (desktop only) */}
       {!isMobile && (
