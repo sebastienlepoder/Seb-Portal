@@ -12,9 +12,11 @@ import {
   PauseCircle,
   Archive,
   ListTodo,
+  Pencil,
 } from 'lucide-react';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
+import { ProjectEditorModal } from '@/components/projects/ProjectEditorModal';
 
 interface Project {
   id: string;
@@ -54,21 +56,28 @@ export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  // null = closed, 'new' = create, otherwise the project id being edited.
+  const [editorTarget, setEditorTarget] = useState<string | 'new' | null>(null);
+
+  const isAdmin = user?.role?.toLowerCase() === 'admin';
+  const csrfToken = (user as { csrfToken?: string } | null)?.csrfToken;
 
   useEffect(() => {
     if (!loading && !user) window.location.href = '/login';
   }, [loading, user]);
 
+  function refresh() {
+    fetch('/api/projects')
+      .then(res => res.json())
+      .then(data => {
+        if (data.ok) setProjects(data.data);
+        setLoadingProjects(false);
+      })
+      .catch(() => setLoadingProjects(false));
+  }
+
   useEffect(() => {
-    if (user) {
-      fetch('/api/projects')
-        .then(res => res.json())
-        .then(data => {
-          if (data.ok) setProjects(data.data);
-          setLoadingProjects(false);
-        })
-        .catch(() => setLoadingProjects(false));
-    }
+    if (user) refresh();
   }, [user]);
 
   const handleLogout = () => {
@@ -120,14 +129,14 @@ export default function ProjectsPage() {
               <p className="text-sm text-portal-muted">Documentation et suivi des projets</p>
             </div>
             
-            {user.role?.toLowerCase() === 'admin' && (
-              <Link
-                href="/projects/new"
+            {isAdmin && (
+              <button
+                onClick={() => setEditorTarget('new')}
                 className="sm:ml-auto flex items-center gap-2 px-4 py-2 bg-portal-accent hover:bg-portal-accent-dark text-white rounded-lg transition-colors text-sm"
               >
                 <Plus className="h-4 w-4" />
                 Nouveau projet
-              </Link>
+              </button>
             )}
           </div>
 
@@ -184,14 +193,14 @@ export default function ProjectsPage() {
                 ? 'Commencez par créer votre premier projet pour organiser votre documentation.'
                 : 'Essayez un autre filtre de statut.'}
             </p>
-            {projects.length === 0 && user.role?.toLowerCase() === 'admin' && (
-              <Link
-                href="/projects/new"
+            {projects.length === 0 && isAdmin && (
+              <button
+                onClick={() => setEditorTarget('new')}
                 className="inline-flex items-center gap-2 px-4 py-2 bg-portal-accent hover:bg-portal-accent-dark text-white rounded-lg transition-colors text-sm"
               >
                 <Plus className="h-4 w-4" />
                 Créer un projet
-              </Link>
+              </button>
             )}
           </div>
         ) : (
@@ -202,58 +211,82 @@ export default function ProjectsPage() {
               const taskCount = project._count?.tasks ?? 0;
               
               return (
-                <Link
-                  key={project.id}
-                  href={`/projects/${project.slug}`}
-                  className="bg-portal-card border border-portal-border rounded-xl p-6 hover:border-portal-accent/50 transition-all group"
-                >
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <span className="text-2xl">{project.icon || '📁'}</span>
-                      <h3 className="text-lg font-semibold text-portal-text group-hover:text-portal-accent transition-colors">
-                        {project.name}
-                      </h3>
-                    </div>
-                    <div className={`flex items-center gap-1 text-xs ${status.color}`}>
-                      <StatusIcon className="h-3.5 w-3.5" />
-                      {status.label}
-                    </div>
-                  </div>
-                  
-                  {project.description && (
-                    <p className="text-sm text-portal-muted mb-4 line-clamp-2">
-                      {project.description}
-                    </p>
+                <div key={project.id} className="relative group">
+                  {isAdmin && (
+                    <button
+                      onClick={() => setEditorTarget(project.id)}
+                      title="Edit project settings"
+                      aria-label="Edit project settings"
+                      className="absolute top-3 right-3 z-10 p-1.5 rounded-md bg-portal-bg/80 border border-portal-border text-portal-muted hover:text-portal-text opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
                   )}
-                  
-                  <div className="flex items-center gap-4 text-xs text-portal-muted flex-wrap">
-                    {project.repoUrl && (
+                  <Link
+                    href={`/projects/${project.slug}`}
+                    className="block bg-portal-card border border-portal-border rounded-xl p-6 hover:border-portal-accent/50 transition-all h-full"
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-2xl">{project.icon || '📁'}</span>
+                        <h3 className="text-lg font-semibold text-portal-text group-hover:text-portal-accent transition-colors truncate">
+                          {project.name}
+                        </h3>
+                      </div>
+                      <div className={cn('flex items-center gap-1 text-xs shrink-0', status.color, isAdmin && 'mr-7')}>
+                        <StatusIcon className="h-3.5 w-3.5" />
+                        {status.label}
+                      </div>
+                    </div>
+
+                    {project.description && (
+                      <p className="text-sm text-portal-muted mb-4 line-clamp-2">
+                        {project.description}
+                      </p>
+                    )}
+
+                    <div className="flex items-center gap-4 text-xs text-portal-muted flex-wrap">
+                      {project.repoUrl && (
+                        <span className="flex items-center gap-1">
+                          <GitBranch className="h-3.5 w-3.5" />
+                          GitHub
+                        </span>
+                      )}
                       <span className="flex items-center gap-1">
-                        <GitBranch className="h-3.5 w-3.5" />
-                        GitHub
+                        <Clock className="h-3.5 w-3.5" />
+                        {new Date(project.updatedAt).toLocaleDateString('fr-FR')}
                       </span>
-                    )}
-                    <span className="flex items-center gap-1">
-                      <Clock className="h-3.5 w-3.5" />
-                      {new Date(project.updatedAt).toLocaleDateString('fr-FR')}
-                    </span>
-                    {project._count?.sessions && project._count.sessions > 0 && (
-                      <span>{project._count.sessions} sessions</span>
-                    )}
-                    {taskCount > 0 && (
-                      <span className="flex items-center gap-1">
-                        <ListTodo className="h-3.5 w-3.5" />
-                        {taskCount} open task{taskCount === 1 ? '' : 's'}
-                      </span>
-                    )}
-                  </div>
-                </Link>
+                      {project._count?.sessions && project._count.sessions > 0 && (
+                        <span>{project._count.sessions} sessions</span>
+                      )}
+                      {taskCount > 0 && (
+                        <span className="flex items-center gap-1">
+                          <ListTodo className="h-3.5 w-3.5" />
+                          {taskCount} open task{taskCount === 1 ? '' : 's'}
+                        </span>
+                      )}
+                    </div>
+                  </Link>
+                </div>
               );
             })}
           </div>
         )}
         </div>
       </div>
+
+      {isAdmin && editorTarget && (
+        <ProjectEditorModal
+          projectId={editorTarget === 'new' ? undefined : editorTarget}
+          csrfToken={csrfToken}
+          onClose={() => setEditorTarget(null)}
+          onSaved={() => {
+            setEditorTarget(null);
+            setLoadingProjects(true);
+            refresh();
+          }}
+        />
+      )}
     </div>
   );
 }
