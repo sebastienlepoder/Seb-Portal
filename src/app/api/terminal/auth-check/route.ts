@@ -30,5 +30,11 @@ export async function GET() {
       { status: 403 },
     );
   }
-  return NextResponse.json({ ok: true });
+  // `__PORTAL_TERMINAL_WS__` is set by server.js at boot. If it's absent, the
+  // deploy is running the standalone Next server (no WS upgrade handler), so
+  // the SSH bridge can never connect — surface that instead of letting the
+  // client see an opaque 1006 close.
+  const wsServer = (globalThis as { __PORTAL_TERMINAL_WS__?: boolean })
+    .__PORTAL_TERMINAL_WS__ === true;
+  return NextResponse.json({ ok: true, wsServer });
 }
