@@ -269,6 +269,16 @@ async function bootstrap() {
     const auditFn = (params) =>
       auditTerminalEvent({ ipAddress: remoteAddress, userId: sessionUserId, ...params });
 
+    // Disable any inherited idle timeout on the raw socket and enable TCP
+    // keepalive so the long-lived SSH-over-WS connection isn't reaped by a
+    // socket-level timeout during quiet periods.
+    try {
+      socket.setTimeout(0);
+      socket.setKeepAlive(true, 30_000);
+    } catch {
+      /* best-effort */
+    }
+
     wss.handleUpgrade(req, socket, head, (ws) => {
       try {
         handleSshSession(ws, { remoteAddress, sessionUserId, auditFn });
