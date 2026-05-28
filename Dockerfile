@@ -55,6 +55,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/config ./config
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 COPY --from=builder --chown=nextjs:nodejs /app/projects ./projects
 COPY --from=builder --chown=nextjs:nodejs /app/skills ./skills
+COPY --from=builder --chown=nextjs:nodejs /app/memory ./memory
 COPY --from=builder --chown=nextjs:nodejs /app/.version ./.version
 
 # ✅ Stable fix: include full node_modules so Prisma CLI works (c12/empathic/etc.)

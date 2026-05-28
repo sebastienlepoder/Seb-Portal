@@ -94,19 +94,20 @@ what Sebastien asked for.
 
 ---
 
-## Open decisions (to confirm before building)
+## Resolved decisions (2026-05-28)
 
-1. **Memory: files vs. the existing K/V store.** Keep both (Markdown files for
-   narrative identity/goals + K/V for quick AI-written facts) or migrate fully
-   to files?
-2. **GitHub sync mechanism.** Scheduled poll (reuse the recurring-task
-   scheduler) vs. a manual "Sync repos" button vs. a GitHub webhook. And which
-   account/org to enumerate.
-3. **Repos vs. projects.** Auto-create a `Project` row for every repo, or keep
-   synced repos in a separate browsable list that Sebastien *promotes* into
-   directed projects?
-4. **Manage consolidation.** Remove `/admin/projects` entirely once `/projects`
-   absorbs it, or keep it as an alias?
+1. **Memory: files primary, keep K/V.** Markdown files (`PORTAL`/`AI`/`USER` +
+   per-project `MEMORY.md`) hold the narrative identity & goals and are what
+   Sebastien edits. The key/value `AiMemory` store stays for quick facts the AI
+   writes to itself mid-chat. Both are injected into context.
+2. **GitHub sync: scheduled poll + manual button.** Reuse the recurring-task
+   scheduler to re-sync on an interval, plus a "Sync now" button. No webhook.
+3. **Every repo is a project.** Sync auto-creates a `Project` row per repo;
+   classification (active / archived / imposed / …) is a status on the project.
+4. **Build order:** follow the proposed order below, starting with file memory.
+
+_(Still to confirm when we reach it: whether to remove `/admin/projects`
+entirely once `/projects` absorbs management, or keep it as an alias.)_
 
 ---
 

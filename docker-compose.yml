@@ -32,6 +32,9 @@ services:
       # Local agent skills (Markdown). Editable on host; sync from the
       # Skills hub admin page picks up changes.
       - ./skills:/app/skills
+      # Portal memory files (AI.md / USER.md / PORTAL.md). Editable on host
+      # and via the Memory page; injected into chat context.
+      - ./memory:/app/memory
       # Update trigger/status files (for self-update feature)
       - ./data:/data
       # Tailscale socket for native integration (optional)
