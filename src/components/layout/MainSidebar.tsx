@@ -7,6 +7,7 @@ import {
   LayoutGrid,
   Mail,
   FolderGit2,
+  FolderOpen,
   Settings,
   LogOut,
   BarChart3,
@@ -49,6 +50,8 @@ interface NavItem {
   icon: React.ReactNode;
   /** Custom active matcher; defaults to exact pathname equality. */
   match?: (pathname: string) => boolean;
+  /** Hide this item from non-admins (the destination is admin-gated). */
+  adminOnly?: boolean;
 }
 
 interface NavGroup {
@@ -88,6 +91,13 @@ const NAV_GROUPS: NavGroup[] = [
         label: 'Projects',
         icon: <FolderGit2 className="h-3.5 w-3.5" />,
         match: (p) => p.startsWith('/projects'),
+      },
+      {
+        href: '/files',
+        label: 'Files',
+        icon: <FolderOpen className="h-3.5 w-3.5" />,
+        match: (p) => p.startsWith('/files'),
+        adminOnly: true,
       },
       {
         href: '/amonis',
@@ -326,7 +336,9 @@ export default function MainSidebar({ user, onLogout }: MainSidebarProps) {
 
                 {(collapsed || groupOpen) && (
                   <div id={`sidebar-group-${group.id}`}>
-                    {group.items.map((item) => (
+                    {group.items
+                      .filter((item) => !item.adminOnly || user.role === 'admin')
+                      .map((item) => (
                       <SidebarLink
                         key={item.href}
                         collapsed={collapsed}
