@@ -27,6 +27,7 @@ import {
 import { memoryTools } from '@/server/mcp/memory-tools';
 import type { AiProvider, AiMessage, ToolCall, SessionUser } from '@/types';
 import { getModelDef, isModelAvailable, DEFAULT_MODEL_ID } from '@/lib/ai/models';
+import { loadPortalMemoryForPrompt, loadProjectMemoryForPrompt } from '@/lib/memory/files';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -648,7 +649,21 @@ function formatMemoriesBlock(memories: MemorySnapshot[]): string {
   ].join('\n');
 }
 
-function buildSystemPrompt(memories: MemorySnapshot[] = []): string {
+function formatFileMemoryBlock(portal: string, project?: { slug: string; content: string }): string {
+  const parts: string[] = [];
+  if (portal.trim()) {
+    parts.push('', '## Portal memory', portal.trim());
+  }
+  if (project && project.content.trim()) {
+    parts.push('', `## Active project: ${project.slug}`, project.content.trim());
+  }
+  return parts.length ? '\n' + parts.join('\n') : '';
+}
+
+function buildSystemPrompt(
+  memories: MemorySnapshot[] = [],
+  fileMemoryBlock = ''
+): string {
   const base = [
     'You are the LEPODER Portal AI assistant. You help the operator (Sebastien) manage projects, agents, dispatched tasks, and review the GitHub repositories those tasks operate on.',
     '',
@@ -695,7 +710,7 @@ function buildSystemPrompt(memories: MemorySnapshot[] = []): string {
     'For non-tool questions, just answer normally.',
   ].join('\n');
 
-  return base + formatMemoriesBlock(memories);
+  return base + fileMemoryBlock + formatMemoriesBlock(memories);
 }
 
 // Cap the number of memories injected so a runaway memory table can't
@@ -710,6 +725,18 @@ async function loadUserMemories(userId: string): Promise<MemorySnapshot[]> {
     select: { key: true, value: true, type: true },
   });
   return entries;
+}
+
+// Load the portal-level memory files (AI.md + USER.md) and, when a project
+// is selected, that project's MEMORY.md — formatted for the system prompt.
+async function buildFileMemoryBlock(projectSlug?: string): Promise<string> {
+  const portal = await loadPortalMemoryForPrompt().catch(() => '');
+  let project: { slug: string; content: string } | undefined;
+  if (projectSlug) {
+    const content = await loadProjectMemoryForPrompt(projectSlug).catch(() => '');
+    if (content) project = { slug: projectSlug, content };
+  }
+  return formatFileMemoryBlock(portal, project);
 }
 
 // ─── Question detection ──────────────────────────────────────
@@ -798,9 +825,14 @@ export async function POST(request: Request) {
     messages: AiMessage[];
     threadId?: string;
     maxTokens?: number;
+    projectSlug?: string;
   };
 
   const { messages: incoming, threadId, maxTokens = 2048 } = body;
+  const projectSlug =
+    typeof body.projectSlug === 'string' && body.projectSlug.trim()
+      ? body.projectSlug.trim()
+      : undefined;
 
   if (!incoming?.length) {
     return errorResponse(400, 'Messages required');
@@ -864,6 +896,7 @@ export async function POST(request: Request) {
             maxTokens,
             model: modelDef.modelId,
             user,
+            projectSlug,
             send,
             onText: (delta) => { assistantText += delta; },
             onThinking: (text) => { thinkingText = text; },
@@ -881,6 +914,7 @@ export async function POST(request: Request) {
             maxTokens,
             model: modelDef.modelId,
             useOpenRouter: modelDef.provider === 'openrouter',
+            projectSlug,
             send,
             onText: (delta) => { assistantText += delta; },
             signal: request.signal,
@@ -975,11 +1009,12 @@ interface RunAnthropicArgs {
   onToolCall: (call: ToolCall) => void;
   onQuestion: (q: { question: string; options: string[] }) => void;
   onToolEvent: (name: string) => void;
+  projectSlug?: string;
   signal: AbortSignal;
 }
 
 async function runAnthropic(args: RunAnthropicArgs): Promise<void> {
-  const { incoming, maxTokens, model, user, send, onText, onThinking, onToolCall, onQuestion, onToolEvent, signal } = args;
+  const { incoming, maxTokens, model, user, projectSlug, send, onText, onThinking, onToolCall, onQuestion, onToolEvent, signal } = args;
   const anthropic = getAnthropicClient();
   if (!anthropic) throw new Error('Anthropic API key not configured');
 
@@ -988,7 +1023,8 @@ async function runAnthropic(args: RunAnthropicArgs): Promise<void> {
   // Memories are loaded per-request — they may change between turns
   // (e.g. the assistant wrote one on the previous reply).
   const memories = await loadUserMemories(user.id);
-  const systemPrompt = systemMsg?.content || buildSystemPrompt(memories);
+  const fileMemory = await buildFileMemoryBlock(projectSlug);
+  const systemPrompt = systemMsg?.content || buildSystemPrompt(memories, fileMemory);
 
   const messages: Anthropic.MessageParam[] = userAndAssistantMsgs.map((m) => ({
     role: m.role as 'user' | 'assistant',
@@ -1115,13 +1151,14 @@ interface RunOpenAiArgs {
   maxTokens: number;
   model: string;
   useOpenRouter: boolean;
+  projectSlug?: string;
   send: (e: ChatStreamEvent) => void;
   onText: (delta: string) => void;
   signal: AbortSignal;
 }
 
 async function runOpenAi(args: RunOpenAiArgs): Promise<void> {
-  const { incoming, maxTokens, model, useOpenRouter, send, onText, signal } = args;
+  const { incoming, maxTokens, model, useOpenRouter, projectSlug, send, onText, signal } = args;
   const OpenAI = (await import('openai')).default;
   const openai = useOpenRouter
     ? new OpenAI({
@@ -1130,13 +1167,27 @@ async function runOpenAi(args: RunOpenAiArgs): Promise<void> {
       })
     : new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
 
+  // Inject portal + project memory as a leading system message unless the
+  // caller already supplied one.
+  const hasSystem = incoming.some((m) => m.role === 'system');
+  const leading: { role: 'system' | 'user' | 'assistant'; content: string }[] = [];
+  if (!hasSystem) {
+    const fileMemory = await buildFileMemoryBlock(projectSlug);
+    if (fileMemory.trim()) {
+      leading.push({ role: 'system', content: `You are the LEPODER Portal assistant.${fileMemory}` });
+    }
+  }
+
   const stream = await openai.chat.completions.create(
     {
       model,
-      messages: incoming.map((m) => ({
-        role: m.role as 'user' | 'assistant' | 'system',
-        content: m.content,
-      })),
+      messages: [
+        ...leading,
+        ...incoming.map((m) => ({
+          role: m.role as 'user' | 'assistant' | 'system',
+          content: m.content,
+        })),
+      ],
       max_tokens: Math.min(maxTokens, 4096),
       stream: true,
     },

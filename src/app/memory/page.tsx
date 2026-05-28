@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/hooks/usePortal';
 import MainSidebar from '@/components/layout/MainSidebar';
+import { MemoryFilesPanel } from '@/components/MemoryFilesPanel';
 import { cn, formatRelativeTime } from '@/lib/utils';
 import {
   BrainCircuit,
@@ -42,6 +43,7 @@ const EMPTY: Draft = { key: '', type: 'general', value: '' };
 
 export default function MemoryPage() {
   const { user, loading } = useAuth();
+  const [tab, setTab] = useState<'files' | 'facts'>('files');
   const [entries, setEntries] = useState<MemoryEntry[]>([]);
   const [listLoading, setListLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -159,20 +161,44 @@ export default function MemoryPage() {
                 AI memory
               </h1>
               <p className="text-sm text-portal-muted mt-1">
-                What the assistant remembers about you across conversations. It reads and
-                writes these via the read_memory / write_memory tools — edit them here.
+                Standing context for the assistant. <strong>Files</strong> are the
+                editable Markdown identity (portal + per-project) injected into chat.
+                <strong> Facts</strong> are quick key/value notes the AI can read & write.
               </p>
             </div>
-            {!creating && !editingId && (
+            {tab === 'facts' && !creating && !editingId && (
               <button
                 onClick={startCreate}
                 className="inline-flex items-center gap-2 px-3 py-2 bg-portal-accent hover:bg-portal-accent-dark text-white rounded-lg text-sm font-medium"
               >
                 <Plus className="h-4 w-4" />
-                Add memory
+                Add fact
               </button>
             )}
           </header>
+
+          <div className="flex gap-1 mb-5 border-b border-portal-border">
+            {(['files', 'facts'] as const).map((t) => (
+              <button
+                key={t}
+                onClick={() => setTab(t)}
+                className={cn(
+                  'px-3 py-2 text-sm capitalize border-b-2 -mb-px transition-colors',
+                  tab === t
+                    ? 'border-portal-accent text-portal-text'
+                    : 'border-transparent text-portal-muted hover:text-portal-text'
+                )}
+              >
+                {t === 'files' ? 'Memory files' : 'Facts (key/value)'}
+              </button>
+            ))}
+          </div>
+
+          {tab === 'files' && <MemoryFilesPanel csrfToken={(user as { csrfToken?: string }).csrfToken} />}
+
+          {tab === 'facts' && (
+          <>
+          {/* facts: create/edit + list */}
 
           {(creating || editingId) && (
             <div className="bg-portal-card border border-portal-border rounded-xl p-4 mb-5 space-y-3">
@@ -272,6 +298,8 @@ export default function MemoryPage() {
                 </div>
               ))}
             </div>
+          )}
+          </>
           )}
         </div>
       </main>
