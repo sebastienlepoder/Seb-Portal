@@ -465,11 +465,18 @@ export default function TerminalPage() {
           return;
         }
 
+        // Always surface the raw close code + reason so failures are
+        // diagnosable from the UI instead of being flattened to a generic
+        // message. The reason field carries the server's close reason
+        // (e.g. ssh_closed, ssh_error, idle_timeout).
+        const codeInfo = `code ${event.code}${
+          event.reason ? ` — ${event.reason}` : ''
+        }`;
+
         if (event.code === 1008) {
           setStatus({
             kind: 'error',
-            message:
-              'Connection refused: invalid credentials or host configuration',
+            message: `Connection refused: invalid credentials or host configuration (${codeInfo})`,
           });
           return;
         }
@@ -492,8 +499,13 @@ export default function TerminalPage() {
         // already received.
         setStatus((prev) => {
           if (prev.kind === 'error') return prev;
+          // If the shell opened and then closed, show the code/reason so a
+          // remote shell that exits immediately (or a dropped proxy
+          // connection) is distinguishable from a normal disconnect.
           const reason =
-            event.reason && event.reason.length > 0 ? event.reason : undefined;
+            event.reason && event.reason.length > 0
+              ? `${event.reason} (${codeInfo})`
+              : codeInfo;
           return { kind: 'disconnected', reason };
         });
       };
