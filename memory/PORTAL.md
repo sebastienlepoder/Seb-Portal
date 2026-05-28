@@ -106,26 +106,31 @@ what Sebastien asked for.
    classification (active / archived / imposed / …) is a status on the project.
 4. **Build order:** follow the proposed order below, starting with file memory.
 
-_(Still to confirm when we reach it: whether to remove `/admin/projects`
-entirely once `/projects` absorbs management, or keep it as an alias.)_
+**Resolved (Phase 7):** `/admin/projects` is kept as a working route (no
+breakage / deep links still work) but its sidebar entry is removed, since
+`/projects` now owns project management. The duplicate "Recurring tasks"
+Manage entry was also dropped — scheduling lives under Development as
+"Scheduler".
 
 ---
 
-## Build order (proposed)
+## Build order — DONE ✅
 
-A phase per PR, smallest-useful-first:
+A phase per PR, smallest-useful-first. All shipped:
 
-1. **File memory** — `memory/*.md` + `projects/<slug>/MEMORY.md`, editor UI,
-   chat injection. (Foundation; everything else benefits from project context.)
-2. **Global AI Hub side panel** — mount once at the layout level, toggle from a
-   top-right icon, resizable + persistent, with the per-conversation project
-   selector.
-3. **Unified projects page** — fold admin CRUD into `/projects`.
-4. **Tasks project selector** — filter the Tasks view by selected project.
-5. **GitHub repo sync + classification** — enumerate repos, store + classify,
-   keep in sync.
-6. **Project-aware todos** — add project to todos + quick capture with switcher.
-7. **Navigation cleanup** — simplify the Development group.
+1. ✅ **File memory** — `memory/*.md` + `projects/<slug>/MEMORY.md`, editor UI,
+   chat injection. (PR #92)
+2. ✅ **Global AI Hub side panel** — layout-level mount, top-right toggle,
+   resizable + persistent, per-conversation project selector. (PR #93)
+3. ✅ **Unified projects page** — admin CRUD folded into `/projects`. (PR #94)
+4. ✅ **Tasks project selector** — filter the Tasks view by project. (PR #96)
+5. ✅ **GitHub repo sync + classification** — manual button + scheduled poll;
+   a project per repo; status = classification. (PR #97)
+6. ✅ **Project-aware todos** — project on todos + global quick capture. (PR #98)
+7. ✅ **Navigation cleanup** — streamlined Development group, removed duplicate
+   Manage entries, single global AI entry point.
+
+_Next ideas live below or in new memory entries as they come up._
 
 ---
 

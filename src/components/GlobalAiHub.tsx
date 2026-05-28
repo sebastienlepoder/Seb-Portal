@@ -48,6 +48,18 @@ export function GlobalAiHub() {
     }
   }, [open, mounted]);
 
+  // Allow any page to open/toggle the hub via a window event.
+  useEffect(() => {
+    const onOpen = () => setOpen(true);
+    const onToggle = () => setOpen((v) => !v);
+    window.addEventListener('aihub:open', onOpen);
+    window.addEventListener('aihub:toggle', onToggle);
+    return () => {
+      window.removeEventListener('aihub:open', onOpen);
+      window.removeEventListener('aihub:toggle', onToggle);
+    };
+  }, []);
+
   // Drag-to-resize from the panel's left edge.
   const widthRef = useRef(width);
   widthRef.current = width;
