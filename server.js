@@ -216,15 +216,31 @@ async function bootstrap() {
 
     // Validate session BEFORE upgrading so we never expose the SSH bridge
     // to anonymous clients.
+    const cookieNames = parseCookieHeader(req.headers.cookie || '').map((c) => c.name);
+    console.log('[server] terminal-ws: upgrade attempt', {
+      origin: reqOrigin || '(none)',
+      cookieHeaderPresent: !!req.headers.cookie,
+      cookieNames,
+      hasAuthSecret: !!process.env.AUTH_SECRET,
+      authSecretLen: (process.env.AUTH_SECRET || '').length,
+    });
     let session;
     try {
       session = await readSession(req);
     } catch (err) {
-      console.warn('[server] terminal-ws session read failed:', err && err.message);
+      console.warn('[server] terminal-ws: session read failed:', err && err.message);
       return rejectUpgrade(socket, 401, 'Unauthorized');
     }
 
+    console.log('[server] terminal-ws: session read result', {
+      hasSession: !!session,
+      hasUser: !!(session && session.user),
+      userId: session && session.user && session.user.id,
+      role: session && session.user && session.user.role,
+    });
+
     if (!session || !session.user) {
+      console.warn('[server] terminal-ws: no session.user — rejecting 401');
       return rejectUpgrade(socket, 401, 'Unauthorized');
     }
 
