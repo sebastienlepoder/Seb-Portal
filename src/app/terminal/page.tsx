@@ -270,6 +270,30 @@ export default function TerminalPage() {
   const startSession = useCallback(
     async (next: FormState) => {
       if (typeof window === 'undefined') return;
+      // Pre-flight auth check. The WebSocket upgrade rejection code (401 /
+      // 403 / 503) isn't exposed to browser JS — failed upgrades all surface
+      // as close code 1006 — so we hit a regular HTTP endpoint first to get
+      // the real reason and show it to the user.
+      try {
+        const check = await fetch('/api/terminal/auth-check', { credentials: 'include' });
+        if (!check.ok) {
+          const body = (await check.json().catch(() => null)) as { error?: string } | null;
+          setStatus({
+            kind: 'error',
+            message:
+              body?.error ||
+              `Auth check failed (${check.status}). Reload the page and sign in again.`,
+          });
+          return;
+        }
+      } catch (err) {
+        setStatus({
+          kind: 'error',
+          message: `Auth check network error: ${(err as Error).message}`,
+        });
+        return;
+      }
+
       // Lazy-load xterm so it only ships to the client bundle.
       const [{ Terminal }, { FitAddon }, { WebLinksAddon }] = await Promise.all([
         import('@xterm/xterm'),
