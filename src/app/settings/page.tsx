@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { UpdatePanel } from '@/components/admin/UpdatePanel';
 import MainSidebar from '@/components/layout/MainSidebar';
+import { ThemePicker } from '@/components/ThemePicker';
 
 export default function SettingsPage() {
   const { user, loading, logout } = useAuth();
@@ -104,6 +105,9 @@ export default function SettingsPage() {
             </div>
           </div>
         </section>
+
+        {/* Appearance */}
+        <ThemePicker />
 
         {/* 2FA */}
         <section className="bg-portal-card border border-portal-border rounded-xl p-6 mb-4">

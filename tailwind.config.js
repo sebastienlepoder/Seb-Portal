@@ -5,20 +5,23 @@ module.exports = {
   theme: {
     extend: {
       colors: {
+        // Driven by CSS variables (space-separated RGB triplets) defined
+        // per theme in globals.css. The rgb(... / <alpha-value>) form keeps
+        // Tailwind opacity modifiers like bg-portal-accent/10 working.
         portal: {
-          bg: '#0a0a0f',
-          card: '#12121a',
-          'card-hover': '#1a1a25',
-          border: '#1e1e2e',
-          accent: '#6366f1',
-          'accent-light': '#818cf8',
-          'accent-dark': '#4f46e5',
-          success: '#22c55e',
-          warning: '#eab308',
-          danger: '#ef4444',
-          muted: '#6b7280',
-          text: '#e5e7eb',
-          'text-dim': '#9ca3af',
+          bg: 'rgb(var(--portal-bg) / <alpha-value>)',
+          card: 'rgb(var(--portal-card) / <alpha-value>)',
+          'card-hover': 'rgb(var(--portal-card-hover) / <alpha-value>)',
+          border: 'rgb(var(--portal-border) / <alpha-value>)',
+          accent: 'rgb(var(--portal-accent) / <alpha-value>)',
+          'accent-light': 'rgb(var(--portal-accent-light) / <alpha-value>)',
+          'accent-dark': 'rgb(var(--portal-accent-dark) / <alpha-value>)',
+          success: 'rgb(var(--portal-success) / <alpha-value>)',
+          warning: 'rgb(var(--portal-warning) / <alpha-value>)',
+          danger: 'rgb(var(--portal-danger) / <alpha-value>)',
+          muted: 'rgb(var(--portal-muted) / <alpha-value>)',
+          text: 'rgb(var(--portal-text) / <alpha-value>)',
+          'text-dim': 'rgb(var(--portal-text-dim) / <alpha-value>)',
         },
       },
       fontFamily: {

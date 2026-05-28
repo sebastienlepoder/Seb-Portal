@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import ClientProviders from '@/components/ClientProviders';
+import { THEME_INIT_SCRIPT } from '@/lib/themes';
 
 export const metadata: Metadata = {
   title: 'LEPODER Portal',
@@ -19,7 +20,10 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en" className="dark" data-theme="default">
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
       <body className="bg-portal-bg text-portal-text font-sans antialiased min-h-dvh overflow-x-hidden">
         <ClientProviders>
           {children}

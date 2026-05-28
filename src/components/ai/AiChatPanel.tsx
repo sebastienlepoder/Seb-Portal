@@ -34,6 +34,7 @@ import type { AiMessage, AiProvider, ToolCall } from '@/types';
 import { AssistantMessage } from './AssistantMessage';
 import { ThinkingBlock } from './ThinkingBlock';
 import { ToolCallCard } from './ToolCallCard';
+import { THEMES, applyTheme, isValidTheme } from '@/lib/themes';
 
 interface AiChatPanelProps {
   csrfToken?: string;
@@ -72,6 +73,7 @@ const SLASH_COMMANDS: SlashCommand[] = [
   { cmd: '/model', description: 'Switch the model (e.g. /model opus)' },
   { cmd: '/search', description: 'Search conversations (e.g. /search invoices)' },
   { cmd: '/archive', description: 'Toggle the archived view' },
+  { cmd: '/theme', description: 'Switch theme (e.g. /theme catppuccin)' },
 ];
 const SIDEBAR_MIN = 200;
 const SIDEBAR_MAX = 560;
@@ -624,6 +626,23 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
           setMessages((prev) => [
             ...prev,
             { role: 'assistant', content: `No model matches "${arg}". Available: ${models.map((m) => m.label).join(', ')}` },
+          ]);
+        }
+        setInput('');
+        return true;
+      }
+      case '/theme': {
+        if (!arg) {
+          setMessages((prev) => [
+            ...prev,
+            { role: 'assistant', content: `Available themes: ${THEMES.map((t) => t.id).join(', ')}` },
+          ]);
+        } else if (isValidTheme(arg)) {
+          applyTheme(arg);
+        } else {
+          setMessages((prev) => [
+            ...prev,
+            { role: 'assistant', content: `No theme "${arg}". Available: ${THEMES.map((t) => t.id).join(', ')}` },
           ]);
         }
         setInput('');
