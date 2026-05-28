@@ -274,10 +274,15 @@ model AiThread {
   provider  String   // openai | anthropic
   title     String?
   messages  String   // JSON array of {role, content}
+  pinned    Boolean  @default(false)
+  archived  Boolean  @default(false)
+  tags      String?  // JSON array of strings
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, archived, pinned, updatedAt])
 }
 
 // ─── AI Assistant Memory ─────────────────────────────────────

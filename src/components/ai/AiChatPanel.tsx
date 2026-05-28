@@ -17,6 +17,14 @@ import {
   PanelLeftClose,
   Edit2,
   RefreshCw,
+  Pin,
+  PinOff,
+  Archive,
+  ArchiveRestore,
+  Tag,
+  Search,
+  Download,
+  Upload,
 } from 'lucide-react';
 import Link from 'next/link';
 import { cn, formatRelativeTime, extractPastedImages } from '@/lib/utils';
@@ -35,6 +43,9 @@ interface ThreadSummary {
   title: string | null;
   provider: string;
   messageCount: number;
+  pinned?: boolean;
+  archived?: boolean;
+  tags?: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -68,7 +79,11 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
   const [pasteError, setPasteError] = useState<string | null>(null);
   const [editingMsgIndex, setEditingMsgIndex] = useState<number | null>(null);
   const [editValue, setEditValue] = useState('');
+  const [threadSearch, setThreadSearch] = useState('');
+  const [showArchived, setShowArchived] = useState(false);
+  const [tagFilter, setTagFilter] = useState<string | null>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -153,13 +168,18 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
     }
   }, [renamingId]);
 
-  // Load thread list
+  // Load thread list (honours search / archived / tag filters)
   const fetchThreads = useCallback(() => {
-    fetch('/api/ai/threads?limit=50')
+    const params = new URLSearchParams({ limit: '80' });
+    if (showArchived) params.set('archived', '1');
+    if (threadSearch.trim()) params.set('search', threadSearch.trim());
+    if (tagFilter) params.set('tag', tagFilter);
+    fetch(`/api/ai/threads?${params.toString()}`)
       .then((r) => r.json())
       .then((d) => d.ok && setThreads(d.data))
       .catch(() => {});
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showArchived, threadSearch, tagFilter]);
 
   useEffect(() => {
     fetchThreads();
@@ -219,6 +239,60 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
     if (res.ok) {
       if (id === threadId) newChat();
       fetchThreads();
+    }
+  }
+
+  async function patchThread(id: string, patch: Record<string, unknown>) {
+    await fetch(`/api/ai/threads/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}) },
+      body: JSON.stringify(patch),
+    });
+    fetchThreads();
+  }
+
+  async function togglePin(t: ThreadSummary, e: React.MouseEvent) {
+    e.stopPropagation();
+    await patchThread(t.id, { pinned: !t.pinned });
+  }
+
+  async function toggleArchive(t: ThreadSummary, e: React.MouseEvent) {
+    e.stopPropagation();
+    await patchThread(t.id, { archived: !t.archived });
+    if (t.id === threadId) newChat();
+  }
+
+  async function editTags(t: ThreadSummary, e: React.MouseEvent) {
+    e.stopPropagation();
+    const next = window.prompt('Tags (comma-separated):', (t.tags ?? []).join(', '));
+    if (next === null) return;
+    const tags = next.split(',').map((s) => s.trim()).filter(Boolean);
+    await patchThread(t.id, { tags });
+  }
+
+  function exportThread(id: string, format: 'md' | 'json', e: React.MouseEvent) {
+    e.stopPropagation();
+    window.open(`/api/ai/threads/${id}/export?format=${format}`, '_blank');
+  }
+
+  async function importThreadFile(file: File) {
+    try {
+      const text = await file.text();
+      const payload = JSON.parse(text);
+      const res = await fetch('/api/ai/threads/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}) },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        alert(data.error || 'Import failed');
+        return;
+      }
+      fetchThreads();
+      if (data.data?.id) void loadThread(data.data.id);
+    } catch {
+      alert('Could not read that file as JSON.');
     }
   }
 
@@ -543,24 +617,82 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
         )}
         aria-label="Conversation list"
       >
-        <div className="p-2 border-b border-portal-border flex items-center gap-2">
-          <button
-            onClick={newChat}
-            className="flex-1 flex items-center gap-2 px-3 py-2 bg-portal-accent hover:bg-portal-accent/80 text-white rounded-lg text-sm transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
-          >
-            <Plus className="h-4 w-4" />
-            New chat
-          </button>
-          {isMobile && (
+        <div className="p-2 border-b border-portal-border space-y-2">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={newChat}
+              className="flex-1 flex items-center gap-2 px-3 py-2 bg-portal-accent hover:bg-portal-accent/80 text-white rounded-lg text-sm transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
+            >
+              <Plus className="h-4 w-4" />
+              New chat
+            </button>
             <button
               type="button"
-              onClick={() => setMobileSidebarOpen(false)}
-              aria-label="Close conversations"
-              className="p-2 text-portal-muted hover:text-portal-text rounded-lg hover:bg-portal-card-hover transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
+              onClick={() => importInputRef.current?.click()}
+              aria-label="Import conversation"
+              title="Import conversation (JSON)"
+              className="p-2 text-portal-muted hover:text-portal-text rounded-lg hover:bg-portal-card-hover transition-colors"
             >
-              <X className="h-4 w-4" />
+              <Upload className="h-4 w-4" />
             </button>
-          )}
+            <input
+              ref={importInputRef}
+              type="file"
+              accept="application/json,.json"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void importThreadFile(file);
+                e.target.value = '';
+              }}
+            />
+            {isMobile && (
+              <button
+                type="button"
+                onClick={() => setMobileSidebarOpen(false)}
+                aria-label="Close conversations"
+                className="p-2 text-portal-muted hover:text-portal-text rounded-lg hover:bg-portal-card-hover transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+
+          <div className="relative">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-portal-muted" />
+            <input
+              value={threadSearch}
+              onChange={(e) => setThreadSearch(e.target.value)}
+              placeholder="Search conversations…"
+              className="w-full bg-portal-bg border border-portal-border rounded-md pl-7 pr-2 py-1.5 text-xs text-portal-text focus:outline-none focus:border-portal-accent/40"
+            />
+          </div>
+
+          <div className="flex items-center gap-2 text-[11px]">
+            <button
+              onClick={() => setShowArchived((v) => !v)}
+              className={cn(
+                'inline-flex items-center gap-1 px-2 py-0.5 rounded-full border transition-colors',
+                showArchived
+                  ? 'bg-portal-accent/10 text-portal-accent border-portal-accent/30'
+                  : 'border-portal-border text-portal-muted hover:text-portal-text'
+              )}
+            >
+              <Archive className="h-3 w-3" />
+              {showArchived ? 'Archived' : 'Active'}
+            </button>
+            {tagFilter && (
+              <button
+                onClick={() => setTagFilter(null)}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-portal-accent/10 text-portal-accent border border-portal-accent/30"
+                title="Clear tag filter"
+              >
+                <Tag className="h-3 w-3" />
+                {tagFilter}
+                <X className="h-3 w-3" />
+              </button>
+            )}
+          </div>
         </div>
         <div className="flex-1 overflow-y-auto p-1">
           {threads.length === 0 ? (
@@ -586,7 +718,11 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
                   )}
                   title={isRenaming ? undefined : t.title ?? 'Untitled'}
                 >
-                  <MessageSquare className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                  {t.pinned ? (
+                    <Pin className="h-3.5 w-3.5 shrink-0 mt-0.5 text-portal-accent" />
+                  ) : (
+                    <MessageSquare className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                  )}
                   <div className="flex-1 min-w-0">
                     {isRenaming ? (
                       <>
@@ -625,6 +761,23 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
                         <div className="text-[10px] text-portal-muted">
                           {t.messageCount} msg · {formatRelativeTime(t.updatedAt)}
                         </div>
+                        {t.tags && t.tags.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {t.tags.map((tag) => (
+                              <button
+                                key={tag}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setTagFilter(tag);
+                                }}
+                                className="inline-flex items-center gap-0.5 text-[9px] px-1 py-0.5 rounded bg-portal-bg border border-portal-border text-portal-muted hover:text-portal-accent hover:border-portal-accent/30"
+                              >
+                                <Tag className="h-2 w-2" />
+                                {tag}
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </>
                     )}
                   </div>
@@ -654,12 +807,48 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
                     <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
                       <button
                         type="button"
+                        onClick={(e) => togglePin(t, e)}
+                        aria-label={t.pinned ? 'Unpin' : 'Pin'}
+                        title={t.pinned ? 'Unpin' : 'Pin'}
+                        className="p-0.5 text-portal-muted hover:text-portal-accent rounded transition-colors cursor-pointer"
+                      >
+                        {t.pinned ? <PinOff className="h-3 w-3" /> : <Pin className="h-3 w-3" />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => editTags(t, e)}
+                        aria-label="Edit tags"
+                        title="Edit tags"
+                        className="p-0.5 text-portal-muted hover:text-portal-text rounded transition-colors cursor-pointer"
+                      >
+                        <Tag className="h-3 w-3" />
+                      </button>
+                      <button
+                        type="button"
                         onClick={(e) => startRename(t, e)}
                         aria-label="Rename conversation"
                         title="Rename conversation"
                         className="p-0.5 text-portal-muted hover:text-portal-text rounded transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
                       >
                         <Pencil className="h-3 w-3" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => exportThread(t.id, 'md', e)}
+                        aria-label="Export as Markdown"
+                        title="Export as Markdown"
+                        className="p-0.5 text-portal-muted hover:text-portal-text rounded transition-colors cursor-pointer"
+                      >
+                        <Download className="h-3 w-3" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => toggleArchive(t, e)}
+                        aria-label={t.archived ? 'Unarchive' : 'Archive'}
+                        title={t.archived ? 'Unarchive' : 'Archive'}
+                        className="p-0.5 text-portal-muted hover:text-portal-text rounded transition-colors cursor-pointer"
+                      >
+                        {t.archived ? <ArchiveRestore className="h-3 w-3" /> : <Archive className="h-3 w-3" />}
                       </button>
                       <button
                         type="button"

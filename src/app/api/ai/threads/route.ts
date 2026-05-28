@@ -5,41 +5,84 @@ import { verifyCsrf } from '@/lib/csrf';
 import { checkRateLimit, aiThreadCreateLimiter } from '@/lib/rate-limit';
 import prisma from '@/lib/db';
 
-// GET /api/ai/threads — list current user's threads, newest first
+// GET /api/ai/threads — list current user's threads.
+//   ?archived=1   include only archived (default: only non-archived)
+//   ?search=foo   case-insensitive match on title or message content
+//   ?tag=work     only threads carrying this tag
+//   ?limit=N
+// Pinned threads sort first, then by updatedAt desc.
 export async function GET(request: Request) {
   try {
     const user = await requireApiAuth();
     const { searchParams } = new URL(request.url);
     const limit = Math.min(parseInt(searchParams.get('limit') || '50', 10) || 50, 200);
+    const wantArchived = searchParams.get('archived') === '1';
+    const search = (searchParams.get('search') || '').trim().toLowerCase();
+    const tagFilter = (searchParams.get('tag') || '').trim();
+
     const threads = await prisma.aiThread.findMany({
-      where: { userId: user.id },
-      orderBy: [{ updatedAt: 'desc' }],
-      take: limit,
+      where: { userId: user.id, archived: wantArchived },
+      orderBy: [{ pinned: 'desc' }, { updatedAt: 'desc' }],
+      // Pull a wider set when filtering so client filters don't starve.
+      take: search || tagFilter ? 500 : limit,
       select: {
         id: true,
         title: true,
         provider: true,
+        pinned: true,
+        archived: true,
+        tags: true,
         createdAt: true,
         updatedAt: true,
         messages: true,
       },
     });
-    const summaries = threads.map((t) => {
+
+    let summaries = threads.map((t) => {
       let count = 0;
+      let contentBlob = '';
       try {
         const arr = JSON.parse(t.messages);
-        if (Array.isArray(arr)) count = arr.length;
+        if (Array.isArray(arr)) {
+          count = arr.length;
+          contentBlob = arr
+            .map((m: { content?: string }) => (typeof m.content === 'string' ? m.content : ''))
+            .join('\n')
+            .toLowerCase();
+        }
+      } catch {}
+      let tags: string[] = [];
+      try {
+        const parsed = t.tags ? JSON.parse(t.tags) : [];
+        if (Array.isArray(parsed)) tags = parsed.filter((x): x is string => typeof x === 'string');
       } catch {}
       return {
         id: t.id,
         title: t.title,
         provider: t.provider,
+        pinned: t.pinned,
+        archived: t.archived,
+        tags,
         messageCount: count,
         createdAt: t.createdAt.toISOString(),
         updatedAt: t.updatedAt.toISOString(),
+        _searchBlob: `${(t.title || '').toLowerCase()}\n${contentBlob}`,
       };
     });
-    return NextResponse.json({ ok: true, data: summaries });
+
+    if (search) {
+      summaries = summaries.filter((s) => s._searchBlob.includes(search));
+    }
+    if (tagFilter) {
+      summaries = summaries.filter((s) => s.tags.includes(tagFilter));
+    }
+
+    const data = summaries.slice(0, limit).map(({ _searchBlob, ...rest }) => {
+      void _searchBlob;
+      return rest;
+    });
+
+    return NextResponse.json({ ok: true, data });
   } catch (e) {
     if ((e as Error).message === 'UNAUTHORIZED') {
       return NextResponse.json({ ok: false, error: 'Not authenticated' }, { status: 401 });
