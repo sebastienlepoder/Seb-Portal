@@ -374,3 +374,77 @@ export async function listDirectory(
     size: i.type === 'file' ? i.size : null,
   }));
 }
+
+// ─── Repo enumeration (for project sync) ─────────────────────
+
+export interface GithubRepoSummary {
+  name: string;
+  owner: string;
+  fullName: string;
+  htmlUrl: string;
+  defaultBranch: string;
+  description: string | null;
+  archived: boolean;
+  fork: boolean;
+  isPrivate: boolean;
+  language: string | null;
+  pushedAt: string | null;
+}
+
+interface RawRepo {
+  name: string;
+  owner: { login: string };
+  full_name: string;
+  html_url: string;
+  default_branch: string;
+  description: string | null;
+  archived: boolean;
+  fork: boolean;
+  private: boolean;
+  language: string | null;
+  pushed_at: string | null;
+}
+
+/**
+ * Enumerate repositories to sync into projects. Scope is configurable:
+ *   GITHUB_SYNC_ORG          — list a specific org's repos instead of the user's
+ *   GITHUB_SYNC_AFFILIATION  — /user/repos affiliation (default "owner")
+ *   GITHUB_SYNC_INCLUDE_FORKS — "true" to include forks (default exclude)
+ * Requires GITHUB_TOKEN. Paginates up to 20×100 = 2000 repos.
+ */
+export async function listSyncableRepos(): Promise<GithubRepoSummary[]> {
+  if (!process.env.GITHUB_TOKEN) {
+    throw new GithubError(401, 'GITHUB_TOKEN is not configured');
+  }
+  const org = process.env.GITHUB_SYNC_ORG?.trim();
+  const affiliation = process.env.GITHUB_SYNC_AFFILIATION?.trim() || 'owner';
+  const includeForks = process.env.GITHUB_SYNC_INCLUDE_FORKS === 'true';
+  const perPage = 100;
+  const out: GithubRepoSummary[] = [];
+
+  for (let page = 1; page <= 20; page++) {
+    const path = org
+      ? `/orgs/${encodeURIComponent(org)}/repos?per_page=${perPage}&page=${page}&sort=pushed`
+      : `/user/repos?per_page=${perPage}&page=${page}&affiliation=${encodeURIComponent(affiliation)}&sort=pushed`;
+    const repos = await gh<RawRepo[]>(path);
+    if (!Array.isArray(repos) || repos.length === 0) break;
+    for (const r of repos) {
+      if (!includeForks && r.fork) continue;
+      out.push({
+        name: r.name,
+        owner: r.owner?.login ?? '',
+        fullName: r.full_name,
+        htmlUrl: r.html_url,
+        defaultBranch: r.default_branch || 'main',
+        description: r.description,
+        archived: !!r.archived,
+        fork: !!r.fork,
+        isPrivate: !!r.private,
+        language: r.language,
+        pushedAt: r.pushed_at,
+      });
+    }
+    if (repos.length < perPage) break;
+  }
+  return out;
+}
