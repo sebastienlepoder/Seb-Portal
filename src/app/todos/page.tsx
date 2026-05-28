@@ -6,7 +6,7 @@ import MainSidebar from '@/components/layout/MainSidebar';
 import {
   CheckSquare, Plus, Trash2, Edit3, Check, X, Calendar,
   Circle, CheckCircle, Filter, Tag, Clock, AlertCircle,
-  ChevronDown, MoreHorizontal, RefreshCw,
+  ChevronDown, MoreHorizontal, RefreshCw, FolderGit2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -20,6 +20,14 @@ interface Todo {
   completedAt: string | null;
   dueDate: string | null;
   createdAt: string;
+  projectId: string | null;
+  project?: { slug: string; name: string; icon: string | null } | null;
+}
+
+interface ProjectOption {
+  id: string;
+  slug: string;
+  name: string;
 }
 
 interface TodosData {
@@ -34,9 +42,12 @@ export default function TodosPage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('all');
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
+  const [projectFilter, setProjectFilter] = useState<string>(''); // '' all | 'none' | <id>
+  const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [newTodo, setNewTodo] = useState('');
   const [newCategory, setNewCategory] = useState('General');
   const [newPriority, setNewPriority] = useState(0);
+  const [newProjectId, setNewProjectId] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
@@ -50,7 +61,8 @@ export default function TodosPage() {
       const params = new URLSearchParams();
       if (filter !== 'all') params.set('filter', filter);
       if (categoryFilter) params.set('category', categoryFilter);
-      
+      if (projectFilter) params.set('projectId', projectFilter);
+
       const res = await fetch('/api/todos?' + params);
       const result = await res.json();
       if (result.ok) setData(result.data);
@@ -63,7 +75,27 @@ export default function TodosPage() {
 
   useEffect(() => {
     if (user) fetchTodos();
-  }, [user, filter, categoryFilter]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, filter, categoryFilter, projectFilter]);
+
+  // Load projects for the filter + assignment selectors.
+  useEffect(() => {
+    if (!user) return;
+    fetch('/api/projects')
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.ok) setProjects(d.data.map((p: ProjectOption) => ({ id: p.id, slug: p.slug, name: p.name })));
+      })
+      .catch(() => {});
+  }, [user]);
+
+  // Refresh when the global quick-add creates a todo.
+  useEffect(() => {
+    const onChanged = () => fetchTodos();
+    window.addEventListener('todos:changed', onChanged);
+    return () => window.removeEventListener('todos:changed', onChanged);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filter, categoryFilter, projectFilter]);
 
   
   const seedRoadmap = async () => {
@@ -85,6 +117,7 @@ export default function TodosPage() {
         title: newTodo,
         category: newCategory,
         priority: newPriority,
+        projectId: newProjectId || undefined,
       }),
     });
 
@@ -93,6 +126,15 @@ export default function TodosPage() {
       setShowAddForm(false);
       fetchTodos();
     }
+  };
+
+  const reassignProject = async (todo: Todo, projectId: string) => {
+    await fetch('/api/todos', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: todo.id, projectId: projectId || null }),
+    });
+    fetchTodos();
   };
 
   const toggleTodo = async (todo: Todo) => {
@@ -221,6 +263,24 @@ export default function TodosPage() {
               </div>
             )}
 
+            {projects.length > 0 && (
+              <div className="flex gap-2 items-center">
+                <FolderGit2 className="h-4 w-4 text-portal-muted flex-shrink-0" />
+                <select
+                  value={projectFilter}
+                  onChange={e => setProjectFilter(e.target.value)}
+                  className="px-2 py-1.5 text-sm bg-portal-card border border-portal-border rounded-lg text-portal-text focus:outline-none max-w-[150px]"
+                  title="Filter by project"
+                >
+                  <option value="">All projects</option>
+                  <option value="none">No project</option>
+                  {projects.map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             {data?.stats.completed ? (
               <button
                 onClick={clearCompleted}
@@ -265,6 +325,19 @@ export default function TodosPage() {
                   <option value={1}>Medium</option>
                   <option value={2}>High</option>
                 </select>
+                {projects.length > 0 && (
+                  <select
+                    value={newProjectId}
+                    onChange={e => setNewProjectId(e.target.value)}
+                    className="px-2 py-1.5 text-sm bg-portal-bg border border-portal-border rounded-lg text-portal-text max-w-[150px]"
+                    title="Assign to a project"
+                  >
+                    <option value="">No project</option>
+                    {projects.map(p => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                )}
                 <div className="flex items-center justify-between flex-1">
                   <button
                     type="button"
@@ -372,17 +445,36 @@ export default function TodosPage() {
                         {todo.title}
                       </p>
                     )}
-                    <div className="flex items-center gap-2 mt-0.5">
+                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                       <span className="text-xs text-portal-muted">{todo.category}</span>
                       {todo.priority > 0 && (
                         <span className={cn('text-xs', getPriorityColor(todo.priority))}>
                           {todo.priority === 2 ? '⚡ High' : '● Med'}
                         </span>
                       )}
+                      {todo.project && (
+                        <span className="text-[10px] inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-portal-accent/10 text-portal-accent border border-portal-accent/30">
+                          <FolderGit2 className="h-2.5 w-2.5" />
+                          {todo.project.name}
+                        </span>
+                      )}
                     </div>
                   </div>
 
                   <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity flex-shrink-0">
+                    {projects.length > 0 && (
+                      <select
+                        value={todo.projectId || ''}
+                        onChange={(e) => reassignProject(todo, e.target.value)}
+                        title="Move to project"
+                        className="text-[11px] bg-portal-bg border border-portal-border rounded px-1 py-1 text-portal-muted focus:outline-none max-w-[110px]"
+                      >
+                        <option value="">No project</option>
+                        {projects.map((p) => (
+                          <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                      </select>
+                    )}
                     <button
                       onClick={() => { setEditingId(todo.id); setEditTitle(todo.title); }}
                       className="p-1.5 text-portal-muted hover:text-portal-text rounded transition-colors"

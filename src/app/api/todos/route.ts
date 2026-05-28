@@ -13,15 +13,19 @@ export async function GET(req: NextRequest) {
     const url = new URL(req.url);
     const filter = url.searchParams.get('filter') || 'all'; // all, active, completed
     const category = url.searchParams.get('category');
+    const projectId = url.searchParams.get('projectId'); // <id> | 'none' | null(all)
 
     const where: any = { userId: user.id };
     if (filter === 'active') where.completed = false;
     if (filter === 'completed') where.completed = true;
     if (category) where.category = category;
+    if (projectId === 'none') where.projectId = null;
+    else if (projectId) where.projectId = projectId;
 
     const todos = await prisma.todo.findMany({
       where,
       orderBy: [{ priority: 'desc' }, { sortOrder: 'asc' }, { createdAt: 'desc' }],
+      include: { project: { select: { slug: true, name: true, icon: true } } },
     });
 
     const categories = await prisma.todo.groupBy({
@@ -57,7 +61,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { title, description, category, priority, dueDate } = body;
+    const { title, description, category, priority, dueDate, projectId } = body;
 
     if (!title?.trim()) {
       return NextResponse.json({ ok: false, error: 'Title required' }, { status: 400 });
@@ -66,12 +70,14 @@ export async function POST(req: NextRequest) {
     const todo = await prisma.todo.create({
       data: {
         userId: user.id,
+        projectId: typeof projectId === 'string' && projectId ? projectId : null,
         title: title.trim(),
         description: description?.trim() || null,
         category: category?.trim() || 'General',
         priority: priority || 0,
         dueDate: dueDate ? new Date(dueDate) : null,
       },
+      include: { project: { select: { slug: true, name: true, icon: true } } },
     });
 
     return NextResponse.json({ ok: true, data: todo });
@@ -90,7 +96,7 @@ export async function PUT(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { id, title, description, category, priority, completed, dueDate, sortOrder } = body;
+    const { id, title, description, category, priority, completed, dueDate, sortOrder, projectId } = body;
 
     if (!id) {
       return NextResponse.json({ ok: false, error: 'Todo ID required' }, { status: 400 });
@@ -115,7 +121,9 @@ export async function PUT(req: NextRequest) {
         ...(completed !== undefined && { completed, completedAt: completed ? new Date() : null }),
         ...(dueDate !== undefined && { dueDate: dueDate ? new Date(dueDate) : null }),
         ...(sortOrder !== undefined && { sortOrder }),
+        ...(projectId !== undefined && { projectId: projectId || null }),
       },
+      include: { project: { select: { slug: true, name: true, icon: true } } },
     });
 
     return NextResponse.json({ ok: true, data: todo });
