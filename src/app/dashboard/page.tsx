@@ -12,9 +12,7 @@ import { UrgentInboxWidget } from '@/components/widgets/UrgentInboxWidget';
 import { ActivityFeedWidget } from '@/components/widgets/ActivityFeedWidget';
 import OneNoteWidget from '@/components/widgets/OneNoteWidget';
 import OutlookWidget from '@/components/widgets/OutlookWidget';
-import { AiChatPanel } from '@/components/ai/AiChatPanel';
-import { IframeModal } from '@/components/dashboard/IframeModal';
-import { ServiceEditorModal } from '@/components/dashboard/ServiceEditorModal';
+import { IframeModal } from '@/components/dashboard/IframeModal';import { ServiceEditorModal } from '@/components/dashboard/ServiceEditorModal';
 import MainSidebar from '@/components/layout/MainSidebar';
 import type { ServiceData } from '@/hooks/usePortal';
 import type { StatusColor, VpnStatus } from '@/types';
@@ -41,7 +39,6 @@ export default function DashboardPage() {
   const apiCall = useApiCall(user?.csrfToken);
   const [activeSection, setActiveSection] = useState<string>('all');
   const [editingService, setEditingService] = useState<ServiceData | null>(null);
-  const [showAiPanel, setShowAiPanel] = useState(false);
   const [iframeModal, setIframeModal] = useState<{ url: string; title: string } | null>(null);
   const [showMcpPanel, setShowMcpPanel] = useState(false);
 
@@ -89,7 +86,7 @@ export default function DashboardPage() {
     if (service.openMode === 'iframe' || service.openMode === 'modal') {
       setIframeModal({ url: service.url, title: service.name });
     } else if (service.openMode === 'sidepanel') {
-      setShowAiPanel(true);
+      window.dispatchEvent(new CustomEvent('aihub:open'));
     } else {
       window.open(service.url, '_blank');
     }
@@ -333,7 +330,7 @@ export default function DashboardPage() {
           </div>
 
           {/* Floating admin button — icon-only on mobile, labeled on desktop */}
-          {user.role === 'admin' && !showAiPanel && !showMcpPanel && !iframeModal && (
+          {user.role === 'admin' && !showMcpPanel && !iframeModal && (
             <a
               href="/admin/services"
               className={cn(
@@ -347,13 +344,6 @@ export default function DashboardPage() {
               <Plus className="h-5 w-5 shrink-0" />
               <span className="hidden sm:inline text-sm font-medium">Nouveau service</span>
             </a>
-          )}
-
-          {/* AI Side Panel */}
-          {showAiPanel && !iframeModal && (
-            <div className="w-80 xl:w-96 flex-shrink-0 animate-fade-in">
-              <AiChatPanel csrfToken={user.csrfToken} onClose={() => setShowAiPanel(false)} />
-            </div>
           )}
 
           {/* MCP Tools Panel */}

@@ -88,11 +88,25 @@ const NAV_GROUPS: NavGroup[] = [
     id: 'development',
     label: 'Development',
     items: [
+      // The agentic-OS workflow: projects, the tasks dispatched against them,
+      // their files, the memory that scopes the AI, and the scheduler.
       {
         href: '/projects',
         label: 'Projects',
         icon: <FolderGit2 className="h-3.5 w-3.5" />,
         match: (p) => p.startsWith('/projects'),
+      },
+      {
+        href: '/agents',
+        label: 'Tasks',
+        icon: <ListTodo className="h-3.5 w-3.5" />,
+        match: (p) => p.startsWith('/agents'),
+      },
+      {
+        href: '/memory',
+        label: 'AI Memory',
+        icon: <BrainCircuit className="h-3.5 w-3.5" />,
+        match: (p) => p.startsWith('/memory'),
       },
       {
         href: '/files',
@@ -106,12 +120,7 @@ const NAV_GROUPS: NavGroup[] = [
         label: 'Scheduler',
         icon: <Clock className="h-3.5 w-3.5" />,
         match: (p) => p.startsWith('/admin/recurring'),
-      },
-      {
-        href: '/agents',
-        label: 'Tasks',
-        icon: <ListTodo className="h-3.5 w-3.5" />,
-        match: (p) => p.startsWith('/agents'),
+        adminOnly: true,
       },
       {
         href: '/amonis',
@@ -119,12 +128,6 @@ const NAV_GROUPS: NavGroup[] = [
         icon: <Briefcase className="h-3.5 w-3.5" />,
       },
       { href: '/insights', label: 'Insights', icon: <TrendingUp className="h-3.5 w-3.5" /> },
-      {
-        href: '/memory',
-        label: 'AI Memory',
-        icon: <BrainCircuit className="h-3.5 w-3.5" />,
-        match: (p) => p.startsWith('/memory'),
-      },
     ],
   },
   {
@@ -132,6 +135,8 @@ const NAV_GROUPS: NavGroup[] = [
     label: 'Manage',
     adminOnly: true,
     items: [
+      // Project management now lives on /projects; the scheduler lives under
+      // Development. This group is for the remaining admin-only surfaces.
       {
         href: '/admin/services',
         label: 'Manage services',
@@ -139,20 +144,9 @@ const NAV_GROUPS: NavGroup[] = [
       },
       {
         href: '/admin/agents',
-        label: 'Manage agents',
+        label: 'Agent profiles',
         icon: <Bot className="h-3.5 w-3.5" />,
         match: (p) => p.startsWith('/admin/agents'),
-      },
-      {
-        href: '/admin/projects',
-        label: 'Manage projects',
-        icon: <FolderGit2 className="h-3.5 w-3.5" />,
-        match: (p) => p.startsWith('/admin/projects'),
-      },
-      {
-        href: '/admin/recurring',
-        label: 'Recurring tasks',
-        icon: <Clock className="h-3.5 w-3.5" />,
       },
       {
         href: '/terminal',
