@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/hooks/usePortal';
 import MainSidebar from '@/components/layout/MainSidebar';
-import { ArrowLeft, DollarSign, Loader2, Sparkles } from 'lucide-react';
+import { ArrowLeft, DollarSign, Loader2, Sparkles, HelpCircle } from 'lucide-react';
 import type { CostDailyBucket, CostRow, CostsResponse } from '@/app/api/agents/costs/route';
 
 const RANGES: { value: number; label: string }[] = [
@@ -64,7 +64,6 @@ export default function AgentsCostsPage() {
       <MainSidebar user={user} onLogout={handleLogout} />
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-7xl mx-auto p-6">
-          {/* Header */}
           <div className="flex items-start justify-between mb-6 gap-4 flex-wrap">
             <div className="pl-12 sm:pl-0">
               <div className="flex items-center gap-2 text-xs text-portal-muted mb-1">
@@ -77,9 +76,13 @@ export default function AgentsCostsPage() {
                 <DollarSign className="h-6 w-6 text-portal-accent" />
                 Agent costs
               </h1>
-              <p className="text-sm text-portal-muted mt-1">
-                Dollar cost of tasks that ran via <span className="font-mono">ANTHROPIC_API_KEY</span>.
-                Max-subscription OAuth tasks show <span className="font-mono">$0.00</span>.
+              <p className="text-sm text-portal-muted mt-1 max-w-2xl">
+                <span className="text-amber-300">Billed</span> = real money charged via{' '}
+                <span className="font-mono">ANTHROPIC_API_KEY</span> (matches your Anthropic console
+                within SDK estimation error).{' '}
+                <span className="text-emerald-300">OAuth estimate</span> = informational SDK
+                token-cost figure for Max-subscription runs — you weren&apos;t actually charged
+                for these.
               </p>
             </div>
             <div className="flex gap-2">
@@ -106,12 +109,20 @@ export default function AgentsCostsPage() {
             </div>
           )}
 
-          {/* Stat strip */}
           <StatStrip data={data} loading={loading} days={days} />
 
-          {/* Chart */}
           <div className="bg-portal-card border border-portal-border rounded-lg p-4 mb-6">
-            <div className="text-xs text-portal-muted mb-2">Daily spend</div>
+            <div className="text-xs text-portal-muted mb-2 flex items-center gap-2">
+              <span>Daily spend</span>
+              <span className="inline-flex items-center gap-1 text-amber-300">
+                <span className="w-2 h-2 rounded-sm bg-amber-400 inline-block" />
+                billed
+              </span>
+              <span className="inline-flex items-center gap-1 text-emerald-300">
+                <span className="w-2 h-2 rounded-sm bg-emerald-500/60 inline-block" />
+                OAuth estimate
+              </span>
+            </div>
             {loading || !data ? (
               <div className="h-48 flex items-center justify-center text-portal-muted">
                 <Loader2 className="h-5 w-5 animate-spin" />
@@ -121,7 +132,18 @@ export default function AgentsCostsPage() {
             )}
           </div>
 
-          {/* Table */}
+          {data && data.unknownTaskCount > 0 && (
+            <div className="mb-4 bg-portal-bg border border-portal-border text-portal-muted rounded-md px-3 py-2 text-xs flex items-start gap-2">
+              <HelpCircle className="h-4 w-4 shrink-0 mt-0.5" />
+              <span>
+                {data.unknownTaskCount} task{data.unknownTaskCount === 1 ? '' : 's'} in this window
+                ran before the auth-path column existed. They&apos;re shown below as
+                <span className="font-mono text-portal-muted/80"> unknown</span> and excluded from
+                the totals above.
+              </span>
+            </div>
+          )}
+
           <div className="bg-portal-card border border-portal-border rounded-lg overflow-hidden">
             <div className="px-4 py-3 border-b border-portal-border text-xs text-portal-muted">
               Tasks in this window
@@ -132,7 +154,7 @@ export default function AgentsCostsPage() {
               </div>
             ) : data.rows.length === 0 ? (
               <div className="h-32 flex items-center justify-center text-sm text-portal-muted">
-                No tasks with recorded cost in this window yet.
+                No completed tasks in this window yet.
               </div>
             ) : (
               <CostTable rows={data.rows} />
@@ -153,35 +175,36 @@ function StatStrip({
   loading: boolean;
   days: number;
 }): JSX.Element {
-  const total = data?.totalUsd ?? 0;
-  const paid = data?.paidTaskCount ?? 0;
-  const free = (data?.taskCount ?? 0) - paid;
-  const color =
-    total === 0
-      ? 'text-emerald-300'
-      : total < 5
-        ? 'text-amber-300'
-        : 'text-red-300';
+  const billed = data?.billedUsd ?? 0;
+  const oauthEst = data?.estimatedOauthUsd ?? 0;
+  const billedCount = data?.billedTaskCount ?? 0;
+  const oauthCount = data?.oauthTaskCount ?? 0;
+  const billedColor =
+    billed === 0 ? 'text-emerald-300' : billed < 5 ? 'text-amber-300' : 'text-red-300';
 
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
       <Tile
-        label={`Spend, last ${days} days`}
-        value={loading ? '…' : `$${total.toFixed(4)}`}
-        valueClass={color}
+        label={`Billed via API key, last ${days}d`}
+        value={loading ? '…' : `$${billed.toFixed(4)}`}
+        valueClass={billedColor}
+        sub={loading ? '' : `${billedCount} task${billedCount === 1 ? '' : 's'}`}
       />
       <Tile
-        label="Tasks with cost"
-        value={loading ? '…' : String(data?.taskCount ?? 0)}
+        label={`OAuth estimate, last ${days}d`}
+        value={loading ? '…' : `$${oauthEst.toFixed(4)}`}
+        valueClass="text-emerald-300"
+        icon={<Sparkles className="h-3 w-3" />}
+        sub={loading ? '' : `${oauthCount} task${oauthCount === 1 ? '' : 's'} (not charged)`}
       />
       <Tile
-        label="API-key path"
-        value={loading ? '…' : String(paid)}
-        valueClass={paid > 0 ? 'text-amber-300' : 'text-portal-text'}
+        label="API-key tasks"
+        value={loading ? '…' : String(billedCount)}
+        valueClass={billedCount > 0 ? 'text-amber-300' : 'text-portal-text'}
       />
       <Tile
-        label="OAuth path"
-        value={loading ? '…' : String(free)}
+        label="OAuth tasks"
+        value={loading ? '…' : String(oauthCount)}
         valueClass="text-emerald-300"
         icon={<Sparkles className="h-3 w-3" />}
       />
@@ -194,11 +217,13 @@ function Tile({
   value,
   valueClass = 'text-portal-text',
   icon,
+  sub,
 }: {
   label: string;
   value: string;
   valueClass?: string;
   icon?: React.ReactNode;
+  sub?: string;
 }): JSX.Element {
   return (
     <div className="bg-portal-card border border-portal-border rounded-lg px-4 py-3">
@@ -207,19 +232,22 @@ function Tile({
         {label}
       </div>
       <div className={`text-lg font-semibold mt-1 ${valueClass}`}>{value}</div>
+      {sub && <div className="text-[11px] text-portal-muted mt-0.5">{sub}</div>}
     </div>
   );
 }
 
 function DailyCostChart({ daily }: { daily: CostDailyBucket[] }): JSX.Element {
-  const max = Math.max(0.0001, ...daily.map((d) => d.totalUsd));
-  // Bars get plenty of room: 12px column + 2px gap.
+  // Chart shows TWO stacked bars per day: billed (amber, bottom) +
+  // OAuth estimate (emerald-muted, on top). Max-of-totals drives scale.
+  const max = Math.max(
+    0.0001,
+    ...daily.map((d) => d.billedUsd + d.estimatedOauthUsd),
+  );
   const colWidth = 12;
   const gap = 2;
   const chartHeight = 160;
   const width = daily.length * (colWidth + gap);
-
-  // Show ~5 evenly-spaced date labels along the x-axis.
   const labelEvery = Math.max(1, Math.ceil(daily.length / 5));
 
   return (
@@ -234,24 +262,55 @@ function DailyCostChart({ daily }: { daily: CostDailyBucket[] }): JSX.Element {
           aria-label="Daily cost chart"
         >
           {daily.map((d, i) => {
-            const h = (d.totalUsd / max) * chartHeight;
+            const billedH = (d.billedUsd / max) * chartHeight;
+            const oauthH = (d.estimatedOauthUsd / max) * chartHeight;
+            const total = d.billedUsd + d.estimatedOauthUsd;
             const x = i * (colWidth + gap);
-            const y = chartHeight - h;
-            const fill = d.totalUsd > 0 ? '#f59e0b' : '#374151';
+            const billedY = chartHeight - billedH;
+            const oauthY = billedY - oauthH;
             return (
               <g key={d.date}>
-                <rect
-                  x={x}
-                  y={y}
-                  width={colWidth}
-                  height={Math.max(h, 1)}
-                  fill={fill}
-                  rx="1"
-                >
-                  <title>
-                    {d.date} — ${d.totalUsd.toFixed(4)} ({d.paidCount} paid, {d.freeCount} free)
-                  </title>
-                </rect>
+                {oauthH > 0 && (
+                  <rect
+                    x={x}
+                    y={oauthY}
+                    width={colWidth}
+                    height={Math.max(oauthH, 1)}
+                    fill="#34d399"
+                    opacity={0.5}
+                    rx="1"
+                  >
+                    <title>
+                      {d.date} — OAuth est. ${d.estimatedOauthUsd.toFixed(4)} ({d.oauthCount} run
+                      {d.oauthCount === 1 ? '' : 's'})
+                    </title>
+                  </rect>
+                )}
+                {billedH > 0 && (
+                  <rect
+                    x={x}
+                    y={billedY}
+                    width={colWidth}
+                    height={Math.max(billedH, 1)}
+                    fill="#f59e0b"
+                    rx="1"
+                  >
+                    <title>
+                      {d.date} — billed ${d.billedUsd.toFixed(4)} ({d.billedCount} API-key run
+                      {d.billedCount === 1 ? '' : 's'})
+                    </title>
+                  </rect>
+                )}
+                {total === 0 && (
+                  <rect
+                    x={x}
+                    y={chartHeight - 1}
+                    width={colWidth}
+                    height={1}
+                    fill="#374151"
+                    rx="1"
+                  />
+                )}
                 {i % labelEvery === 0 && (
                   <text
                     x={x + colWidth / 2}
@@ -266,15 +325,7 @@ function DailyCostChart({ daily }: { daily: CostDailyBucket[] }): JSX.Element {
               </g>
             );
           })}
-          {/* y-axis max marker */}
-          <line
-            x1="0"
-            y1="0"
-            x2={width}
-            y2="0"
-            stroke="#1f2937"
-            strokeDasharray="2 4"
-          />
+          <line x1="0" y1="0" x2={width} y2="0" stroke="#1f2937" strokeDasharray="2 4" />
         </svg>
         <div className="flex justify-between text-[10px] text-portal-muted mt-1">
           <span>$0</span>
@@ -300,33 +351,59 @@ function CostTable({ rows }: { rows: CostRow[] }): JSX.Element {
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => (
-            <tr key={r.taskId} className="border-b border-portal-border/50 last:border-0 hover:bg-portal-border/20">
-              <td className="px-3 py-2 text-portal-muted whitespace-nowrap text-xs">
-                {r.completedAt ? new Date(r.completedAt).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' }) : '—'}
-              </td>
-              <td className="px-3 py-2 text-portal-text">
-                <Link href={`/agents?task=${r.taskId}`} className="hover:underline">
-                  {r.title}
-                </Link>
-              </td>
-              <td className="px-3 py-2 text-portal-muted">{r.projectName}</td>
-              <td className="px-3 py-2 text-portal-muted">{r.agentName ?? '—'}</td>
-              <td className="px-3 py-2">
-                {r.authPath === 'oauth' ? (
-                  <span className="inline-flex items-center gap-1 text-emerald-300 text-xs">
-                    <Sparkles className="h-3 w-3" />
-                    OAuth
-                  </span>
-                ) : (
-                  <span className="text-amber-300 text-xs">API key</span>
-                )}
-              </td>
-              <td className={`px-3 py-2 text-right font-mono ${r.costUsd > 0 ? 'text-amber-300' : 'text-portal-muted'}`}>
-                ${r.costUsd.toFixed(4)}
-              </td>
-            </tr>
-          ))}
+          {rows.map((r) => {
+            const isOauth = r.authPath === 'oauth';
+            const isApiKey = r.authPath === 'api_key';
+            return (
+              <tr
+                key={r.taskId}
+                className="border-b border-portal-border/50 last:border-0 hover:bg-portal-border/20"
+              >
+                <td className="px-3 py-2 text-portal-muted whitespace-nowrap text-xs">
+                  {r.completedAt
+                    ? new Date(r.completedAt).toLocaleString(undefined, {
+                        dateStyle: 'short',
+                        timeStyle: 'short',
+                      })
+                    : '—'}
+                </td>
+                <td className="px-3 py-2 text-portal-text">
+                  <Link href={`/agents?task=${r.taskId}`} className="hover:underline">
+                    {r.title}
+                  </Link>
+                </td>
+                <td className="px-3 py-2 text-portal-muted">{r.projectName}</td>
+                <td className="px-3 py-2 text-portal-muted">{r.agentName ?? '—'}</td>
+                <td className="px-3 py-2">
+                  {isOauth && (
+                    <span className="inline-flex items-center gap-1 text-emerald-300 text-xs">
+                      <Sparkles className="h-3 w-3" />
+                      OAuth
+                    </span>
+                  )}
+                  {isApiKey && <span className="text-amber-300 text-xs">API key</span>}
+                  {!isOauth && !isApiKey && (
+                    <span className="text-portal-muted text-xs">unknown</span>
+                  )}
+                </td>
+                <td
+                  className={`px-3 py-2 text-right font-mono ${
+                    isApiKey ? 'text-amber-300' : 'text-portal-muted'
+                  }`}
+                  title={
+                    isOauth
+                      ? 'SDK token-cost estimate — you were NOT charged for this; OAuth covered it.'
+                      : isApiKey
+                        ? 'Billed by Anthropic via your API key.'
+                        : 'Auth path not recorded for this run.'
+                  }
+                >
+                  ${r.costUsd.toFixed(4)}
+                  {isOauth && <span className="text-[10px] text-portal-muted ml-1">est.</span>}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

@@ -14,6 +14,7 @@ const patchSchema = z.object({
     'mark_reviewed',
     'merge_and_review',
     'undo',
+    'rerun',
   ]),
   agentProfileId: z.string().uuid().optional(),
   priority: z.enum(['low', 'normal', 'high', 'urgent']).optional(),
@@ -368,6 +369,57 @@ export async function PATCH(request: Request, { params }: { params: { taskId: st
         userId: user.id,
         action: 'admin_action',
         details: { resource: 'task', op: 'undo', taskId: params.taskId },
+        ipAddress: getClientIp(request),
+      });
+      return NextResponse.json({ ok: true, data: toTaskDTO(updated) });
+    }
+
+    if (action === 'rerun') {
+      // Reset the task row in place so the worker picks it up again on its
+      // next poll. Only terminal states can be rerun — a pending or in-flight
+      // task is already on its way through the queue.
+      if (!isTerminal && task.status !== 'needs_review') {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: `Task is ${task.status}; only completed/failed/cancelled/needs_review tasks can be rerun`,
+          },
+          { status: 409 },
+        );
+      }
+      // Drop any sub-tasks created on a previous orchestrator run — they get
+      // recreated on the rerun. Plain (non-orchestrator) tasks have no children
+      // so this is a no-op for them.
+      await prisma.task.deleteMany({ where: { parentTaskId: params.taskId } });
+      const updated = await prisma.task.update({
+        where: { id: params.taskId },
+        data: {
+          status: 'queued',
+          workerId: null,
+          workerStartedAt: null,
+          completedAt: null,
+          reviewedAt: null,
+          reviewedById: null,
+          mergedAt: null,
+          resultType: null,
+          resultUrl: null,
+          resultSummary: null,
+          errorMessage: null,
+          costUsd: null,
+        },
+        include: TASK_WITH_RELATIONS,
+      });
+      await prisma.taskLog.create({
+        data: {
+          taskId: params.taskId,
+          level: 'info',
+          message: `Rerun requested by ${user.email}`,
+        },
+      });
+      await auditLog({
+        userId: user.id,
+        action: 'admin_action',
+        details: { resource: 'task', op: 'rerun', taskId: params.taskId },
         ipAddress: getClientIp(request),
       });
       return NextResponse.json({ ok: true, data: toTaskDTO(updated) });

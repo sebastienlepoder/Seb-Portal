@@ -342,12 +342,82 @@ export async function commitAll(params: {
   if (!status.stdout.trim()) {
     return { commitHash: null, changed: false };
   }
+  // Guard against the recurring "package.json changed but package-lock.json
+  // didn't" failure mode. If we let that ship, the next Coolify deploy of
+  // the consuming repo hits `npm ci --ignore-scripts` and dies with
+  // "Missing: X from lock file" before any code runs. We re-sync the
+  // lockfile here so every commit the worker produces is `npm ci`-safe.
+  await ensureLockfileSync({ taskId, workdir, status: status.stdout });
   const add = await run('git', ['add', '-A'], { cwd: workdir, taskId });
   if (add.code !== 0) throw new Error(`git add failed: ${add.stderr}`);
   const commit = await run('git', ['commit', '-m', message], { cwd: workdir, taskId });
   if (commit.code !== 0) throw new Error(`git commit failed: ${commit.stderr}`);
   const rev = await run('git', ['rev-parse', 'HEAD'], { cwd: workdir, taskId, log: false });
   return { commitHash: rev.stdout.trim() || null, changed: true };
+}
+
+/**
+ * If the agent edited `package.json` but not `package-lock.json`, the next
+ * `npm ci` will refuse to install. Run `npm install --package-lock-only` to
+ * resolve the new tree and write a matching lockfile, without touching
+ * node_modules (that's fast — usually 1–3 s). Skips entirely when there's
+ * no package.json or no mismatch.
+ *
+ * Best-effort: failures are logged as warnings, never fatal — the agent's
+ * code change is more valuable than a perfectly synced lockfile, and a
+ * follow-up commit can always re-sync.
+ */
+async function ensureLockfileSync(params: {
+  taskId: string;
+  workdir: string;
+  status: string;
+}): Promise<void> {
+  const { taskId, workdir, status } = params;
+  const lines = status.split('\n').map((l) => l.trim()).filter(Boolean);
+  const touched = (name: string) =>
+    lines.some((l) => l.endsWith(` ${name}`) || l.endsWith(`\t${name}`));
+  const pkgChanged = touched('package.json');
+  if (!pkgChanged) return;
+  const lockChanged = touched('package-lock.json');
+  if (lockChanged) return;
+  // Skip if there's no lockfile in the repo to begin with.
+  try {
+    await fs.access(path.join(workdir, 'package-lock.json'));
+  } catch {
+    return;
+  }
+  await logger.info(
+    taskId,
+    'package.json modified but package-lock.json was not — regenerating lockfile so `npm ci` stays green',
+  );
+  const res = await run(
+    'npm',
+    ['install', '--package-lock-only', '--ignore-scripts', '--no-audit', '--no-fund'],
+    { cwd: workdir, taskId, log: false, timeoutMs: 120_000 },
+  );
+  if (res.code !== 0) {
+    await logger.warn(
+      taskId,
+      `Lockfile regen failed (exit ${res.code}); commit will go through anyway, but the next npm ci may break. stderr: ${res.stderr.slice(0, 600)}`,
+    );
+  } else {
+    await logger.info(taskId, 'package-lock.json regenerated and staged for commit');
+  }
+}
+
+export async function countUnpushedCommits(params: {
+  taskId: string;
+  workdir: string;
+  baseBranch: string;
+}): Promise<number> {
+  const { taskId, workdir, baseBranch } = params;
+  const res = await run(
+    'git',
+    ['rev-list', '--count', `origin/${baseBranch}..HEAD`],
+    { cwd: workdir, taskId, log: false }
+  );
+  if (res.code !== 0) return 0;
+  return parseInt(res.stdout.trim(), 10) || 0;
 }
 
 export async function pushBranch(params: {

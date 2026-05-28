@@ -6,7 +6,6 @@ import MainSidebar from '@/components/layout/MainSidebar';
 import { cn, formatRelativeTime, extractPastedImages } from '@/lib/utils';
 import {
   AlertTriangle,
-  Bot,
   Briefcase,
   Check,
   ChevronDown,
@@ -18,6 +17,8 @@ import {
   FileText,
   GitMerge,
   HelpCircle,
+  LayoutGrid,
+  List,
   Loader2,
   MessageSquarePlus,
   RotateCcw,
@@ -105,6 +106,7 @@ export default function AgentsPage() {
   const [workers, setWorkers] = useState<WorkerStatus[]>([]);
   const [anyWorkerActive, setAnyWorkerActive] = useState<boolean | null>(null);
   const [statusFilter, setStatusFilter] = useState<'active' | 'all'>('active');
+  const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list');
   const [showDispatcher, setShowDispatcher] = useState(false);
   const [dispatcherInitialValues, setDispatcherInitialValues] =
     useState<DispatcherInitialValues | null>(null);
@@ -349,19 +351,6 @@ export default function AgentsPage() {
     setDispatcherInitialValues(null);
   };
 
-  const handleRetask = (d: TaskDTO) => {
-    setDispatcherInitialValues({
-      project_name: d.project.slug,
-      agent_slug: d.agentProfile?.slug ?? '',
-      title: d.title,
-      description: d.description,
-      priority: d.priority,
-      auto_merge: false,
-    });
-    setOpenTaskId(null);
-    setShowDispatcher(true);
-  };
-
   const handleFollowUp = (d: TaskDTO) => {
     setDispatcherInitialValues({
       project_name: d.project.slug,
@@ -388,11 +377,11 @@ export default function AgentsPage() {
           <div className="flex items-start justify-between mb-6 gap-4 flex-wrap">
             <div className="pl-12 sm:pl-0">
               <h1 className="text-2xl font-bold text-portal-text flex items-center gap-2">
-                <Bot className="h-6 w-6 text-portal-accent" />
-                Agents
+                <Briefcase className="h-6 w-6 text-portal-accent" />
+                Tasks
               </h1>
               <p className="text-sm text-portal-muted">
-                Dispatch development tasks to specialized AI workers
+                Dispatch and monitor AI agent tasks across projects
               </p>
             </div>
             <div className="flex items-center gap-2 ml-auto">
@@ -498,21 +487,59 @@ export default function AgentsPage() {
                 <h2 className="text-sm font-semibold text-portal-text flex items-center gap-2">
                   <Briefcase className="h-4 w-4 text-portal-accent" /> Task queue
                 </h2>
-                <div className="flex gap-1 text-xs">
-                  <FilterBtn
-                    active={statusFilter === 'active'}
-                    onClick={() => setStatusFilter('active')}
-                  >
-                    Active
-                  </FilterBtn>
-                  <FilterBtn
-                    active={statusFilter === 'all'}
-                    onClick={() => setStatusFilter('all')}
-                  >
-                    All
-                  </FilterBtn>
+                <div className="flex items-center gap-2">
+                  {/* View toggle */}
+                  <div className="flex gap-1">
+                    <button
+                      onClick={() => setViewMode('list')}
+                      title="List view"
+                      aria-pressed={viewMode === 'list'}
+                      className={cn(
+                        'p-1.5 rounded border transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent',
+                        viewMode === 'list'
+                          ? 'bg-portal-accent/10 text-portal-accent border-portal-accent/30'
+                          : 'bg-portal-bg border-portal-border text-portal-muted hover:text-portal-text'
+                      )}
+                    >
+                      <List className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      onClick={() => setViewMode('kanban')}
+                      title="Board view"
+                      aria-pressed={viewMode === 'kanban'}
+                      className={cn(
+                        'p-1.5 rounded border transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent',
+                        viewMode === 'kanban'
+                          ? 'bg-portal-accent/10 text-portal-accent border-portal-accent/30'
+                          : 'bg-portal-bg border-portal-border text-portal-muted hover:text-portal-text'
+                      )}
+                    >
+                      <LayoutGrid className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                  <div className="w-px h-4 bg-portal-border" aria-hidden="true" />
+                  {/* Status filter */}
+                  <div className="flex gap-1 text-xs">
+                    <FilterBtn
+                      active={statusFilter === 'active'}
+                      onClick={() => setStatusFilter('active')}
+                    >
+                      Active
+                    </FilterBtn>
+                    <FilterBtn
+                      active={statusFilter === 'all'}
+                      onClick={() => setStatusFilter('all')}
+                    >
+                      All
+                    </FilterBtn>
+                  </div>
                 </div>
               </div>
+              {viewMode === 'kanban' ? (
+                <div className="p-4">
+                  <KanbanBoard tasks={tasks} onTaskClick={setOpenTaskId} />
+                </div>
+              ) : (
               <div className="divide-y divide-portal-border max-h-[70vh] overflow-y-auto">
                 {tasks.length === 0 ? (
                   <div className="p-6 text-center text-sm text-portal-muted">
@@ -665,6 +692,7 @@ export default function AgentsPage() {
                   })
                 )}
               </div>
+              )}
             </div>
           </section>
         </div>
@@ -693,7 +721,6 @@ export default function AgentsPage() {
           csrfToken={csrfToken}
           onClose={() => setOpenTaskId(null)}
           onChanged={fetchTasks}
-          onRetask={handleRetask}
           onFollowUp={handleFollowUp}
         />
       )}
@@ -1033,7 +1060,6 @@ function TaskDetailModal({
   csrfToken,
   onClose,
   onChanged,
-  onRetask,
   onFollowUp,
 }: {
   taskId: string;
@@ -1042,7 +1068,6 @@ function TaskDetailModal({
   csrfToken: string | undefined;
   onClose: () => void;
   onChanged: () => void;
-  onRetask: (detail: TaskDTO) => void;
   onFollowUp: (detail: TaskDTO) => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -1120,8 +1145,11 @@ function TaskDetailModal({
   const isInFlight = detail?.status === 'in_progress';
   const isNeedsReview = detail?.status === 'needs_review';
   const isMerged = !!detail?.mergedAt;
-  const canRetask =
-    detail?.status === 'failed' || detail?.status === 'cancelled';
+  const canRerun =
+    detail?.status === 'completed' ||
+    detail?.status === 'failed' ||
+    detail?.status === 'cancelled' ||
+    detail?.status === 'needs_review';
   const showMergeAndReview =
     isNeedsReview && !isMerged && detail?.resultType === 'pr';
   const hasOutput = !!(detail?.resultSummary || detail?.resultUrl || detail?.errorMessage);
@@ -1162,6 +1190,17 @@ function TaskDetailModal({
     )
       return;
     const ok = await callPatch({ action: 'merge_and_review' });
+    if (ok) onClose();
+  }
+
+  async function handleRerun() {
+    if (
+      !window.confirm(
+        'Rerun this task in place? The previous result will be cleared and the worker will pick it up again. Sub-tasks from a prior orchestrator run will be deleted.'
+      )
+    )
+      return;
+    const ok = await callPatch({ action: 'rerun' });
     if (ok) onClose();
   }
 
@@ -1445,7 +1484,7 @@ function TaskDetailModal({
     !!detail &&
     (isNeedsReview ||
       !isTerminal ||
-      (isTerminal && (canRetask || true)) || // delete + follow-up always available on terminal
+      (isTerminal && (canRerun || true)) || // delete + follow-up always available on terminal
       !!detail.resultUrl ||
       !!detail.resultSummary);
 
@@ -1648,15 +1687,19 @@ function TaskDetailModal({
                       <MessageSquarePlus className="h-3.5 w-3.5" />
                       Submit follow-up
                     </button>
-                    {canRetask && (
+                    {canRerun && (
                       <button
-                        onClick={() => onRetask(detail)}
+                        onClick={handleRerun}
                         disabled={busy || deleting}
                         className="flex items-center gap-1.5 px-3 py-1.5 bg-portal-accent hover:bg-portal-accent/80 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-md text-xs transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
-                        title="Open a pre-filled dispatcher to edit and re-dispatch this task"
+                        title="Re-queue this exact task — does not create a new row"
                       >
-                        <RotateCcw className="h-3.5 w-3.5" />
-                        Re-task
+                        {activeAction === 'rerun' ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <RotateCcw className="h-3.5 w-3.5" />
+                        )}
+                        Rerun
                       </button>
                     )}
                     <button
@@ -1758,5 +1801,167 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <span className="text-xs font-medium text-portal-muted block mb-1">{label}</span>
       {children}
     </label>
+  );
+}
+
+// ─── Kanban board ─────────────────────────────────────────────
+
+interface KanbanColDef {
+  key: string;
+  statuses: TaskDTO['status'][];
+  label: string;
+  headerClass: string;
+  badgeClass: string;
+  topBorderClass: string;
+}
+
+const KANBAN_COLS: KanbanColDef[] = [
+  {
+    key: 'queued',
+    statuses: ['pending', 'queued'],
+    label: 'Queued',
+    headerClass: 'text-blue-300',
+    badgeClass: 'bg-blue-500/10 text-blue-300 border-blue-500/30',
+    topBorderClass: 'border-t-blue-500/50',
+  },
+  {
+    key: 'in_progress',
+    statuses: ['in_progress'],
+    label: 'In Progress',
+    headerClass: 'text-yellow-300',
+    badgeClass: 'bg-yellow-500/10 text-yellow-300 border-yellow-500/30',
+    topBorderClass: 'border-t-yellow-500/50',
+  },
+  {
+    key: 'needs_review',
+    statuses: ['needs_review'],
+    label: 'Needs Review',
+    headerClass: 'text-purple-300',
+    badgeClass: 'bg-purple-500/10 text-purple-300 border-purple-500/30',
+    topBorderClass: 'border-t-purple-500/50',
+  },
+  {
+    key: 'completed',
+    statuses: ['completed'],
+    label: 'Completed',
+    headerClass: 'text-green-300',
+    badgeClass: 'bg-green-500/10 text-green-300 border-green-500/30',
+    topBorderClass: 'border-t-green-500/50',
+  },
+  {
+    key: 'failed',
+    statuses: ['failed'],
+    label: 'Failed',
+    headerClass: 'text-red-300',
+    badgeClass: 'bg-red-500/10 text-red-300 border-red-500/30',
+    topBorderClass: 'border-t-red-500/50',
+  },
+  {
+    key: 'cancelled',
+    statuses: ['cancelled'],
+    label: 'Cancelled',
+    headerClass: 'text-zinc-400',
+    badgeClass: 'bg-zinc-500/10 text-zinc-400 border-zinc-500/30',
+    topBorderClass: 'border-t-zinc-500/50',
+  },
+];
+
+function KanbanBoard({
+  tasks,
+  onTaskClick,
+}: {
+  tasks: TaskDTO[];
+  onTaskClick: (taskId: string) => void;
+}) {
+  return (
+    <div className="overflow-x-auto pb-1" role="region" aria-label="Task board">
+      <div className="flex gap-3 min-w-max">
+        {KANBAN_COLS.map((col) => {
+          const colTasks = tasks.filter((t) => col.statuses.includes(t.status));
+          return (
+            <div
+              key={col.key}
+              className={cn(
+                'w-56 shrink-0 flex flex-col rounded-lg border border-portal-border bg-portal-bg/60 border-t-2 overflow-hidden',
+                col.topBorderClass
+              )}
+              aria-label={`${col.label} column`}
+            >
+              {/* Column header */}
+              <div className="px-3 py-2 border-b border-portal-border flex items-center justify-between">
+                <span className={cn('text-xs font-semibold', col.headerClass)}>
+                  {col.label}
+                </span>
+                <span
+                  className={cn(
+                    'text-[10px] rounded-full px-1.5 py-0.5 border font-mono tabular-nums',
+                    col.badgeClass
+                  )}
+                >
+                  {colTasks.length}
+                </span>
+              </div>
+              {/* Cards */}
+              <div className="flex-1 overflow-y-auto p-2 space-y-2 max-h-[60vh]">
+                {colTasks.length === 0 ? (
+                  <p className="text-center py-6 text-[11px] text-portal-muted select-none">
+                    Empty
+                  </p>
+                ) : (
+                  colTasks.map((t) => (
+                    <KanbanCard key={t.id} task={t} onClick={() => onTaskClick(t.id)} />
+                  ))
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function KanbanCard({ task, onClick }: { task: TaskDTO; onClick: () => void }) {
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          if (e.key === ' ') e.preventDefault();
+          onClick();
+        }
+      }}
+      className="bg-portal-card border border-portal-border rounded-lg p-3 cursor-pointer hover:border-portal-accent/50 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-portal-accent"
+    >
+      {/* Title */}
+      <p className="text-xs font-medium text-portal-text line-clamp-2 mb-2 leading-snug">
+        {task.title}
+      </p>
+      {/* Project */}
+      <div className="flex items-center gap-1 text-[10px] text-portal-muted mb-1 truncate">
+        <span aria-hidden="true">{task.project.icon ?? '📦'}</span>
+        <span className="truncate">{task.project.name}</span>
+      </div>
+      {/* Agent */}
+      {task.agentProfile && (
+        <div className="text-[10px] text-portal-muted truncate mb-1.5">
+          {task.agentProfile.name}
+          {task.agentProfile.role ? ` · ${task.agentProfile.role}` : ''}
+        </div>
+      )}
+      {/* Priority + spinner */}
+      <div className="flex items-center justify-between mt-2">
+        <span
+          className={cn('text-[10px] font-medium capitalize', PRIORITY_CLASS[task.priority])}
+        >
+          {task.priority}
+        </span>
+        {task.status === 'in_progress' && (
+          <Loader2 className="h-3 w-3 animate-spin text-yellow-300 shrink-0" aria-label="In progress" />
+        )}
+      </div>
+    </div>
   );
 }

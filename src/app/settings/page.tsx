@@ -16,6 +16,10 @@ import {
   Lock,
   Trash2,
   Plus,
+  Bot,
+  Sparkles,
+  DollarSign,
+  AlertTriangle,
 } from 'lucide-react';
 import { UpdatePanel } from '@/components/admin/UpdatePanel';
 import MainSidebar from '@/components/layout/MainSidebar';
@@ -200,6 +204,11 @@ export default function SettingsPage() {
           </div>
         </section>
 
+        {/* Worker auth (admin only) */}
+        {isAdmin && (
+          <WorkerAuthPanel csrfToken={user.csrfToken} />
+        )}
+
         {/* 1Password (admin only) */}
         {isAdmin && (
           <OnePasswordPanel csrfToken={user.csrfToken} />
@@ -319,6 +328,188 @@ type OpMapping = {
   fieldLabel: string;
   note: string | null;
 };
+
+type WorkerAuthMode = 'oauth' | 'api_key';
+
+interface WorkerHeartbeat {
+  active: boolean;
+  hasAnthropicKey: boolean;
+  hasMaxOauth?: boolean;
+}
+
+function WorkerAuthPanel({ csrfToken }: { csrfToken?: string }) {
+  const [mode, setMode] = useState<WorkerAuthMode | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [workers, setWorkers] = useState<WorkerHeartbeat[]>([]);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [s, w] = await Promise.all([
+        fetch('/api/admin/settings/worker-auth').then((r) => r.json()),
+        fetch('/api/ai-hub/workers').then((r) => r.json()),
+      ]);
+      if (!s.ok) throw new Error(s.error || 'failed to load setting');
+      setMode(s.data.mode as WorkerAuthMode);
+      if (w.ok) setWorkers((w.data.workers ?? []) as WorkerHeartbeat[]);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  async function selectMode(next: WorkerAuthMode) {
+    if (next === mode) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/admin/settings/worker-auth', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
+        },
+        body: JSON.stringify({ mode: next }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error || 'save failed');
+      setMode(data.data.mode as WorkerAuthMode);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const activeWorker = workers.find((w) => w.active);
+  const oauthAvailable = activeWorker?.hasMaxOauth ?? false;
+  const apiKeyAvailable = activeWorker?.hasAnthropicKey ?? false;
+  const warn =
+    !loading && mode === 'oauth' && activeWorker && !oauthAvailable
+      ? 'Mode is OAuth, but the worker reports no ~/.claude/.credentials.json mounted. Tasks will fail until you mount it.'
+      : !loading && mode === 'api_key' && activeWorker && !apiKeyAvailable
+        ? 'Mode is API key, but the worker has no ANTHROPIC_API_KEY set. Tasks will fail.'
+        : null;
+
+  return (
+    <section className="bg-portal-card border border-portal-border rounded-xl">
+      <div className="px-4 py-3 border-b border-portal-border">
+        <h2 className="text-sm font-semibold text-portal-text flex items-center gap-2">
+          <Bot className="h-4 w-4 text-portal-accent" />
+          Agent worker authentication
+        </h2>
+      </div>
+      <div className="p-4 space-y-4">
+        <p className="text-xs text-portal-muted">
+          Pick which credential the dispatch worker uses when running Claude. Max OAuth
+          rides your subscription (no per-token billing). API key bills per call to{' '}
+          <span className="font-mono">ANTHROPIC_API_KEY</span>.
+        </p>
+
+        {loading ? (
+          <div className="flex items-center gap-2 text-sm text-portal-muted">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading…
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <ModeCard
+              selected={mode === 'oauth'}
+              onClick={() => selectMode('oauth')}
+              disabled={saving}
+              title="Claude Max OAuth"
+              subtitle="Free under your subscription"
+              icon={<Sparkles className="h-4 w-4 text-emerald-300" />}
+              available={oauthAvailable}
+              availableLabel={oauthAvailable ? 'credentials mounted' : 'no credentials mounted'}
+            />
+            <ModeCard
+              selected={mode === 'api_key'}
+              onClick={() => selectMode('api_key')}
+              disabled={saving}
+              title="ANTHROPIC_API_KEY"
+              subtitle="Billed per token"
+              icon={<DollarSign className="h-4 w-4 text-amber-300" />}
+              available={apiKeyAvailable}
+              availableLabel={apiKeyAvailable ? 'env var set' : 'env var missing'}
+            />
+          </div>
+        )}
+
+        {warn && (
+          <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 text-amber-200 rounded-md px-3 py-2 text-xs">
+            <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+            <span>{warn}</span>
+          </div>
+        )}
+
+        {error && (
+          <div className="text-xs text-red-300">{error}</div>
+        )}
+
+        <p className="text-[11px] text-portal-muted">
+          Changes apply to the next task the worker picks up — no redeploy needed.
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function ModeCard({
+  selected,
+  onClick,
+  disabled,
+  title,
+  subtitle,
+  icon,
+  available,
+  availableLabel,
+}: {
+  selected: boolean;
+  onClick: () => void;
+  disabled: boolean;
+  title: string;
+  subtitle: string;
+  icon: React.ReactNode;
+  available: boolean;
+  availableLabel: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`text-left p-3 rounded-lg border transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent disabled:opacity-50 ${
+        selected
+          ? 'bg-portal-accent/10 border-portal-accent/60'
+          : 'bg-portal-bg border-portal-border hover:border-portal-accent/40'
+      }`}
+    >
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          {icon}
+          <div>
+            <div className="text-sm text-portal-text font-medium">{title}</div>
+            <div className="text-xs text-portal-muted">{subtitle}</div>
+          </div>
+        </div>
+        {selected && <Check className="h-4 w-4 text-portal-accent" />}
+      </div>
+      <div className={`mt-2 text-[11px] ${available ? 'text-emerald-300' : 'text-portal-muted'}`}>
+        {available ? '● ' : '○ '}
+        {availableLabel}
+      </div>
+    </button>
+  );
+}
 
 function OnePasswordPanel({ csrfToken }: { csrfToken?: string }) {
   const [state, setState] = useState<OpConnectionState | null>(null);

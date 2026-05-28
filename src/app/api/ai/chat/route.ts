@@ -24,6 +24,7 @@ import {
   type TaskPriority,
   type TaskStatus,
 } from '@/types/agents';
+import { memoryTools } from '@/server/mcp/memory-tools';
 import type { AiProvider, AiMessage, ToolCall, SessionUser } from '@/types';
 import { getModelDef, isModelAvailable, DEFAULT_MODEL_ID } from '@/lib/ai/models';
 
@@ -259,6 +260,36 @@ const CHAT_TOOLS = [
         ref: { type: 'string', description: 'Branch, tag, or commit SHA. Omit for default.' },
       },
       required: [] as string[],
+    },
+  },
+  {
+    name: 'read_memory',
+    description:
+      'Read a persisted memory entry by key. Omit `key` to list the index of all stored entries (key, type, updatedAt) for the current user. Memory is scoped per user. The current memory snapshot is already in your system prompt — use this only to refresh after writes or to fetch an entry not shown there.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        key: { type: 'string', description: 'Memory key to fetch. Omit to list all entries.' },
+      },
+      required: [] as string[],
+    },
+  },
+  {
+    name: 'write_memory',
+    description:
+      'Create or overwrite a persisted memory entry for the current user. Use this to remember facts, preferences, ongoing context, or anything the user explicitly asks you to remember across sessions. Calling with the same key replaces the value. Optional `type` categorizes the entry.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        key: { type: 'string', description: 'Short stable identifier for this entry (max 200 chars)' },
+        value: { type: 'string', description: 'Memory payload (max 64 KB)' },
+        type: {
+          type: 'string',
+          enum: ['user', 'project', 'feedback', 'reference', 'general'],
+          description: 'Category for the entry. Defaults to "general".',
+        },
+      },
+      required: ['key', 'value'],
     },
   },
 ] satisfies Anthropic.Tool[];
@@ -563,6 +594,20 @@ async function executeTool(
     }
   }
 
+  if (name === 'read_memory' || name === 'write_memory') {
+    // Delegate to the shared MCP memory handlers — they enforce per-user
+    // scoping via the (userId, key) unique constraint and the input is
+    // sanitized inside the handler.
+    const tool = memoryTools.find((t) => t.name === name);
+    if (!tool) return JSON.stringify({ error: `Unknown tool: ${name}` });
+    try {
+      const result = await tool.handler(input, user);
+      return JSON.stringify(result);
+    } catch (e) {
+      return JSON.stringify({ error: (e as Error).message });
+    }
+  }
+
   return JSON.stringify({ error: `Unknown tool: ${name}` });
 }
 
@@ -575,8 +620,36 @@ function githubErrorJson(e: unknown): string {
 
 // ─── System prompt ───────────────────────────────────────────
 
-function buildSystemPrompt(): string {
+interface MemorySnapshot {
+  key: string;
+  value: string;
+  type: string;
+}
+
+// One line per memory; truncate huge values so the prompt stays bounded.
+const MEMORY_VALUE_PROMPT_LIMIT = 1000;
+
+function formatMemoriesBlock(memories: MemorySnapshot[]): string {
+  if (memories.length === 0) return '';
+  const lines = memories.map((m) => {
+    const v =
+      m.value.length > MEMORY_VALUE_PROMPT_LIMIT
+        ? `${m.value.slice(0, MEMORY_VALUE_PROMPT_LIMIT)}… [truncated; use read_memory to fetch full]`
+        : m.value;
+    return `- [${m.type}] ${m.key}: ${v}`;
+  });
   return [
+    '',
+    '## Your Memory',
+    'You have persistent memory across sessions for this user. Current entries:',
+    ...lines,
+    '',
+    'Use `write_memory` to persist new facts the user asks you to remember, and `read_memory` (with a key) to fetch the full value of a truncated entry. When you add or change a memory, do so silently unless the user asks for confirmation.',
+  ].join('\n');
+}
+
+function buildSystemPrompt(memories: MemorySnapshot[] = []): string {
+  const base = [
     'You are the LEPODER Portal AI assistant. You help the operator (Sebastien) manage projects, agents, dispatched tasks, and review the GitHub repositories those tasks operate on.',
     '',
     'Project & agent tools:',
@@ -599,6 +672,10 @@ function buildSystemPrompt(): string {
     '- `github_get_file` — file contents at a ref',
     '- `github_list_directory` — directory listing at a ref',
     '',
+    'Memory tools (persistent across sessions, scoped to this user):',
+    '- `read_memory` — fetch a memory entry by key, or list all entry keys',
+    '- `write_memory` — create or overwrite a memory entry',
+    '',
     'For GitHub tools, prefer passing `project` (the portal slug) — the owner/repo/default-branch are resolved automatically. Only pass `owner`+`repo` for repos that aren\'t registered as portal projects.',
     '',
     'Auditing a completed task:',
@@ -617,6 +694,22 @@ function buildSystemPrompt(): string {
     'Guidelines for `ask_user_question`: use sparingly, only when genuinely ambiguous.',
     'For non-tool questions, just answer normally.',
   ].join('\n');
+
+  return base + formatMemoriesBlock(memories);
+}
+
+// Cap the number of memories injected so a runaway memory table can't
+// blow out the system prompt. Most recently updated wins.
+const MAX_MEMORIES_IN_PROMPT = 100;
+
+async function loadUserMemories(userId: string): Promise<MemorySnapshot[]> {
+  const entries = await prisma.aiMemory.findMany({
+    where: { userId },
+    orderBy: { updatedAt: 'desc' },
+    take: MAX_MEMORIES_IN_PROMPT,
+    select: { key: true, value: true, type: true },
+  });
+  return entries;
 }
 
 // ─── Question detection ──────────────────────────────────────
@@ -892,7 +985,10 @@ async function runAnthropic(args: RunAnthropicArgs): Promise<void> {
 
   const systemMsg = incoming.find((m) => m.role === 'system');
   const userAndAssistantMsgs = incoming.filter((m) => m.role !== 'system');
-  const systemPrompt = systemMsg?.content || buildSystemPrompt();
+  // Memories are loaded per-request — they may change between turns
+  // (e.g. the assistant wrote one on the previous reply).
+  const memories = await loadUserMemories(user.id);
+  const systemPrompt = systemMsg?.content || buildSystemPrompt(memories);
 
   const messages: Anthropic.MessageParam[] = userAndAssistantMsgs.map((m) => ({
     role: m.role as 'user' | 'assistant',

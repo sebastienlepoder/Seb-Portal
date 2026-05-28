@@ -2,6 +2,12 @@ import * as path from 'path';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { logger } from './logger';
+import {
+  applyAuthEnv,
+  describeAuthMode,
+  getWorkerAuthMode,
+  type WorkerAuthMode,
+} from './auth-mode';
 
 export interface AgentRunOptions {
   taskId: string;
@@ -23,10 +29,14 @@ export interface AgentRunResult {
   ok: boolean;
   summary: string;
   filesTouched: string[];
-  /** Dollar cost reported by the SDK. 0 on the Max OAuth path; > 0 on the
-   *  ANTHROPIC_API_KEY fallback path. Undefined when no result message was
-   *  received (e.g. timeout or hard error). */
+  /** SDK-reported dollar cost (token-count × pricing estimate). The SDK
+   *  computes this number for every run regardless of auth path, so a
+   *  positive value does NOT mean the user was charged. Use `authPath`
+   *  to know whether real billing occurred. Undefined when no result
+   *  message was received (timeout / hard error). */
   costUsd?: number;
+  /** Auth path the worker used for this run. */
+  authPath?: WorkerAuthMode;
   error?: string;
 }
 
@@ -117,15 +127,14 @@ function summarizeToolInput(name: string, input: unknown): string {
 export async function runAgent(opts: AgentRunOptions): Promise<AgentRunResult> {
   const { taskId, workdir, systemPrompt, userMessage, model, timeoutMs } = opts;
 
-  // The SDK reads OAuth credentials from $HOME/.claude/.credentials.json
-  // (populated by `claude login` on the host). Falls back to
-  // ANTHROPIC_API_KEY env var when those are absent — but our SENSITIVE_ENV_KEYS
-  // strips ANTHROPIC_API_KEY from the spawned subprocess env. To allow the
-  // API-key fallback we whitelist it back in here on purpose: the subagent
-  // shell doesn't see this env, only the SDK's own CLI subprocess does.
+  // Pick the auth path from the admin setting (Settings → Worker auth).
+  // In OAuth mode we deliberately don't forward ANTHROPIC_API_KEY: the
+  // Claude CLI treats it as an override, so leaving it set would bill
+  // per-token even on a Max subscription.
   const env = sanitizeShellEnv();
-  if (process.env.ANTHROPIC_API_KEY) env.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-  if (process.env.ANTHROPIC_BASE_URL) env.ANTHROPIC_BASE_URL = process.env.ANTHROPIC_BASE_URL;
+  const authMode = await getWorkerAuthMode();
+  applyAuthEnv(env, authMode);
+  await logger.info(taskId, `Auth: ${describeAuthMode(authMode)}`);
 
   const maxTurns = parseInt(process.env.WORKER_MAX_TURNS || '100', 10) || 100;
 
@@ -206,6 +215,7 @@ export async function runAgent(opts: AgentRunOptions): Promise<AgentRunResult> {
     summary,
     filesTouched: Array.from(filesTouched),
     costUsd,
+    authPath: authMode,
     error: ok ? undefined : error || 'agent did not produce a result',
   };
 }

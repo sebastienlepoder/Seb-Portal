@@ -5,12 +5,15 @@ import prisma from '@/lib/db';
 export interface CostDailyBucket {
   /** YYYY-MM-DD in UTC. */
   date: string;
-  /** Sum of costUsd for tasks completed on that day. */
-  totalUsd: number;
-  /** How many of those tasks had cost > 0 (API-key path). */
-  paidCount: number;
-  /** How many had cost = 0 (Max OAuth path). */
-  freeCount: number;
+  /** Real money: sum of costUsd where authPath = 'api_key'. */
+  billedUsd: number;
+  /** Informational: sum of costUsd for OAuth runs (SDK token-cost estimate;
+   *  the user wasn't actually charged, this is "what it would have cost"). */
+  estimatedOauthUsd: number;
+  /** Count of API-key runs that day. */
+  billedCount: number;
+  /** Count of OAuth runs that day. */
+  oauthCount: number;
 }
 
 export interface CostRow {
@@ -30,9 +33,20 @@ export interface CostsResponse {
   /** Window covered by `daily`. */
   fromIso: string;
   toIso: string;
-  totalUsd: number;
+  /** Real money charged via ANTHROPIC_API_KEY — matches Anthropic billing
+   *  (within SDK estimation error). */
+  billedUsd: number;
+  /** SDK token-cost estimate across OAuth runs. Informational only; the
+   *  user wasn't actually charged for any of this. */
+  estimatedOauthUsd: number;
+  /** Number of tasks in the window with a recorded auth path. */
   taskCount: number;
-  paidTaskCount: number;
+  /** Tasks billed via ANTHROPIC_API_KEY. */
+  billedTaskCount: number;
+  /** Tasks run via Max OAuth. */
+  oauthTaskCount: number;
+  /** Tasks where authPath was never recorded (pre-migration). */
+  unknownTaskCount: number;
   daily: CostDailyBucket[];
   /** Most recent tasks (capped at 200). */
   rows: CostRow[];
@@ -60,12 +74,12 @@ export async function GET(req: Request) {
     const to = new Date();
     const from = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
-    // We only count tasks that finished inside the window AND have a cost
-    // recorded (so older runs that pre-date this column don't pollute totals).
+    // Tasks completed in window with a recorded cost OR authPath. Either
+    // alone is informative; legacy rows that have neither don't belong here.
     const tasks = await prisma.task.findMany({
       where: {
         completedAt: { gte: from, lte: to },
-        costUsd: { not: null },
+        OR: [{ costUsd: { not: null } }, { authPath: { not: null } }],
       },
       include: {
         project: { select: { slug: true, name: true } },
@@ -75,30 +89,56 @@ export async function GET(req: Request) {
     });
 
     const dailyMap = new Map<string, CostDailyBucket>();
-    // Seed every day in the window with a zero bucket so the chart's x-axis
-    // is dense even when there are no tasks on that day.
     for (let i = 0; i < days; i++) {
       const d = new Date(to);
       d.setUTCDate(d.getUTCDate() - i);
       const key = utcDateKey(d);
-      dailyMap.set(key, { date: key, totalUsd: 0, paidCount: 0, freeCount: 0 });
+      dailyMap.set(key, {
+        date: key,
+        billedUsd: 0,
+        estimatedOauthUsd: 0,
+        billedCount: 0,
+        oauthCount: 0,
+      });
     }
 
-    let totalUsd = 0;
-    let paidTaskCount = 0;
+    let billedUsd = 0;
+    let estimatedOauthUsd = 0;
+    let billedTaskCount = 0;
+    let oauthTaskCount = 0;
+    let unknownTaskCount = 0;
     const rows: CostRow[] = [];
 
     for (const t of tasks) {
       const cost = t.costUsd ?? 0;
-      totalUsd += cost;
-      if (cost > 0) paidTaskCount++;
+      const authPath = ((t as { authPath?: string | null }).authPath ?? null) as
+        | 'oauth'
+        | 'api_key'
+        | null;
+
+      if (authPath === 'api_key') {
+        billedUsd += cost;
+        billedTaskCount++;
+      } else if (authPath === 'oauth') {
+        estimatedOauthUsd += cost;
+        oauthTaskCount++;
+      } else {
+        // No authPath recorded — pre-migration row. Don't count toward
+        // either total; the user can see it in the table but it doesn't
+        // pollute the spend number.
+        unknownTaskCount++;
+      }
 
       const key = t.completedAt ? utcDateKey(t.completedAt) : null;
       if (key && dailyMap.has(key)) {
         const b = dailyMap.get(key)!;
-        b.totalUsd += cost;
-        if (cost > 0) b.paidCount++;
-        else b.freeCount++;
+        if (authPath === 'api_key') {
+          b.billedUsd += cost;
+          b.billedCount++;
+        } else if (authPath === 'oauth') {
+          b.estimatedOauthUsd += cost;
+          b.oauthCount++;
+        }
       }
 
       if (rows.length < MAX_ROWS) {
@@ -112,19 +152,24 @@ export async function GET(req: Request) {
           agentSlug: t.agentProfile?.slug ?? null,
           agentName: t.agentProfile?.name ?? null,
           completedAt: t.completedAt?.toISOString() ?? null,
-          authPath: cost > 0 ? 'api_key' : 'oauth',
+          authPath: authPath ?? 'unknown',
         });
       }
     }
 
-    const daily = Array.from(dailyMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+    const daily = Array.from(dailyMap.values()).sort((a, b) =>
+      a.date.localeCompare(b.date),
+    );
 
     const body: CostsResponse = {
       fromIso: from.toISOString(),
       toIso: to.toISOString(),
-      totalUsd,
+      billedUsd,
+      estimatedOauthUsd,
       taskCount: tasks.length,
-      paidTaskCount,
+      billedTaskCount,
+      oauthTaskCount,
+      unknownTaskCount,
       daily,
       rows,
     };

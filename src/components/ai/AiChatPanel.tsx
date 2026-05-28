@@ -58,6 +58,25 @@ interface PendingQuestion {
   options: string[];
 }
 
+// Per-conversation state — keeps messages, loading, and ephemeral UI state
+// scoped to each thread so switching conversations never cross-contaminates them.
+interface ConvState {
+  messages: AiMessage[];
+  loading: boolean;
+  pendingQuestion: PendingQuestion | null;
+  lastToolEvents: string[];
+}
+
+const EMPTY_CONV: ConvState = {
+  messages: [],
+  loading: false,
+  pendingQuestion: null,
+  lastToolEvents: [],
+};
+
+// Key used for the per-conversation map when a new chat hasn't been saved yet.
+const NEW_CHAT_KEY = '__new__';
+
 const STORAGE_KEY = 'ai-hub:active-thread';
 const MODEL_STORAGE_KEY = 'ai-hub:model';
 const SIDEBAR_WIDTH_KEY = 'ai-hub:sidebar-width';
@@ -82,14 +101,15 @@ const CHAT_MIN = 320;
 
 export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
   const provider: AiProvider = 'anthropic';
-  const [messages, setMessages] = useState<AiMessage[]>([]);
+
+  // All per-conversation state lives in one map keyed by threadId (or NEW_CHAT_KEY).
+  // This ensures in-flight responses from conversation A are never applied to
+  // conversation B when the user switches mid-stream.
+  const [convStates, setConvStates] = useState<Map<string, ConvState>>(new Map());
   const [input, setInput] = useState('');
-  const [loading, setLoading] = useState(false);
   const [threadId, setThreadId] = useState<string | undefined>();
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [loadingThread, setLoadingThread] = useState(false);
-  const [pendingQuestion, setPendingQuestion] = useState<PendingQuestion | null>(null);
-  const [lastToolEvents, setLastToolEvents] = useState<string[]>([]);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [renameSaving, setRenameSaving] = useState(false);
@@ -113,6 +133,26 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
   const [isResizing, setIsResizing] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+
+  // Derive the displayed conversation's state from the active key.
+  const activeKey = threadId ?? NEW_CHAT_KEY;
+  const activeConv = convStates.get(activeKey) ?? EMPTY_CONV;
+  const messages = activeConv.messages;
+  const loading = activeConv.loading;
+  const pendingQuestion = activeConv.pendingQuestion;
+  const lastToolEvents = activeConv.lastToolEvents;
+
+  // Update per-conversation state without touching any other conversation's state.
+  const updateConv = useCallback(
+    (key: string, updater: (prev: ConvState) => ConvState) => {
+      setConvStates((prev) => {
+        const next = new Map(prev);
+        next.set(key, updater(next.get(key) ?? EMPTY_CONV));
+        return next;
+      });
+    },
+    [],
+  );
 
   // Track viewport for mobile drawer behavior
   useEffect(() => {
@@ -239,12 +279,28 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
   }, []);
 
   async function loadThread(id: string) {
+    // If this thread already has an in-flight request, just switch to it without
+    // re-fetching — the pending response will arrive and update its own state.
+    if (convStates.get(id)?.loading) {
+      setThreadId(id);
+      if (typeof window !== 'undefined') window.localStorage.setItem(STORAGE_KEY, id);
+      if (isMobile) setMobileSidebarOpen(false);
+      return;
+    }
+
     setLoadingThread(true);
     try {
       const res = await fetch(`/api/ai/threads/${id}`);
       const data = await res.json();
       if (data.ok) {
-        setMessages(data.data.messages || []);
+        setConvStates((prev) => {
+          const next = new Map(prev);
+          // Guard: don't overwrite a conversation that became in-flight while we fetched.
+          if (!next.get(id)?.loading) {
+            next.set(id, { ...EMPTY_CONV, messages: data.data.messages || [] });
+          }
+          return next;
+        });
         setThreadId(id);
         if (typeof window !== 'undefined') {
           window.localStorage.setItem(STORAGE_KEY, id);
@@ -253,7 +309,11 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
         // Thread no longer exists — clear stored id
         if (typeof window !== 'undefined') window.localStorage.removeItem(STORAGE_KEY);
         setThreadId(undefined);
-        setMessages([]);
+        setConvStates((prev) => {
+          const next = new Map(prev);
+          next.delete(id);
+          return next;
+        });
       }
     } finally {
       setLoadingThread(false);
@@ -262,8 +322,13 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
   }
 
   function newChat() {
-    setMessages([]);
     setThreadId(undefined);
+    // Reset the draft conversation slot so the new chat starts fresh.
+    setConvStates((prev) => {
+      const next = new Map(prev);
+      next.delete(NEW_CHAT_KEY);
+      return next;
+    });
     if (typeof window !== 'undefined') window.localStorage.removeItem(STORAGE_KEY);
     setInput('');
     setPastedImages([]);
@@ -280,6 +345,12 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
     });
     if (res.ok) {
       if (id === threadId) newChat();
+      // Clean up cached state for the deleted thread.
+      setConvStates((prev) => {
+        const next = new Map(prev);
+        next.delete(id);
+        return next;
+      });
       fetchThreads();
     }
   }
@@ -409,21 +480,30 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
     const images = pastedImages.length ? pastedImages : undefined;
     const userMsg: AiMessage = { role: 'user', content: text.trim(), images };
 
-    // Build the new messages array (slice off everything after the edit
-    // point, then append the edited user message + a placeholder
-    // assistant message we'll stream into).
+    // routeKey is the conversation this request belongs to. It survives a
+    // mid-flight thread switch (responses are routed here, not to whatever
+    // conversation is on screen) and is re-pointed if the thread id changes.
+    let routeKey = threadId ?? NEW_CHAT_KEY;
+
+    // Base messages for the API body. When regenerating/editing, slice off
+    // everything from the edit point onward.
+    const existing = (convStates.get(routeKey) ?? EMPTY_CONV).messages;
     const baseMessages =
-      typeof replaceFromIndex === 'number' ? messages.slice(0, replaceFromIndex) : messages;
-    const nextMessages: AiMessage[] = [...baseMessages, userMsg, { role: 'assistant', content: '' }];
-    setMessages(nextMessages);
-    const assistantIndex = nextMessages.length - 1;
+      typeof replaceFromIndex === 'number' ? existing.slice(0, replaceFromIndex) : existing;
+    // Index of the empty assistant placeholder we stream into.
+    const assistantIndex = baseMessages.length + 1;
+
+    updateConv(routeKey, (prev) => ({
+      ...prev,
+      messages: [...baseMessages, userMsg, { role: 'assistant', content: '' }],
+      loading: true,
+      pendingQuestion: null,
+      lastToolEvents: [],
+    }));
 
     setInput('');
     setPastedImages([]);
     setPasteError(null);
-    setLoading(true);
-    setPendingQuestion(null);
-    setLastToolEvents([]);
 
     let currentThreadId = threadId;
 
@@ -443,6 +523,18 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
           if (createData.ok && createData.data?.id) {
             const summary = createData.data as ThreadSummary;
             currentThreadId = summary.id;
+
+            // Migrate the draft conversation state from NEW_CHAT_KEY to the
+            // real thread id so streamed updates target the right key.
+            setConvStates((prev) => {
+              const next = new Map(prev);
+              const draftState = next.get(routeKey) ?? EMPTY_CONV;
+              next.set(summary.id, draftState);
+              if (routeKey !== summary.id) next.delete(routeKey);
+              return next;
+            });
+
+            routeKey = summary.id;
             setThreadId(summary.id);
             if (typeof window !== 'undefined') {
               window.localStorage.setItem(STORAGE_KEY, summary.id);
@@ -460,15 +552,15 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
       }
     }
 
-    // Helper to patch the streaming assistant message.
+    // Patch the streaming assistant message within the originating conversation.
     const patchAssistant = (patch: (m: AiMessage) => AiMessage) => {
-      setMessages((prev) => {
-        const copy = prev.slice();
+      updateConv(routeKey, (prev) => {
+        const copy = prev.messages.slice();
         const current = copy[assistantIndex];
         if (current && current.role === 'assistant') {
           copy[assistantIndex] = patch(current);
         }
-        return copy;
+        return { ...prev, messages: copy };
       });
     };
 
@@ -562,13 +654,24 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
                   ),
                 }));
               } else if (evt.type === 'question' && evt.question && Array.isArray(evt.options)) {
-                setPendingQuestion({ question: evt.question, options: evt.options });
+                const q = { question: evt.question, options: evt.options };
+                updateConv(routeKey, (prev) => ({ ...prev, pendingQuestion: q }));
               } else if (evt.type === 'done') {
                 if (evt.threadId && evt.threadId !== currentThreadId) {
-                  setThreadId(evt.threadId);
+                  const newId = evt.threadId;
+                  setConvStates((prev) => {
+                    const next = new Map(prev);
+                    const s = next.get(routeKey) ?? EMPTY_CONV;
+                    next.set(newId, s);
+                    if (routeKey !== newId) next.delete(routeKey);
+                    return next;
+                  });
+                  setThreadId((cur) => (cur === currentThreadId ? newId : cur));
                   if (typeof window !== 'undefined') {
-                    window.localStorage.setItem(STORAGE_KEY, evt.threadId);
+                    window.localStorage.setItem(STORAGE_KEY, newId);
                   }
+                  routeKey = newId;
+                  currentThreadId = newId;
                 }
                 fetchThreads();
               } else if (evt.type === 'error') {
@@ -580,12 +683,14 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
           }
         }
       }
-
-      if (toolEventNames.length > 0) setLastToolEvents(toolEventNames);
     } catch {
       patchAssistant((m) => ({ ...m, content: 'Failed to connect to AI API.' }));
     } finally {
-      setLoading(false);
+      updateConv(routeKey, (prev) => ({
+        ...prev,
+        loading: false,
+        lastToolEvents: toolEventNames.length ? toolEventNames : prev.lastToolEvents,
+      }));
     }
   }
 
@@ -596,6 +701,14 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
     if (!trimmed.startsWith('/')) return false;
     const [cmd, ...rest] = trimmed.split(/\s+/);
     const arg = rest.join(' ').trim();
+
+    // Append a local-only assistant note to the active conversation
+    // (slash-command feedback never goes to the model).
+    const note = (content: string) =>
+      updateConv(threadId ?? NEW_CHAT_KEY, (prev) => ({
+        ...prev,
+        messages: [...prev.messages, { role: 'assistant', content }],
+      }));
 
     switch (cmd) {
       case '/new':
@@ -623,41 +736,27 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
         if (match) {
           chooseModel(match.id);
         } else {
-          setMessages((prev) => [
-            ...prev,
-            { role: 'assistant', content: `No model matches "${arg}". Available: ${models.map((m) => m.label).join(', ')}` },
-          ]);
+          note(`No model matches "${arg}". Available: ${models.map((m) => m.label).join(', ')}`);
         }
         setInput('');
         return true;
       }
       case '/theme': {
         if (!arg) {
-          setMessages((prev) => [
-            ...prev,
-            { role: 'assistant', content: `Available themes: ${THEMES.map((t) => t.id).join(', ')}` },
-          ]);
+          note(`Available themes: ${THEMES.map((t) => t.id).join(', ')}`);
         } else if (isValidTheme(arg)) {
           applyTheme(arg);
         } else {
-          setMessages((prev) => [
-            ...prev,
-            { role: 'assistant', content: `No theme "${arg}". Available: ${THEMES.map((t) => t.id).join(', ')}` },
-          ]);
+          note(`No theme "${arg}". Available: ${THEMES.map((t) => t.id).join(', ')}`);
         }
         setInput('');
         return true;
       }
       case '/help':
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: 'assistant',
-            content:
-              '**Slash commands**\n\n' +
-              SLASH_COMMANDS.map((c) => `- \`${c.cmd}\` — ${c.description}`).join('\n'),
-          },
-        ]);
+        note(
+          '**Slash commands**\n\n' +
+            SLASH_COMMANDS.map((c) => `- \`${c.cmd}\` — ${c.description}`).join('\n')
+        );
         setInput('');
         return true;
       default:
@@ -1265,7 +1364,9 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
                   </button>
                 ))}
                 <button
-                  onClick={() => setPendingQuestion(null)}
+                  onClick={() =>
+                    updateConv(activeKey, (prev) => ({ ...prev, pendingQuestion: null }))
+                  }
                   disabled={loading}
                   className="text-xs px-3 py-1.5 bg-portal-card border border-portal-border text-portal-muted hover:text-portal-text rounded-md transition-colors disabled:opacity-50 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
                   title="Or type your own answer below"
