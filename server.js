@@ -102,12 +102,34 @@ function parseCookieHeader(header) {
   });
 }
 
-// iron-session accepts any { getAll(): {name,value}[] } shape; we use it to
-// read the session cookie without instantiating Next's full request lifecycle.
-async function readSession(req) {
+// iron-session calls `cookieStore.get(name)` (not `.getAll()`) to read the
+// session cookie — see iron-session/dist/index.js:34. A getAll-only store
+// returns undefined and every WS upgrade is rejected with 401 even for
+// properly authenticated users. Implement the Next.js cookies() shape:
+// get(name), getAll(), and no-op set/delete so iron-session can write its
+// rotated cookie (we have no response object here, so the rotation is
+// silently dropped — acceptable for a read-only auth check during upgrade).
+function buildCookieStore(req) {
   const cookies = parseCookieHeader(req.headers.cookie || '');
-  const cookieStore = { getAll: () => cookies };
-  return getIronSession(cookieStore, SESSION_OPTIONS);
+  return {
+    get(name) {
+      const found = cookies.find((c) => c.name === name);
+      return found ? { name: found.name, value: found.value } : undefined;
+    },
+    getAll() {
+      return cookies;
+    },
+    set() {
+      /* no-op: WS upgrade is read-only */
+    },
+    delete() {
+      /* no-op: WS upgrade is read-only */
+    },
+  };
+}
+
+async function readSession(req) {
+  return getIronSession(buildCookieStore(req), SESSION_OPTIONS);
 }
 
 function rejectUpgrade(socket, statusCode, statusText) {
