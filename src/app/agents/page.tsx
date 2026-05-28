@@ -30,6 +30,7 @@ import {
   Trash2,
   X,
   Zap,
+  FolderGit2,
 } from 'lucide-react';
 import Link from 'next/link';
 import type {
@@ -106,6 +107,7 @@ export default function AgentsPage() {
   const [workers, setWorkers] = useState<WorkerStatus[]>([]);
   const [anyWorkerActive, setAnyWorkerActive] = useState<boolean | null>(null);
   const [statusFilter, setStatusFilter] = useState<'active' | 'all'>('active');
+  const [projectFilter, setProjectFilter] = useState<string>(''); // project id, '' = all
   const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list');
   const [showDispatcher, setShowDispatcher] = useState(false);
   const [dispatcherInitialValues, setDispatcherInitialValues] =
@@ -186,15 +188,14 @@ export default function AgentsPage() {
   }, []);
 
   const fetchTasks = useCallback(() => {
-    const url =
-      statusFilter === 'active'
-        ? '/api/ai-hub/tasks?status=pending,queued,in_progress,needs_review&limit=200'
-        : '/api/ai-hub/tasks?limit=200';
-    fetch(url)
+    const params = new URLSearchParams({ limit: '200' });
+    if (statusFilter === 'active') params.set('status', 'pending,queued,in_progress,needs_review');
+    if (projectFilter) params.set('projectId', projectFilter);
+    fetch(`/api/ai-hub/tasks?${params.toString()}`)
       .then((r) => r.json())
       .then((d) => d.ok && setTasks(d.data))
       .catch(() => {});
-  }, [statusFilter]);
+  }, [statusFilter, projectFilter]);
 
   useEffect(() => {
     if (!user) return;
@@ -203,6 +204,39 @@ export default function AgentsPage() {
     fetchTasks();
     fetchWorkers();
   }, [user, fetchAgents, fetchProjects, fetchTasks, fetchWorkers]);
+
+  // Initialise the project filter once: URL (?projectId / ?project=slug) wins,
+  // then the last-used value from localStorage. Slug resolution waits for the
+  // projects list to load.
+  const projectFilterInit = useRef(false);
+  useEffect(() => {
+    if (projectFilterInit.current || typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const byId = params.get('projectId');
+    const bySlug = params.get('project');
+    if (byId) {
+      setProjectFilter(byId);
+      projectFilterInit.current = true;
+      return;
+    }
+    if (bySlug) {
+      if (projects.length === 0) return; // wait for projects to resolve the slug
+      const p = projects.find((x) => x.slug === bySlug);
+      if (p) setProjectFilter(p.id);
+      projectFilterInit.current = true;
+      return;
+    }
+    const stored = window.localStorage.getItem('agents:projectFilter');
+    if (stored) setProjectFilter(stored);
+    projectFilterInit.current = true;
+  }, [projects]);
+
+  // Persist the chosen project filter.
+  useEffect(() => {
+    if (!projectFilterInit.current || typeof window === 'undefined') return;
+    if (projectFilter) window.localStorage.setItem('agents:projectFilter', projectFilter);
+    else window.localStorage.removeItem('agents:projectFilter');
+  }, [projectFilter]);
 
   // Polling: every 2s while at least one task is in flight, otherwise 5s.
   useEffect(() => {
@@ -518,6 +552,24 @@ export default function AgentsPage() {
                     </button>
                   </div>
                   <div className="w-px h-4 bg-portal-border" aria-hidden="true" />
+                  {/* Project filter — scopes the whole task view to one project */}
+                  {projects.length > 0 && (
+                    <label className="inline-flex items-center gap-1.5 text-xs text-portal-muted">
+                      <FolderGit2 className="h-3.5 w-3.5" />
+                      <select
+                        value={projectFilter}
+                        onChange={(e) => setProjectFilter(e.target.value)}
+                        className="bg-portal-bg border border-portal-border rounded px-2 py-1 text-xs text-portal-text focus:outline-none focus:ring-2 focus:ring-portal-accent max-w-[180px]"
+                        title="Filter tasks by project"
+                      >
+                        <option value="">All projects</option>
+                        {projects.map((p) => (
+                          <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                  <div className="w-px h-4 bg-portal-border" aria-hidden="true" />
                   {/* Status filter */}
                   <div className="flex gap-1 text-xs">
                     <FilterBtn
@@ -543,7 +595,8 @@ export default function AgentsPage() {
               <div className="divide-y divide-portal-border max-h-[70vh] overflow-y-auto">
                 {tasks.length === 0 ? (
                   <div className="p-6 text-center text-sm text-portal-muted">
-                    No tasks {statusFilter === 'active' ? 'in flight' : 'yet'}.{' '}
+                    No tasks {statusFilter === 'active' ? 'in flight' : 'yet'}
+                    {projectFilter ? ' for this project' : ''}.{' '}
                     <button
                       onClick={() => {
                         setDispatcherInitialValues(null);
