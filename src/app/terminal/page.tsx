@@ -286,6 +286,17 @@ export default function TerminalPage() {
           });
           return;
         }
+        const okBody = (await check.json().catch(() => null)) as
+          | { wsServer?: boolean }
+          | null;
+        if (okBody && okBody.wsServer === false) {
+          setStatus({
+            kind: 'error',
+            message:
+              'The portal is running the standalone Next server, which cannot host the SSH bridge. The custom server.js is not active — check the deploy (Dockerfile CMD must run `node server.js`).',
+          });
+          return;
+        }
       } catch (err) {
         setStatus({
           kind: 'error',
@@ -481,15 +492,20 @@ export default function TerminalPage() {
           return;
         }
 
-        // Browsers report 1006 when the upgrade itself fails (e.g. 401) — we
-        // only know it was the upgrade if we never received a connected frame.
+        // 1006 = abnormal closure with no close frame, before the session
+        // opened. The pre-flight auth check already validated the session and
+        // confirmed the WS server is running, so this is NOT an auth problem —
+        // it means the WebSocket connection itself was severed mid-handshake,
+        // almost always by the reverse proxy (Traefik) not holding the
+        // upgrade. Say so instead of the misleading "log in again".
         if (event.code === 1006 && !gotConnectedFrame) {
           setStatus((prev) =>
             prev.kind === 'error'
               ? prev
               : {
                   kind: 'error',
-                  message: 'Unauthorized — please log in again',
+                  message:
+                    'WebSocket dropped before the SSH session opened (code 1006). Auth is fine — the reverse proxy likely is not forwarding/holding the /api/terminal/ws upgrade. Check Coolify/Traefik WebSocket routing for this service.',
                 },
           );
           return;

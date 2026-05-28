@@ -14,6 +14,12 @@ const { getIronSession } = require('iron-session');
 
 const { handleSshSession } = require('./src/server/terminal-ws.js');
 
+// Marker so API routes (which run in THIS same Node process) can confirm the
+// custom WS-hosting server is the one actually serving — not the standalone
+// Next server, which has no /api/terminal/ws upgrade handler and would let
+// the SSH bridge silently fail. /api/terminal/auth-check surfaces this.
+globalThis.__PORTAL_TERMINAL_WS__ = true;
+
 // Declare these early so the helper functions below can close over them.
 const dev = process.env.NODE_ENV !== 'production';
 const hostname = process.env.HOSTNAME || '0.0.0.0';
