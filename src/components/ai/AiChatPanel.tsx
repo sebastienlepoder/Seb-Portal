@@ -27,6 +27,7 @@ import {
   Upload,
   Cpu,
   ChevronDown,
+  FolderGit2,
 } from 'lucide-react';
 import Link from 'next/link';
 import { cn, formatRelativeTime, extractPastedImages } from '@/lib/utils';
@@ -79,6 +80,7 @@ const NEW_CHAT_KEY = '__new__';
 
 const STORAGE_KEY = 'ai-hub:active-thread';
 const MODEL_STORAGE_KEY = 'ai-hub:model';
+const PROJECT_STORAGE_KEY = 'ai-hub:project';
 const SIDEBAR_WIDTH_KEY = 'ai-hub:sidebar-width';
 
 interface SlashCommand {
@@ -123,6 +125,8 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
   const [models, setModels] = useState<{ id: string; label: string; provider: string; supportsTools: boolean }[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>('claude-sonnet-4-6');
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const [projects, setProjects] = useState<{ id: string; slug: string; name: string }[]>([]);
+  const [selectedProject, setSelectedProject] = useState<string>('');
   const renameInputRef = useRef<HTMLInputElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -260,6 +264,30 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
       })
       .catch(() => {});
   }, []);
+
+  // Load projects for the conversation project selector.
+  useEffect(() => {
+    fetch('/api/projects')
+      .then((r) => r.json())
+      .then((d) => {
+        if (!d.ok) return;
+        setProjects(d.data.map((p: { id: string; slug: string; name: string }) => ({ id: p.id, slug: p.slug, name: p.name })));
+        const stored =
+          typeof window !== 'undefined' ? window.localStorage.getItem(PROJECT_STORAGE_KEY) : null;
+        if (stored && d.data.some((p: { slug: string }) => p.slug === stored)) {
+          setSelectedProject(stored);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  function chooseProject(slug: string) {
+    setSelectedProject(slug);
+    if (typeof window !== 'undefined') {
+      if (slug) window.localStorage.setItem(PROJECT_STORAGE_KEY, slug);
+      else window.localStorage.removeItem(PROJECT_STORAGE_KEY);
+    }
+  }
 
   function chooseModel(id: string) {
     setSelectedModel(id);
@@ -576,6 +604,7 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
         body: JSON.stringify({
           provider,
           model: selectedModel,
+          projectSlug: selectedProject || undefined,
           messages: [...baseMessages, userMsg],
           threadId: currentThreadId,
         }),
@@ -1503,6 +1532,23 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
                   </div>
                 )}
               </div>
+              {/* Project context selector */}
+              {projects.length > 0 && (
+                <label className="inline-flex items-center gap-1 text-[11px] text-portal-muted px-2 py-1 rounded-md border border-portal-border bg-portal-card">
+                  <FolderGit2 className="h-3 w-3" />
+                  <select
+                    value={selectedProject}
+                    onChange={(e) => chooseProject(e.target.value)}
+                    className="bg-transparent text-[11px] text-portal-text focus:outline-none max-w-[140px]"
+                    title="Project context — loads its MEMORY.md"
+                  >
+                    <option value="">No project</option>
+                    {projects.map((p) => (
+                      <option key={p.id} value={p.slug}>{p.name}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
               {!models.find((m) => m.id === selectedModel)?.supportsTools && (
                 <span className="text-[10px] text-portal-muted">text-only (no tools)</span>
               )}
