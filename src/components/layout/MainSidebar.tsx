@@ -111,6 +111,12 @@ const NAV_GROUPS: NavGroup[] = [
         icon: <Bot className="h-3.5 w-3.5" />,
         match: (p) => p.startsWith('/agents'),
       },
+      {
+        href: '/memory',
+        label: 'AI Memory',
+        icon: <BrainCircuit className="h-3.5 w-3.5" />,
+        match: (p) => p.startsWith('/memory'),
+      },
     ],
   },
   {
