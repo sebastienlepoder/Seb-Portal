@@ -87,6 +87,15 @@ export interface UrgentItemPayload {
 
 export type AiProvider = 'openai' | 'anthropic';
 
+export interface ToolCall {
+  id: string;
+  name: string;
+  input: unknown;
+  result?: string;
+  pending?: boolean;
+  error?: string;
+}
+
 export interface AiMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
@@ -95,6 +104,12 @@ export interface AiMessage {
    *  Anthropic on the final user turn and persists them with the
    *  message so reload restores the UI. */
   images?: string[];
+  /** Tool calls emitted by the assistant during this turn. Captured at
+   *  stream time and persisted so reloading a thread shows the cards
+   *  without re-executing the tools. */
+  toolCalls?: ToolCall[];
+  /** Extended-thinking block content if the model emitted one. */
+  thinking?: string;
 }
 
 export interface AiChatRequest {

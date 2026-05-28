@@ -15,10 +15,15 @@ import {
   Check,
   PanelLeftOpen,
   PanelLeftClose,
+  Edit2,
+  RefreshCw,
 } from 'lucide-react';
 import Link from 'next/link';
 import { cn, formatRelativeTime, extractPastedImages } from '@/lib/utils';
-import type { AiMessage, AiProvider } from '@/types';
+import type { AiMessage, AiProvider, ToolCall } from '@/types';
+import { AssistantMessage } from './AssistantMessage';
+import { ThinkingBlock } from './ThinkingBlock';
+import { ToolCallCard } from './ToolCallCard';
 
 interface AiChatPanelProps {
   csrfToken?: string;
@@ -61,6 +66,8 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
   const [renameSaving, setRenameSaving] = useState(false);
   const [pastedImages, setPastedImages] = useState<string[]>([]);
   const [pasteError, setPasteError] = useState<string | null>(null);
+  const [editingMsgIndex, setEditingMsgIndex] = useState<number | null>(null);
+  const [editValue, setEditValue] = useState('');
   const renameInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -277,25 +284,33 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
     setPastedImages((prev) => prev.filter((_, i) => i !== idx));
   }
 
-  /** Send `text` as a user message. Used both by the input field and by
-   *  the multi-choice question buttons. */
-  async function sendText(text: string) {
+  /** Streaming send: posts to /api/ai/chat (SSE) and updates the last
+   *  assistant message in place as text/tool_use/tool_result events arrive.
+   *  When `replaceFromIndex` is set, the messages array is truncated to
+   *  that index before sending (used by edit/regenerate). */
+  async function sendText(text: string, replaceFromIndex?: number) {
     if ((!text.trim() && pastedImages.length === 0) || loading) return;
     const images = pastedImages.length ? pastedImages : undefined;
     const userMsg: AiMessage = { role: 'user', content: text.trim(), images };
-    setMessages((prev) => [...prev, userMsg]);
+
+    // Build the new messages array (slice off everything after the edit
+    // point, then append the edited user message + a placeholder
+    // assistant message we'll stream into).
+    const baseMessages =
+      typeof replaceFromIndex === 'number' ? messages.slice(0, replaceFromIndex) : messages;
+    const nextMessages: AiMessage[] = [...baseMessages, userMsg, { role: 'assistant', content: '' }];
+    setMessages(nextMessages);
+    const assistantIndex = nextMessages.length - 1;
+
     setInput('');
     setPastedImages([]);
     setPasteError(null);
     setLoading(true);
-    // Clear any pending question — the user has answered it.
     setPendingQuestion(null);
     setLastToolEvents([]);
 
     let currentThreadId = threadId;
 
-    // Optimistically create a thread for new conversations so the sidebar
-    // entry appears before the AI response completes.
     if (!currentThreadId) {
       const placeholderTitle = text.trim().slice(0, 60) || 'New chat';
       try {
@@ -325,9 +340,23 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
           }
         }
       } catch {
-        // Silently fall back — the chat endpoint will create the thread server-side.
+        /* fall back to server-side thread creation */
       }
     }
+
+    // Helper to patch the streaming assistant message.
+    const patchAssistant = (patch: (m: AiMessage) => AiMessage) => {
+      setMessages((prev) => {
+        const copy = prev.slice();
+        const current = copy[assistantIndex];
+        if (current && current.role === 'assistant') {
+          copy[assistantIndex] = patch(current);
+        }
+        return copy;
+      });
+    };
+
+    const toolEventNames: string[] = [];
 
     try {
       const res = await fetch('/api/ai/chat', {
@@ -338,44 +367,143 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
         },
         body: JSON.stringify({
           provider,
-          messages: [...messages, userMsg],
+          messages: [...baseMessages, userMsg],
           threadId: currentThreadId,
         }),
       });
-      const data = await res.json();
-      if (data.ok) {
-        setMessages((prev) => [...prev, { role: 'assistant', content: data.data.reply }]);
-        if (data.data.threadId && data.data.threadId !== currentThreadId) {
-          setThreadId(data.data.threadId);
-          if (typeof window !== 'undefined') {
-            window.localStorage.setItem(STORAGE_KEY, data.data.threadId);
+
+      if (!res.ok || !res.body) {
+        const errText = await res.text().catch(() => '');
+        patchAssistant((m) => ({ ...m, content: `Error: ${res.status} ${errText.slice(0, 200)}` }));
+        return;
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        // Parse SSE frames separated by blank lines.
+        let sep = buffer.indexOf('\n\n');
+        while (sep !== -1) {
+          const frame = buffer.slice(0, sep);
+          buffer = buffer.slice(sep + 2);
+          sep = buffer.indexOf('\n\n');
+
+          for (const line of frame.split('\n')) {
+            if (!line.startsWith('data:')) continue;
+            const payload = line.slice(5).trim();
+            if (!payload) continue;
+            try {
+              const evt = JSON.parse(payload) as {
+                type: string;
+                delta?: string;
+                text?: string;
+                id?: string;
+                name?: string;
+                input?: unknown;
+                content?: string;
+                success?: boolean;
+                question?: string;
+                options?: string[];
+                threadId?: string;
+                error?: string;
+              };
+              if (evt.type === 'text' && typeof evt.delta === 'string') {
+                patchAssistant((m) => ({ ...m, content: m.content + evt.delta }));
+              } else if (evt.type === 'thinking' && typeof evt.text === 'string') {
+                patchAssistant((m) => ({ ...m, thinking: evt.text }));
+              } else if (evt.type === 'tool_use' && evt.id && evt.name) {
+                const call: ToolCall = {
+                  id: evt.id,
+                  name: evt.name,
+                  input: evt.input,
+                  pending: true,
+                };
+                toolEventNames.push(evt.name);
+                patchAssistant((m) => ({
+                  ...m,
+                  toolCalls: [...(m.toolCalls ?? []), call],
+                }));
+              } else if (evt.type === 'tool_result' && evt.id) {
+                patchAssistant((m) => ({
+                  ...m,
+                  toolCalls: (m.toolCalls ?? []).map((c) =>
+                    c.id === evt.id
+                      ? {
+                          ...c,
+                          pending: false,
+                          ...(evt.success === false
+                            ? { error: evt.content ?? 'tool error' }
+                            : { result: evt.content ?? '' }),
+                        }
+                      : c
+                  ),
+                }));
+              } else if (evt.type === 'question' && evt.question && Array.isArray(evt.options)) {
+                setPendingQuestion({ question: evt.question, options: evt.options });
+              } else if (evt.type === 'done') {
+                if (evt.threadId && evt.threadId !== currentThreadId) {
+                  setThreadId(evt.threadId);
+                  if (typeof window !== 'undefined') {
+                    window.localStorage.setItem(STORAGE_KEY, evt.threadId);
+                  }
+                }
+                fetchThreads();
+              } else if (evt.type === 'error') {
+                patchAssistant((m) => ({ ...m, content: `Error: ${evt.error}` }));
+              }
+            } catch {
+              /* malformed frame */
+            }
           }
         }
-        if (data.data.question) {
-          setPendingQuestion(data.data.question as PendingQuestion);
-        }
-        if (Array.isArray(data.data.toolEvents) && data.data.toolEvents.length > 0) {
-          setLastToolEvents(data.data.toolEvents as string[]);
-        }
-        // Refresh sidebar so new thread appears / titles update
-        fetchThreads();
-      } else {
-        setMessages((prev) => [
-          ...prev,
-          { role: 'assistant', content: `Error: ${data.error}` },
-        ]);
       }
+
+      if (toolEventNames.length > 0) setLastToolEvents(toolEventNames);
     } catch {
-      setMessages((prev) => [
-        ...prev,
-        { role: 'assistant', content: 'Failed to connect to AI API.' },
-      ]);
+      patchAssistant((m) => ({ ...m, content: 'Failed to connect to AI API.' }));
     } finally {
       setLoading(false);
     }
   }
 
   const sendMessage = () => sendText(input);
+
+  function startEditMessage(index: number) {
+    const msg = messages[index];
+    if (!msg || msg.role !== 'user' || loading) return;
+    setEditingMsgIndex(index);
+    setEditValue(msg.content);
+  }
+
+  function cancelEditMessage() {
+    setEditingMsgIndex(null);
+    setEditValue('');
+  }
+
+  function commitEditMessage() {
+    if (editingMsgIndex === null) return;
+    const text = editValue.trim();
+    if (!text) {
+      cancelEditMessage();
+      return;
+    }
+    const idx = editingMsgIndex;
+    setEditingMsgIndex(null);
+    setEditValue('');
+    void sendText(text, idx);
+  }
+
+  function regenerateFromUser(index: number) {
+    const msg = messages[index];
+    if (!msg || msg.role !== 'user' || loading) return;
+    void sendText(msg.content, index);
+  }
 
   const canSend = !loading && (input.trim().length > 0 || pastedImages.length > 0);
 
@@ -645,53 +773,126 @@ export function AiChatPanel({ csrfToken, onClose }: AiChatPanelProps) {
                 </p>
               </div>
             ) : (
-              messages.map((msg, i) => (
-                <div
-                  key={i}
-                  className={cn(
-                    'flex gap-2',
-                    msg.role === 'user' ? 'justify-end' : 'justify-start'
-                  )}
-                >
-                  {msg.role === 'assistant' && (
-                    <Bot className="h-5 w-5 text-portal-accent flex-shrink-0 mt-1" />
-                  )}
+              messages.map((msg, i) => {
+                const isUser = msg.role === 'user';
+                const isLastAssistantStreaming =
+                  !isUser && loading && i === messages.length - 1;
+                const isEditing = editingMsgIndex === i;
+
+                return (
                   <div
-                    className={cn(
-                      'max-w-[85%] rounded-lg px-3 py-2 text-sm',
-                      msg.role === 'user'
-                        ? 'bg-portal-accent text-white'
-                        : 'bg-portal-card border border-portal-border text-portal-text'
-                    )}
+                    key={i}
+                    className={cn('group flex gap-2', isUser ? 'justify-end' : 'justify-start')}
                   >
-                    {msg.images && msg.images.length > 0 && (
-                      <div className="flex flex-wrap gap-2 mb-2">
-                        {msg.images.map((src, j) => (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            key={j}
-                            src={src}
-                            alt="Pasted screenshot"
-                            className="max-h-48 max-w-full rounded-md object-contain"
-                          />
-                        ))}
+                    {!isUser && (
+                      <Bot className="h-5 w-5 text-portal-accent flex-shrink-0 mt-1" />
+                    )}
+
+                    {isUser && !isEditing && (
+                      <div className="flex flex-col items-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity self-center">
+                        <button
+                          onClick={() => regenerateFromUser(i)}
+                          disabled={loading}
+                          className="p-1 text-portal-muted hover:text-portal-text rounded-md disabled:opacity-50"
+                          title="Regenerate from this message"
+                          aria-label="Regenerate"
+                        >
+                          <RefreshCw className="h-3 w-3" />
+                        </button>
+                        <button
+                          onClick={() => startEditMessage(i)}
+                          disabled={loading}
+                          className="p-1 text-portal-muted hover:text-portal-text rounded-md disabled:opacity-50"
+                          title="Edit and regenerate"
+                          aria-label="Edit"
+                        >
+                          <Edit2 className="h-3 w-3" />
+                        </button>
                       </div>
                     )}
-                    {msg.content && (
-                      <pre className="whitespace-pre-wrap font-sans">{msg.content}</pre>
+
+                    <div
+                      className={cn(
+                        'max-w-[85%] rounded-lg px-3 py-2 text-sm',
+                        isUser
+                          ? 'bg-portal-accent text-white'
+                          : 'bg-portal-card border border-portal-border text-portal-text'
+                      )}
+                    >
+                      {msg.images && msg.images.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mb-2">
+                          {msg.images.map((src, j) => (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              key={j}
+                              src={src}
+                              alt="Pasted screenshot"
+                              className="max-h-48 max-w-full rounded-md object-contain"
+                            />
+                          ))}
+                        </div>
+                      )}
+
+                      {isEditing ? (
+                        <div className="space-y-2 min-w-[200px]">
+                          <textarea
+                            value={editValue}
+                            onChange={(e) => setEditValue(e.target.value)}
+                            rows={Math.min(8, Math.max(2, editValue.split('\n').length))}
+                            className="w-full bg-portal-accent-dark text-white border border-white/20 rounded px-2 py-1 text-sm resize-none focus:outline-none focus:border-white/40"
+                            autoFocus
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && !e.shiftKey) {
+                                e.preventDefault();
+                                commitEditMessage();
+                              } else if (e.key === 'Escape') {
+                                cancelEditMessage();
+                              }
+                            }}
+                          />
+                          <div className="flex justify-end gap-1">
+                            <button
+                              onClick={cancelEditMessage}
+                              className="px-2 py-0.5 text-xs rounded bg-white/10 hover:bg-white/20 text-white"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              onClick={commitEditMessage}
+                              className="px-2 py-0.5 text-xs rounded bg-white text-portal-accent font-medium hover:bg-white/90"
+                            >
+                              Save & regenerate
+                            </button>
+                          </div>
+                        </div>
+                      ) : isUser ? (
+                        msg.content && (
+                          <pre className="whitespace-pre-wrap font-sans">{msg.content}</pre>
+                        )
+                      ) : (
+                        <>
+                          {msg.thinking && <ThinkingBlock text={msg.thinking} />}
+                          {msg.toolCalls?.map((c) => (
+                            <ToolCallCard key={c.id} call={c} />
+                          ))}
+                          {msg.content ? (
+                            <AssistantMessage content={msg.content} />
+                          ) : isLastAssistantStreaming ? (
+                            <span className="inline-flex items-center gap-1 text-portal-muted">
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                              <span className="text-xs">…</span>
+                            </span>
+                          ) : null}
+                        </>
+                      )}
+                    </div>
+
+                    {isUser && (
+                      <User className="h-5 w-5 text-portal-muted flex-shrink-0 mt-1" />
                     )}
                   </div>
-                  {msg.role === 'user' && (
-                    <User className="h-5 w-5 text-portal-muted flex-shrink-0 mt-1" />
-                  )}
-                </div>
-              ))
-            )}
-            {loading && (
-              <div className="flex gap-2 items-center text-portal-muted text-sm">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                <span>Thinking...</span>
-              </div>
+                );
+              })
             )}
           </div>
         </div>

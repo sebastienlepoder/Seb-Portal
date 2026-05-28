@@ -1,4 +1,3 @@
-import { NextResponse } from 'next/server';
 import type Anthropic from '@anthropic-ai/sdk';
 import { requireApiAuth } from '@/lib/auth';
 import { checkRateLimit, aiChatLimiter } from '@/lib/rate-limit';
@@ -25,7 +24,10 @@ import {
   type TaskPriority,
   type TaskStatus,
 } from '@/types/agents';
-import type { AiProvider, AiMessage, SessionUser } from '@/types';
+import type { AiProvider, AiMessage, ToolCall, SessionUser } from '@/types';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 // ─── Tool definitions ────────────────────────────────────────
 
@@ -662,278 +664,380 @@ async function deleteThreadIfEmpty(threadId: string, userId: string): Promise<vo
   }
 }
 
-// ─── POST handler ────────────────────────────────────────────
+// ─── SSE event types ─────────────────────────────────────────
+
+type ChatStreamEvent =
+  | { type: 'text'; delta: string }
+  | { type: 'thinking'; text: string }
+  | { type: 'tool_use'; id: string; name: string; input: unknown }
+  | { type: 'tool_result'; id: string; content: string; success: boolean }
+  | { type: 'question'; question: string; options: string[] }
+  | { type: 'done'; threadId: string | undefined; messageCount: number }
+  | { type: 'error'; error: string };
+
+function errorResponse(status: number, error: string): Response {
+  return new Response(JSON.stringify({ ok: false, error }), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
+// ─── POST handler — streaming SSE ────────────────────────────
 
 export async function POST(request: Request) {
-  let preCreatedThreadId: string | undefined;
-  let currentUserId: string | undefined;
+  let user: SessionUser;
   try {
-    const user = await requireApiAuth();
-    currentUserId = user.id;
-    const ip = getClientIp(request);
+    user = await requireApiAuth();
+  } catch {
+    return errorResponse(401, 'Not authenticated');
+  }
+  const ip = getClientIp(request);
 
-    const check = checkRateLimit(aiChatLimiter, user.id);
-    if (!check.allowed) {
-      return NextResponse.json(
-        { ok: false, error: 'AI rate limit exceeded. Wait a moment.' },
-        { status: 429 }
-      );
+  const check = checkRateLimit(aiChatLimiter, user.id);
+  if (!check.allowed) {
+    return errorResponse(429, 'AI rate limit exceeded. Wait a moment.');
+  }
+
+  const body = (await request.json()) as {
+    provider: AiProvider;
+    messages: AiMessage[];
+    threadId?: string;
+    maxTokens?: number;
+  };
+
+  const { provider, messages: incoming, threadId, maxTokens = 2048 } = body;
+
+  if (!incoming?.length) {
+    return errorResponse(400, 'Messages required');
+  }
+
+  // Validate image attachments on the final user message (the only
+  // place we forward them). Reject oversized or too-many uploads.
+  const lastIncoming = incoming[incoming.length - 1];
+  const lastImages = lastIncoming?.role === 'user' ? lastIncoming.images ?? [] : [];
+  if (lastImages.length > MAX_IMAGES_PER_MESSAGE) {
+    return errorResponse(400, `Too many images (max ${MAX_IMAGES_PER_MESSAGE})`);
+  }
+  for (const uri of lastImages) {
+    const match = IMAGE_DATA_URI_RE.exec(uri);
+    if (!match) {
+      return errorResponse(400, 'Invalid image data URI (png/jpeg/gif/webp base64 only)');
     }
-
-    const body = (await request.json()) as {
-      provider: AiProvider;
-      messages: AiMessage[];
-      threadId?: string;
-      maxTokens?: number;
-    };
-
-    const { provider, messages: incoming, threadId, maxTokens = 2048 } = body;
-    preCreatedThreadId = threadId;
-
-    if (!incoming?.length) {
-      return NextResponse.json({ ok: false, error: 'Messages required' }, { status: 400 });
+    const byteSize = Math.floor((match[2]!.length * 3) / 4);
+    if (byteSize > MAX_IMAGE_BYTES) {
+      return errorResponse(400, 'Image exceeds 5 MB limit');
     }
+  }
 
-    // Validate image attachments on the final user message (the only
-    // place we forward them). Reject oversized or too-many uploads.
-    const lastIncoming = incoming[incoming.length - 1];
-    const lastImages = lastIncoming?.role === 'user' ? lastIncoming.images ?? [] : [];
-    if (lastImages.length > MAX_IMAGES_PER_MESSAGE) {
-      return NextResponse.json(
-        { ok: false, error: `Too many images (max ${MAX_IMAGES_PER_MESSAGE})` },
-        { status: 400 }
-      );
-    }
-    for (const uri of lastImages) {
-      const match = IMAGE_DATA_URI_RE.exec(uri);
-      if (!match) {
-        return NextResponse.json(
-          { ok: false, error: 'Invalid image data URI (png/jpeg/gif/webp base64 only)' },
-          { status: 400 }
-        );
-      }
-      const byteSize = Math.floor((match[2]!.length * 3) / 4);
-      if (byteSize > MAX_IMAGE_BYTES) {
-        return NextResponse.json(
-          { ok: false, error: 'Image exceeds 5 MB limit' },
-          { status: 400 }
-        );
-      }
-    }
+  if (provider === 'anthropic' && !getAnthropicClient()) {
+    return errorResponse(503, 'Anthropic API key not configured');
+  }
+  if (provider === 'openai' && !process.env.OPENAI_API_KEY) {
+    return errorResponse(503, 'OpenAI API key not configured');
+  }
+  if (provider !== 'anthropic' && provider !== 'openai') {
+    return errorResponse(400, 'Invalid provider');
+  }
 
-    let reply: string;
-    let pendingQuestion: { question: string; options: string[] } | null = null;
-    const toolEvents: string[] = []; // human-readable summary of tools used
+  const encoder = new TextEncoder();
+  let preCreatedThreadId = threadId;
+  const currentUserId = user.id;
 
-    if (provider === 'openai') {
-      const apiKey = process.env.OPENAI_API_KEY;
-      if (!apiKey) {
-        return NextResponse.json(
-          { ok: false, error: 'OpenAI API key not configured' },
-          { status: 503 }
-        );
-      }
-      const OpenAI = (await import('openai')).default;
-      const openai = new OpenAI({ apiKey });
-      const completion = await openai.chat.completions.create({
-        model: 'gpt-4o',
-        messages: incoming.map((m) => ({
-          role: m.role as 'user' | 'assistant' | 'system',
-          content: m.content,
-        })),
-        max_tokens: Math.min(maxTokens, 4096),
-      });
-      reply = completion.choices[0]?.message?.content || 'No response';
-    } else if (provider === 'anthropic') {
-      const anthropic = getAnthropicClient();
-      if (!anthropic) {
-        return NextResponse.json(
-          { ok: false, error: 'Anthropic API key not configured' },
-          { status: 503 }
-        );
-      }
-      const systemMsg = incoming.find((m) => m.role === 'system');
-      const userAndAssistantMsgs = incoming.filter((m) => m.role !== 'system');
-      const systemPrompt = systemMsg?.content || buildSystemPrompt();
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (event: ChatStreamEvent) => {
+        try {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+        } catch {
+          // client already closed
+        }
+      };
 
-      // Anthropic message history (we may add tool_use / tool_result blocks
-      // during the loop but they are NOT persisted — only final user-facing
-      // text is saved to the DB).
-      const messages: Anthropic.MessageParam[] = userAndAssistantMsgs.map((m) => ({
-        role: m.role as 'user' | 'assistant',
-        content: m.content,
-      }));
+      // Buffers collected during the stream so we can persist after.
+      let assistantText = '';
+      let thinkingText: string | undefined;
+      const toolCalls: ToolCall[] = [];
+      let pendingQuestion: { question: string; options: string[] } | null = null;
+      const toolEvents: string[] = [];
 
-      // If the last user message carries images, replace its plain string
-      // content with a structured block array containing the images +
-      // text. All prior messages stay as strings for backward compat.
-      const lastMsg = userAndAssistantMsgs[userAndAssistantMsgs.length - 1];
-      if (lastMsg?.role === 'user' && lastMsg.images?.length) {
-        const blocks: Anthropic.ContentBlockParam[] = [];
-        for (const dataUri of lastMsg.images) {
-          const parsed = parseImageDataUri(dataUri);
-          if (!parsed) continue;
-          blocks.push({
-            type: 'image',
-            source: { type: 'base64', media_type: parsed.mediaType, data: parsed.data },
+      try {
+        if (provider === 'anthropic') {
+          await runAnthropic({
+            incoming,
+            maxTokens,
+            user,
+            send,
+            onText: (delta) => { assistantText += delta; },
+            onThinking: (text) => { thinkingText = text; },
+            onToolCall: (call) => { toolCalls.push(call); },
+            onQuestion: (q) => {
+              pendingQuestion = q;
+              if (!assistantText) assistantText = formatQuestionAsText(q);
+            },
+            onToolEvent: (name) => toolEvents.push(name),
+            signal: request.signal,
+          });
+        } else {
+          await runOpenAi({
+            incoming,
+            maxTokens,
+            send,
+            onText: (delta) => { assistantText += delta; },
+            signal: request.signal,
           });
         }
-        if (lastMsg.content) blocks.push({ type: 'text', text: lastMsg.content });
-        if (blocks.length > 0) {
-          messages[messages.length - 1] = { role: 'user', content: blocks };
-        }
-      }
 
-      const MAX_ITERS = 12;
-      let finalText = '';
-      let askedQuestion: { question: string; options: string[] } | null = null;
+        // Persist final user + assistant messages.
+        const assistantMsg: AiMessage = {
+          role: 'assistant',
+          content: assistantText || 'No response',
+          ...(thinkingText ? { thinking: thinkingText } : {}),
+          ...(toolCalls.length ? { toolCalls } : {}),
+        };
 
-      for (let iter = 0; iter < MAX_ITERS; iter++) {
-        const resp = await anthropic.messages.create({
-          model: ANTHROPIC_MODELS.sonnet,
-          max_tokens: Math.min(maxTokens, 4096),
-          system: systemPrompt,
-          tools: CHAT_TOOLS,
-          messages,
-        });
-
-        if (resp.stop_reason !== 'tool_use') {
-          finalText = resp.content
-            .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-            .map((b) => b.text)
-            .join('\n')
-            .trim();
-          break;
-        }
-
-        // Append assistant turn so the next call sees it
-        messages.push({ role: 'assistant', content: resp.content });
-
-        const toolResults: Anthropic.ToolResultBlockParam[] = [];
-        for (const block of resp.content) {
-          if (block.type !== 'tool_use') continue;
-          if (block.name === 'ask_user_question') {
-            askedQuestion = block.input as { question: string; options: string[] };
-            // Synthesize a tool_result so the conversation stays
-            // well-formed if the user comes back. The result text is the
-            // user's eventual answer — we don't have it yet, so we
-            // record a placeholder. When the user replies as a fresh
-            // user message, this in-memory state is gone anyway.
-            toolResults.push({
-              type: 'tool_result',
-              tool_use_id: block.id,
-              content: 'Question presented to user; response will arrive as the next user message.',
+        let savedThreadId = threadId;
+        let messageCount = 0;
+        if (threadId) {
+          const thread = await prisma.aiThread.findUnique({ where: { id: threadId } });
+          if (thread && thread.userId === user.id) {
+            const existingMessages = JSON.parse(thread.messages) as AiMessage[];
+            existingMessages.push(incoming[incoming.length - 1]!, assistantMsg);
+            await prisma.aiThread.update({
+              where: { id: threadId },
+              data: { messages: JSON.stringify(existingMessages) },
             });
-            toolEvents.push(`Asked: ${askedQuestion.question}`);
-            continue;
+            messageCount = existingMessages.length;
+            preCreatedThreadId = undefined;
           }
-          const result = await executeTool(block.name, block.input as Record<string, unknown>, user);
-          toolEvents.push(`${block.name}`);
-          toolResults.push({
-            type: 'tool_result',
-            tool_use_id: block.id,
-            content: result,
+        } else {
+          const allMessages: AiMessage[] = [...incoming, assistantMsg];
+          const thread = await prisma.aiThread.create({
+            data: {
+              userId: user.id,
+              provider,
+              title: incoming[0]?.content.slice(0, 100) || 'New chat',
+              messages: JSON.stringify(allMessages),
+            },
           });
+          savedThreadId = thread.id;
+          messageCount = allMessages.length;
         }
 
-        // If a question was asked, stop the loop and return to user
-        if (askedQuestion) {
-          // Use any text the model also produced as preamble; otherwise
-          // fall back to the formatted question.
-          const preamble = resp.content
-            .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-            .map((b) => b.text.trim())
-            .filter(Boolean)
-            .join('\n');
-          finalText = preamble
-            ? `${preamble}\n\n${formatQuestionAsText(askedQuestion)}`
-            : formatQuestionAsText(askedQuestion);
-          break;
-        }
-
-        messages.push({ role: 'user', content: toolResults });
-      }
-
-      reply = finalText || 'No response';
-      pendingQuestion = askedQuestion;
-    } else {
-      return NextResponse.json({ ok: false, error: 'Invalid provider' }, { status: 400 });
-    }
-
-    // Persist as plain text + (optionally) the user's image data URIs.
-    // Tool calls/results are NOT saved — only the user-visible question
-    // and reply text. This keeps history readable and avoids
-    // re-executing tools when the thread is reloaded.
-    let savedThreadId = threadId;
-    let messageCount = 0;
-    if (threadId) {
-      const thread = await prisma.aiThread.findUnique({ where: { id: threadId } });
-      if (thread && thread.userId === user.id) {
-        const existingMessages = JSON.parse(thread.messages) as AiMessage[];
-        existingMessages.push(
-          incoming[incoming.length - 1]!,
-          { role: 'assistant', content: reply }
-        );
-        await prisma.aiThread.update({
-          where: { id: threadId },
-          data: { messages: JSON.stringify(existingMessages) },
-        });
-        messageCount = existingMessages.length;
-        // Thread now has content — disarm the orphan-cleanup guard.
-        preCreatedThreadId = undefined;
-      }
-    } else {
-      const allMessages: AiMessage[] = [
-        ...incoming,
-        { role: 'assistant', content: reply },
-      ];
-      const thread = await prisma.aiThread.create({
-        data: {
+        await auditLog({
           userId: user.id,
-          provider,
-          title: incoming[0]?.content.slice(0, 100) || 'New chat',
-          messages: JSON.stringify(allMessages),
-        },
-      });
-      savedThreadId = thread.id;
-      messageCount = allMessages.length;
-    }
+          action: 'ai_chat',
+          details: {
+            provider,
+            threadId: savedThreadId,
+            tools: toolEvents,
+            imageCount: lastImages.length,
+          },
+          ipAddress: ip,
+        });
 
-    await auditLog({
-      userId: user.id,
-      action: 'ai_chat',
-      details: {
-        provider,
-        threadId: savedThreadId,
-        tools: toolEvents,
-        imageCount: lastImages.length,
-      },
-      ipAddress: ip,
-    });
+        send({ type: 'done', threadId: savedThreadId, messageCount });
+      } catch (e) {
+        const msg = (e as Error).message;
+        if (preCreatedThreadId && currentUserId) {
+          await deleteThreadIfEmpty(preCreatedThreadId, currentUserId).catch(() => {});
+        }
+        send({ type: 'error', error: msg });
+      } finally {
+        try {
+          controller.close();
+        } catch {
+          /* already closed */
+        }
+      }
+    },
+  });
 
-    return NextResponse.json({
-      ok: true,
-      data: {
-        reply,
-        threadId: savedThreadId,
-        messageCount,
-        question: pendingQuestion,
-        toolEvents,
-      },
-    });
-  } catch (e) {
-    if ((e as Error).message === 'UNAUTHORIZED') {
-      return NextResponse.json({ ok: false, error: 'Not authenticated' }, { status: 401 });
-    }
-    if (preCreatedThreadId && currentUserId) {
-      await deleteThreadIfEmpty(preCreatedThreadId, currentUserId).catch((cleanupErr) => {
-        console.error('[ai/chat] orphan cleanup failed:', cleanupErr);
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    },
+  });
+}
+
+// ─── Anthropic streaming runner ──────────────────────────────
+
+interface RunAnthropicArgs {
+  incoming: AiMessage[];
+  maxTokens: number;
+  user: SessionUser;
+  send: (e: ChatStreamEvent) => void;
+  onText: (delta: string) => void;
+  onThinking: (text: string) => void;
+  onToolCall: (call: ToolCall) => void;
+  onQuestion: (q: { question: string; options: string[] }) => void;
+  onToolEvent: (name: string) => void;
+  signal: AbortSignal;
+}
+
+async function runAnthropic(args: RunAnthropicArgs): Promise<void> {
+  const { incoming, maxTokens, user, send, onText, onThinking, onToolCall, onQuestion, onToolEvent, signal } = args;
+  const anthropic = getAnthropicClient();
+  if (!anthropic) throw new Error('Anthropic API key not configured');
+
+  const systemMsg = incoming.find((m) => m.role === 'system');
+  const userAndAssistantMsgs = incoming.filter((m) => m.role !== 'system');
+  const systemPrompt = systemMsg?.content || buildSystemPrompt();
+
+  const messages: Anthropic.MessageParam[] = userAndAssistantMsgs.map((m) => ({
+    role: m.role as 'user' | 'assistant',
+    content: m.content,
+  }));
+
+  const lastMsg = userAndAssistantMsgs[userAndAssistantMsgs.length - 1];
+  if (lastMsg?.role === 'user' && lastMsg.images?.length) {
+    const blocks: Anthropic.ContentBlockParam[] = [];
+    for (const dataUri of lastMsg.images) {
+      const parsed = parseImageDataUri(dataUri);
+      if (!parsed) continue;
+      blocks.push({
+        type: 'image',
+        source: { type: 'base64', media_type: parsed.mediaType, data: parsed.data },
       });
     }
-    console.error('AI chat error:', e);
-    return NextResponse.json(
-      { ok: false, error: `AI error: ${(e as Error).message}` },
-      { status: 500 }
+    if (lastMsg.content) blocks.push({ type: 'text', text: lastMsg.content });
+    if (blocks.length > 0) {
+      messages[messages.length - 1] = { role: 'user', content: blocks };
+    }
+  }
+
+  const MAX_ITERS = 12;
+  for (let iter = 0; iter < MAX_ITERS; iter++) {
+    if (signal.aborted) throw new Error('aborted');
+
+    const stream = anthropic.messages.stream(
+      {
+        model: ANTHROPIC_MODELS.sonnet,
+        max_tokens: Math.min(maxTokens, 4096),
+        system: systemPrompt,
+        tools: CHAT_TOOLS,
+        messages,
+      },
+      { signal }
     );
+
+    stream.on('text', (delta: string) => {
+      onText(delta);
+      send({ type: 'text', delta });
+    });
+
+    const finalMessage = await stream.finalMessage();
+
+    // Surface thinking + tool_use blocks to the client.
+    for (const block of finalMessage.content) {
+      if (block.type === 'thinking') {
+        onThinking(block.thinking);
+        send({ type: 'thinking', text: block.thinking });
+      }
+    }
+
+    if (finalMessage.stop_reason !== 'tool_use') {
+      return;
+    }
+
+    // Append assistant turn so the next call sees it.
+    messages.push({ role: 'assistant', content: finalMessage.content });
+
+    const toolResults: Anthropic.ToolResultBlockParam[] = [];
+    let askedQuestion: { question: string; options: string[] } | null = null;
+
+    for (const block of finalMessage.content) {
+      if (block.type !== 'tool_use') continue;
+
+      const callRecord: ToolCall = {
+        id: block.id,
+        name: block.name,
+        input: block.input,
+        pending: true,
+      };
+      onToolCall(callRecord);
+      send({ type: 'tool_use', id: block.id, name: block.name, input: block.input });
+
+      if (block.name === 'ask_user_question') {
+        askedQuestion = block.input as { question: string; options: string[] };
+        send({ type: 'question', question: askedQuestion.question, options: askedQuestion.options });
+        callRecord.pending = false;
+        callRecord.result = '(presented to user)';
+        toolResults.push({
+          type: 'tool_result',
+          tool_use_id: block.id,
+          content: 'Question presented to user; response will arrive as the next user message.',
+        });
+        onToolEvent(`Asked: ${askedQuestion.question}`);
+        continue;
+      }
+
+      try {
+        const result = await executeTool(block.name, block.input as Record<string, unknown>, user);
+        callRecord.pending = false;
+        callRecord.result = result;
+        send({ type: 'tool_result', id: block.id, content: result, success: true });
+        onToolEvent(block.name);
+        toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: result });
+      } catch (e) {
+        const errMsg = (e as Error).message;
+        callRecord.pending = false;
+        callRecord.error = errMsg;
+        send({ type: 'tool_result', id: block.id, content: errMsg, success: false });
+        toolResults.push({
+          type: 'tool_result',
+          tool_use_id: block.id,
+          content: errMsg,
+          is_error: true,
+        });
+      }
+    }
+
+    if (askedQuestion) {
+      onQuestion(askedQuestion);
+      return;
+    }
+
+    messages.push({ role: 'user', content: toolResults });
+  }
+}
+
+// ─── OpenAI streaming runner (text-only, no tools) ───────────
+
+interface RunOpenAiArgs {
+  incoming: AiMessage[];
+  maxTokens: number;
+  send: (e: ChatStreamEvent) => void;
+  onText: (delta: string) => void;
+  signal: AbortSignal;
+}
+
+async function runOpenAi(args: RunOpenAiArgs): Promise<void> {
+  const { incoming, maxTokens, send, onText, signal } = args;
+  const OpenAI = (await import('openai')).default;
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
+
+  const stream = await openai.chat.completions.create(
+    {
+      model: 'gpt-4o',
+      messages: incoming.map((m) => ({
+        role: m.role as 'user' | 'assistant' | 'system',
+        content: m.content,
+      })),
+      max_tokens: Math.min(maxTokens, 4096),
+      stream: true,
+    },
+    { signal }
+  );
+
+  for await (const chunk of stream) {
+    if (signal.aborted) break;
+    const delta = chunk.choices[0]?.delta?.content;
+    if (delta) {
+      onText(delta);
+      send({ type: 'text', delta });
+    }
   }
 }
