@@ -238,6 +238,13 @@ export default function MainSidebar({ user, onLogout }: MainSidebarProps) {
 
   const visibleGroups = NAV_GROUPS.filter((g) => !g.adminOnly || user.role === 'admin');
 
+  // Quick actions open globally-mounted panels via window events; close the
+  // mobile drawer too so the panel/popover isn't hidden behind it.
+  const fireAction = (eventName: string) => {
+    window.dispatchEvent(new CustomEvent(eventName));
+    setMobileOpen(false);
+  };
+
   return (
     <>
       {/* Mobile menu button - fixed at top left */}
@@ -374,6 +381,31 @@ export default function MainSidebar({ user, onLogout }: MainSidebarProps) {
           })}
         </nav>
 
+        {/* Quick actions — always-available AI Hub panel + Quick Todo capture.
+            Pinned just above the footer divider so they're reachable from every
+            page (previously these only appeared in the dashboard header). They
+            signal the globally-mounted panels via window events. */}
+        <div
+          className={cn(
+            'border-t border-portal-border space-y-1',
+            collapsed ? 'p-2 flex flex-col items-center' : 'p-3'
+          )}
+        >
+          <SidebarAction
+            collapsed={collapsed}
+            onClick={() => fireAction('aihub:open')}
+            label="Ask AI"
+            icon={<Sparkles className="h-3.5 w-3.5" />}
+            accent
+          />
+          <SidebarAction
+            collapsed={collapsed}
+            onClick={() => fireAction('quicktodo:open')}
+            label="Quick Todo"
+            icon={<CheckSquare className="h-3.5 w-3.5" />}
+          />
+        </div>
+
         {/* Bottom actions */}
         <div
           className={cn(
@@ -463,5 +495,59 @@ function SidebarLink({
       {icon}
       <span className="flex-1 text-left truncate">{label}</span>
     </Link>
+  );
+}
+
+/**
+ * Button sibling of {@link SidebarLink}: same look, but fires an action
+ * (e.g. opening a global panel) instead of navigating. Used for the pinned
+ * quick actions above the footer divider.
+ */
+function SidebarAction({
+  onClick,
+  label,
+  icon,
+  collapsed,
+  accent,
+}: {
+  onClick: () => void;
+  label: string;
+  icon?: React.ReactNode;
+  collapsed?: boolean;
+  accent?: boolean;
+}) {
+  if (collapsed) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        title={label}
+        aria-label={label}
+        className={cn(
+          'w-full flex items-center justify-center p-2 rounded-lg transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent',
+          accent
+            ? 'text-portal-accent hover:bg-portal-accent/10'
+            : 'text-portal-muted hover:text-portal-text hover:bg-portal-card-hover'
+        )}
+      >
+        {icon}
+      </button>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent',
+        accent
+          ? 'text-portal-accent hover:bg-portal-accent/10 font-medium'
+          : 'text-portal-text-dim hover:text-portal-text hover:bg-portal-card-hover'
+      )}
+    >
+      {icon}
+      <span className="flex-1 text-left truncate">{label}</span>
+    </button>
   );
 }
