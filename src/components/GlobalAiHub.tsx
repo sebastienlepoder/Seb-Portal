@@ -15,10 +15,11 @@ const DEFAULT_WIDTH = 460;
 
 /**
  * App-wide AI Hub. Mounted once at the layout level so the conversation
- * persists across navigation. A floating top-right button toggles a
- * non-modal docked panel (resizable from its left edge) — the page stays
- * fully interactive while it's open. Hidden on /login and on the dedicated
- * /ai page (which already renders the chat full-screen).
+ * persists across navigation. The header-mounted {@link GlobalAiHubTrigger}
+ * (or an `aihub:open` window event) toggles a non-modal docked panel
+ * (resizable from its left edge) — the page stays fully interactive while
+ * it's open. Hidden on /login and on the dedicated /ai page (which already
+ * renders the chat full-screen).
  */
 export function GlobalAiHub() {
   const { user, loading } = useAuth();
@@ -105,17 +106,6 @@ export function GlobalAiHub() {
 
   return (
     <>
-      {!open && (
-        <button
-          onClick={() => setOpen(true)}
-          aria-label="Open AI Hub"
-          title="AI Hub"
-          className="fixed top-2.5 right-2.5 z-[60] inline-flex items-center justify-center h-9 w-9 rounded-full bg-portal-accent text-white shadow-lg shadow-portal-accent/30 hover:bg-portal-accent-dark transition-colors focus:outline-none focus:ring-2 focus:ring-portal-accent"
-        >
-          <Sparkles className="h-4 w-4" />
-        </button>
-      )}
-
       {open && (
         <aside
           className="fixed top-0 right-0 bottom-0 z-[60] bg-portal-bg border-l border-portal-border shadow-2xl flex animate-fade-in"
@@ -154,5 +144,26 @@ export function GlobalAiHub() {
         </aside>
       )}
     </>
+  );
+}
+
+/**
+ * Header-mounted trigger that opens the globally-mounted {@link GlobalAiHub}
+ * panel. Kept as a plain (non-fixed) button so it can sit inline with the
+ * other header icons; it signals the hub via the `aihub:open` window event.
+ */
+export function GlobalAiHubTrigger({ className }: { className?: string }) {
+  return (
+    <button
+      onClick={() => window.dispatchEvent(new CustomEvent('aihub:open'))}
+      aria-label="Open AI Hub"
+      title="AI Hub"
+      className={cn(
+        'p-2 text-portal-accent hover:bg-portal-accent/10 rounded-lg transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent',
+        className
+      )}
+    >
+      <Sparkles className="h-4 w-4" />
+    </button>
   );
 }

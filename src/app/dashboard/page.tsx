@@ -14,6 +14,8 @@ import OneNoteWidget from '@/components/widgets/OneNoteWidget';
 import OutlookWidget from '@/components/widgets/OutlookWidget';
 import { IframeModal } from '@/components/dashboard/IframeModal';import { ServiceEditorModal } from '@/components/dashboard/ServiceEditorModal';
 import MainSidebar from '@/components/layout/MainSidebar';
+import { GlobalAiHubTrigger } from '@/components/GlobalAiHub';
+import { QuickTodoTrigger } from '@/components/QuickTodo';
 import type { ServiceData } from '@/hooks/usePortal';
 import type { StatusColor, VpnStatus } from '@/types';
 import {
@@ -28,6 +30,8 @@ import {
   ShieldOff,
   MoreVertical,
   ChevronRight,
+  Sparkles,
+  CheckSquare,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -175,6 +179,8 @@ export default function DashboardPage() {
               >
                 <Wrench className="h-4 w-4" />
               </button>
+              <QuickTodoTrigger />
+              <GlobalAiHubTrigger />
               <div className="text-xs text-portal-muted truncate max-w-[180px]">
                 {userLabel}
               </div>
@@ -536,6 +542,28 @@ function MobileActionsMenu({
               <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-portal-muted">
                 Tools
               </div>
+              <button
+                onClick={() => {
+                  close();
+                  window.dispatchEvent(new CustomEvent('quicktodo:open'));
+                }}
+                className="w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm text-portal-text hover:bg-portal-card-hover transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent min-h-[44px]"
+              >
+                <CheckSquare className="h-4 w-4 text-portal-accent shrink-0" />
+                <span className="flex-1 text-left">Quick Todo</span>
+                <ChevronRight className="h-4 w-4 text-portal-muted shrink-0" />
+              </button>
+              <button
+                onClick={() => {
+                  close();
+                  window.dispatchEvent(new CustomEvent('aihub:open'));
+                }}
+                className="w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm text-portal-text hover:bg-portal-card-hover transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent min-h-[44px]"
+              >
+                <Sparkles className="h-4 w-4 text-portal-accent shrink-0" />
+                <span className="flex-1 text-left">AI Hub</span>
+                <ChevronRight className="h-4 w-4 text-portal-muted shrink-0" />
+              </button>
               <button
                 onClick={() => {
                   close();
