@@ -46,18 +46,18 @@ const statusConfig: Record<string, { icon: typeof CheckCircle2; color: string; l
 type StatusFilter = 'all' | 'active' | 'paused' | 'completed' | 'archived';
 
 const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
-  { value: 'all', label: 'Tous' },
   { value: 'active', label: 'Actif' },
   { value: 'paused', label: 'En pause' },
   { value: 'completed', label: 'Terminé' },
   { value: 'archived', label: 'Archivé' },
+  { value: 'all', label: 'Tous' },
 ];
 
 export default function ProjectsPage() {
   const { user, loading } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(true);
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('active');
   // null = closed, 'new' = create, otherwise the project id being edited.
   const [editorTarget, setEditorTarget] = useState<string | 'new' | null>(null);
   const [syncing, setSyncing] = useState(false);
