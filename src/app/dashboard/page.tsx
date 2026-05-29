@@ -14,8 +14,6 @@ import OneNoteWidget from '@/components/widgets/OneNoteWidget';
 import OutlookWidget from '@/components/widgets/OutlookWidget';
 import { IframeModal } from '@/components/dashboard/IframeModal';import { ServiceEditorModal } from '@/components/dashboard/ServiceEditorModal';
 import MainSidebar from '@/components/layout/MainSidebar';
-import { GlobalAiHubTrigger } from '@/components/GlobalAiHub';
-import { QuickTodoTrigger } from '@/components/QuickTodo';
 import type { ServiceData } from '@/hooks/usePortal';
 import type { StatusColor, VpnStatus } from '@/types';
 import {
@@ -179,8 +177,6 @@ export default function DashboardPage() {
               >
                 <Wrench className="h-4 w-4" />
               </button>
-              <QuickTodoTrigger />
-              <GlobalAiHubTrigger />
               <div className="text-xs text-portal-muted truncate max-w-[180px]">
                 {userLabel}
               </div>
