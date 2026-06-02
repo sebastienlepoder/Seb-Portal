@@ -77,8 +77,16 @@ COPY --from=builder --chown=nextjs:nodejs /app/server.js ./server.js
 
 # Create runtime-only directories (small — fast chown). git, sqlite3, and
 # wget are already installed via apt above.
-RUN mkdir -p /app/data /app/public/icons/generated \
-  && chown -R nextjs:nodejs /app/data /app/public/icons
+#
+# /app/worker-clones is the mount point for the persistent clone cache
+# volume (see docker-compose.yml). It MUST exist and be owned by nextjs
+# (uid 1001) in the image: a named volume mounted onto a path that doesn't
+# pre-exist is initialized root-owned, which the worker can't write to —
+# so resolveWorkdir() silently falls back to throwaway /tmp clones and
+# re-runs `npm ci` on every task. Pre-creating it lets the fresh volume
+# inherit uid 1001 ownership on first mount.
+RUN mkdir -p /app/data /app/public/icons/generated /app/worker-clones \
+  && chown -R nextjs:nodejs /app/data /app/public/icons /app/worker-clones
 
 USER nextjs
 
