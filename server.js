@@ -241,6 +241,14 @@ async function bootstrap() {
       cookieNames,
       hasAuthSecret: !!process.env.AUTH_SECRET,
       authSecretLen: (process.env.AUTH_SECRET || '').length,
+      // WebSocket handshake headers. If a reverse proxy strips/mangles these,
+      // ws.handleUpgrade() below aborts without ever sending 101 and the
+      // browser sees a bare 1006. hasWsKey:false is the smoking gun for that.
+      upgradeHeader: req.headers['upgrade'] || '(none)',
+      connectionHeader: req.headers['connection'] || '(none)',
+      hasWsKey: !!req.headers['sec-websocket-key'],
+      wsVersion: req.headers['sec-websocket-version'] || '(none)',
+      httpVersion: req.httpVersion,
     });
     let session;
     try {
@@ -291,7 +299,18 @@ async function bootstrap() {
       /* best-effort */
     }
 
+    // If the handshake itself fails (e.g. a proxy stripped Sec-WebSocket-Key),
+    // ws emits 'error' on the socket and never calls the callback below — log
+    // it so a silent abort is no longer invisible.
+    socket.on('error', (err) => {
+      console.warn('[server] terminal-ws: upgrade socket error:', err && err.message);
+    });
+
     wss.handleUpgrade(req, socket, head, (ws) => {
+      // Reaching here means ws sent 101 Switching Protocols. If this line
+      // appears in the logs but the browser still gets 1006, the failure is
+      // downstream (the proxy isn't relaying the upgraded connection back).
+      console.log('[server] terminal-ws: handshake complete (101 sent) — awaiting config frame');
       try {
         handleSshSession(ws, { remoteAddress, sessionUserId, auditFn });
       } catch (err) {
