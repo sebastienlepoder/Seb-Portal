@@ -187,16 +187,28 @@ async function bootstrap() {
       pathname = '';
     }
 
-    if (pathname !== TERMINAL_WS_PATH) {
-      if (nextUpgrade) {
-        try {
-          nextUpgrade(req, socket, head);
-        } catch (err) {
-          console.error('[server] next upgrade error:', err);
-          socket.destroy();
-        }
+    // Tolerate an optional trailing slash so a proxy that normalises the path
+    // can't accidentally divert the terminal upgrade to the catch-all branch.
+    const isTerminalPath =
+      pathname === TERMINAL_WS_PATH || pathname === `${TERMINAL_WS_PATH}/`;
+
+    if (!isTerminalPath) {
+      // Forward to Next's upgrade handler ONLY in dev, where it powers the
+      // HMR websocket. In production (output: 'standalone') Next has no real
+      // upgrade handler: getUpgradeHandler() still returns a function, but
+      // invoking it rejects *asynchronously* with "Cannot read properties of
+      // undefined (reading 'bind')" and leaves the socket half-open. The old
+      // synchronous try/catch could not catch that rejection, so every stray
+      // upgrade spammed the logs with that error and dangled a socket. In
+      // production there are no legitimate non-terminal upgrades, so close them.
+      if (dev && nextUpgrade) {
+        Promise.resolve()
+          .then(() => nextUpgrade(req, socket, head))
+          .catch((err) => {
+            console.error('[server] next upgrade error:', err && err.message);
+            try { socket.destroy(); } catch { /* ignore */ }
+          });
       } else {
-        // Production standalone has no HMR — close any stray upgrades.
         socket.destroy();
       }
       return;
