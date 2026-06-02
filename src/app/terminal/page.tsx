@@ -1,6 +1,19 @@
 'use client';
 
 import '@xterm/xterm/css/xterm.css';
+// xterm's core is imported statically (not via a dynamic `import()`). It is
+// safe to evaluate during SSR — `require('@xterm/xterm')` touches no DOM
+// globals at module load — and importing it this way folds it into the
+// /terminal route chunk. That matters because xterm references `process`,
+// which pulls in webpack's `process` polyfill module; in a dynamic `import()`
+// chunk Next 14's split-chunks pass left that polyfill out, so the chunk
+// invoked an undefined module factory and threw "Cannot read properties of
+// undefined (reading 'call')" the moment the user hit Connect. As a static
+// import the polyfill travels with the route chunk and is always present.
+// The fit/web-links addons stay lazy below: they reference `self` at module
+// load (so cannot be evaluated during SSR) but, unlike core, never touch
+// `process`, so their async chunk needs no polyfill.
+import { Terminal as XtermTerminalCtor } from '@xterm/xterm';
 
 import {
   useCallback,
@@ -305,9 +318,11 @@ export default function TerminalPage() {
         return;
       }
 
-      // Lazy-load xterm so it only ships to the client bundle.
-      const [{ Terminal }, { FitAddon }, { WebLinksAddon }] = await Promise.all([
-        import('@xterm/xterm'),
+      // xterm core is imported statically at the top of the module (see the
+      // note there). Only the addons are lazy-loaded — they reference `self`
+      // at module load so they must stay out of the SSR-evaluated graph.
+      const Terminal = XtermTerminalCtor;
+      const [{ FitAddon }, { WebLinksAddon }] = await Promise.all([
         import('@xterm/addon-fit'),
         import('@xterm/addon-web-links'),
       ]);
