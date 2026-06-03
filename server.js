@@ -221,8 +221,8 @@ async function bootstrap() {
 
     // Origin check — defence-in-depth against CSRF-style WS hijacks.
     // Browsers always send Origin on cross-origin upgrades; if it's present
-    // and doesn't match the portal host we reject immediately (before reading
-    // the session cookie).
+    // and doesn't match the portal host we reject immediately (before the
+    // handshake). This stays synchronous — see the handshake note below.
     const reqOrigin = (req.headers['origin'] || '').trim();
     if (reqOrigin) {
       const allowed = getAllowedOrigins();
@@ -232,8 +232,6 @@ async function bootstrap() {
       }
     }
 
-    // Validate session BEFORE upgrading so we never expose the SSH bridge
-    // to anonymous clients.
     const cookieNames = parseCookieHeader(req.headers.cookie || '').map((c) => c.name);
     console.log('[server] terminal-ws: upgrade attempt', {
       origin: reqOrigin || '(none)',
@@ -241,85 +239,103 @@ async function bootstrap() {
       cookieNames,
       hasAuthSecret: !!process.env.AUTH_SECRET,
       authSecretLen: (process.env.AUTH_SECRET || '').length,
-      // WebSocket handshake headers. If a reverse proxy strips/mangles these,
-      // ws.handleUpgrade() below aborts without ever sending 101 and the
-      // browser sees a bare 1006. hasWsKey:false is the smoking gun for that.
       upgradeHeader: req.headers['upgrade'] || '(none)',
       connectionHeader: req.headers['connection'] || '(none)',
       hasWsKey: !!req.headers['sec-websocket-key'],
       wsVersion: req.headers['sec-websocket-version'] || '(none)',
       httpVersion: req.httpVersion,
     });
-    let session;
-    try {
-      session = await readSession(req);
-    } catch (err) {
-      console.warn('[server] terminal-ws: session read failed:', err && err.message);
-      return rejectUpgrade(socket, 401, 'Unauthorized');
-    }
 
-    console.log('[server] terminal-ws: session read result', {
-      hasSession: !!session,
-      hasUser: !!(session && session.user),
-      userId: session && session.user && session.user.id,
-      role: session && session.user && session.user.role,
-    });
-
-    if (!session || !session.user) {
-      console.warn('[server] terminal-ws: no session.user — rejecting 401');
-      return rejectUpgrade(socket, 401, 'Unauthorized');
-    }
-
-    // Admin-only gate — this feature grants shell access to every host
-    // reachable from the portal server. Restrict to admin role.
-    if (session.user.role !== 'admin') {
-      console.warn(
-        `[server] terminal-ws: non-admin user "${session.user.id}" rejected`
-      );
-      return rejectUpgrade(socket, 403, 'Forbidden');
-    }
-
-    const sessionUserId = session.user.id;
     const remoteAddress =
       (req.headers['x-forwarded-for'] || '').toString().split(',')[0].trim() ||
       req.socket.remoteAddress ||
       'unknown';
 
-    // Build a scoped audit callback that never has access to secret values.
-    const auditFn = (params) =>
-      auditTerminalEvent({ ipAddress: remoteAddress, userId: sessionUserId, ...params });
-
-    // Disable any inherited idle timeout on the raw socket and enable TCP
-    // keepalive so the long-lived SSH-over-WS connection isn't reaped by a
-    // socket-level timeout during quiet periods.
-    try {
-      socket.setTimeout(0);
-      socket.setKeepAlive(true, 30_000);
-    } catch {
-      /* best-effort */
-    }
-
-    // If the handshake itself fails (e.g. a proxy stripped Sec-WebSocket-Key),
-    // ws emits 'error' on the socket and never calls the callback below — log
-    // it so a silent abort is no longer invisible.
+    // Surface a silent handshake abort (e.g. a proxy stripping headers).
     socket.on('error', (err) => {
       console.warn('[server] terminal-ws: upgrade socket error:', err && err.message);
     });
 
-    wss.handleUpgrade(req, socket, head, (ws) => {
-      // Reaching here means ws sent 101 Switching Protocols. If this line
-      // appears in the logs but the browser still gets 1006, the failure is
-      // downstream (the proxy isn't relaying the upgraded connection back).
-      console.log('[server] terminal-ws: handshake complete (101 sent) — awaiting config frame');
+    // Complete the WebSocket handshake SYNCHRONOUSLY, then authenticate on the
+    // open connection.
+    //
+    // Previously we did the async `readSession()` BEFORE handleUpgrade. Behind
+    // a reverse proxy that left a window in which the proxy half-closed the
+    // upstream socket; by the time handleUpgrade ran, the socket was no longer
+    // readable/writable, so ws.completeUpgrade() hit its "client sent FIN"
+    // guard and SILENTLY destroyed the socket — no 101, no callback, no error.
+    // The browser saw a bare 1006 and the session never started. Running the
+    // handshake in the same tick as the 'upgrade' event keeps the socket live,
+    // so the 101 goes out immediately. Auth still gates the SSH bridge: an
+    // unauthenticated socket is opened only to be closed before any shell runs.
+    wss.handleUpgrade(req, socket, head, async (ws) => {
+      console.log('[server] terminal-ws: handshake complete (101 sent) — authenticating');
+
+      // Pause incoming frames until the session handler has wired its message
+      // listeners. The client sends its config frame the instant it sees the
+      // 101, which is during the async auth below — without pausing, that frame
+      // would be emitted with no listener attached and silently dropped, so the
+      // SSH session would hang waiting for a config that already arrived.
+      ws.pause();
+
+      // Long-lived session: drop socket idle timeout, enable TCP keepalive.
+      try {
+        socket.setTimeout(0);
+        socket.setKeepAlive(true, 30_000);
+      } catch {
+        /* best-effort */
+      }
+
+      const denyAndClose = (message, code) => {
+        ws.resume(); // undo the pause() above so the close can flush
+        try {
+          if (ws.readyState === ws.OPEN) {
+            ws.send(JSON.stringify({ type: 'error', message }));
+          }
+        } catch { /* ignore */ }
+        try { ws.close(code, message); } catch { /* ignore */ }
+      };
+
+      let session;
+      try {
+        session = await readSession(req);
+      } catch (err) {
+        console.warn('[server] terminal-ws: session read failed:', err && err.message);
+        return denyAndClose('unauthorized', 4401);
+      }
+
+      console.log('[server] terminal-ws: session read result', {
+        hasSession: !!session,
+        hasUser: !!(session && session.user),
+        userId: session && session.user && session.user.id,
+        role: session && session.user && session.user.role,
+      });
+
+      if (!session || !session.user) {
+        console.warn('[server] terminal-ws: no session.user — closing 4401');
+        return denyAndClose('unauthorized', 4401);
+      }
+
+      // Admin-only gate — this feature grants shell access to every host
+      // reachable from the portal server. Restrict to admin role.
+      if (session.user.role !== 'admin') {
+        console.warn(`[server] terminal-ws: non-admin user "${session.user.id}" closed 4403`);
+        return denyAndClose('forbidden', 4403);
+      }
+
+      const sessionUserId = session.user.id;
+      // Audit callback scoped to this session; never receives secret values.
+      const auditFn = (params) =>
+        auditTerminalEvent({ ipAddress: remoteAddress, userId: sessionUserId, ...params });
+
       try {
         handleSshSession(ws, { remoteAddress, sessionUserId, auditFn });
+        // Listeners are wired now — let the buffered config frame through.
+        ws.resume();
       } catch (err) {
         console.error('[server] terminal-ws handler crashed:', err);
-        try {
-          ws.close(1011, 'internal_error');
-        } catch {
-          /* ignore */
-        }
+        try { ws.resume(); } catch { /* ignore */ }
+        try { ws.close(1011, 'internal_error'); } catch { /* ignore */ }
       }
     });
   });
