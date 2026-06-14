@@ -17,30 +17,31 @@ services:
     # port directly would conflict with Coolify's port management.
     expose:
       - "3000"
-    # Dedicated Traefik router for the WebSocket endpoints ONLY, WITHOUT a
-    # compression middleware. Coolify auto-attaches its `gzip` (compress)
-    # middleware to the app's generated router, and Traefik's compress
-    # middleware corrupts WebSocket frames (Coolify issue #4002) — the upgrade
-    # succeeds (101) then the tunnel dies as a bare 1006 / "Internal Server
-    # Error". This higher-priority router matches the two WS paths and routes
-    # them straight to the container with no middleware, so the SSH terminal and
-    # the Claude CLI work; all other paths keep using Coolify's gzip'd router.
+    # FULL Traefik routing for the portal, with NO compression middleware.
+    # These labels are authoritative ONLY when "Raw Compose Deployment" is
+    # enabled in Coolify — otherwise Coolify generates its own labels (which
+    # force-add a gzip/compress middleware on docker-compose apps regardless of
+    # the UI toggle, Coolify bug #2105). Traefik's compress middleware corrupts
+    # WebSocket frames (the upgrade succeeds with 101, then the larger frames
+    # arrive with RSV1 set and the client aborts → 1006). With raw compose +
+    # these labels, the portal is served over HTTPS with no compression, so the
+    # Claude CLI and the Web SSH terminal both work.
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.portal-ws.rule=Host(`portal.lepoder.com`) && (PathPrefix(`/api/claude/ws`) || PathPrefix(`/api/terminal/ws`))"
-      - "traefik.http.routers.portal-ws.entryPoints=https"
-      - "traefik.http.routers.portal-ws.tls=true"
-      - "traefik.http.routers.portal-ws.tls.certresolver=letsencrypt"
-      # Higher priority than Coolify's catch-all `PathPrefix(/)` router so WS
-      # upgrades match here.
-      - "traefik.http.routers.portal-ws.priority=1000"
-      - "traefik.http.routers.portal-ws.service=portal-ws-svc"
-      - "traefik.http.services.portal-ws-svc.loadbalancer.server.port=3000"
-      # REQUIRED: this container is on 3 networks; tell Traefik to reach the
-      # backend over the `coolify` network (the one Traefik shares with it),
-      # otherwise the custom service has no reachable server and Traefik drops
-      # the router, sending WS back to the gzip'd router.
+      # Reach the backend over the network Traefik shares with this container.
       - "traefik.docker.network=coolify"
+      # HTTP -> HTTPS redirect.
+      - "traefik.http.routers.portal-http.entryPoints=http"
+      - "traefik.http.routers.portal-http.rule=Host(`portal.lepoder.com`)"
+      - "traefik.http.routers.portal-http.middlewares=portal-to-https"
+      - "traefik.http.middlewares.portal-to-https.redirectscheme.scheme=https"
+      # HTTPS — TLS via Let's Encrypt, NO middlewares (no gzip/compress).
+      - "traefik.http.routers.portal-https.entryPoints=https"
+      - "traefik.http.routers.portal-https.rule=Host(`portal.lepoder.com`)"
+      - "traefik.http.routers.portal-https.tls=true"
+      - "traefik.http.routers.portal-https.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.portal-https.service=portal-svc"
+      - "traefik.http.services.portal-svc.loadbalancer.server.port=3000"
     volumes:
       # Persist SQLite database. Default is the Coolify-managed bind path
       # (where this app actually runs). Override with PORTAL_DATA_VOLUME if
