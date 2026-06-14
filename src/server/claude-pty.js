@@ -123,7 +123,7 @@ function redactToken(text, token) {
 
 // ── Git clone / locate ─────────────────────────────────────────────────────────
 
-function gitRun(args, opts) {
+function gitRun(args, opts = {}) {
   return new Promise((resolve) => {
     const child = spawn('git', args, {
       cwd: opts.cwd,
@@ -132,8 +132,20 @@ function gitRun(args, opts) {
     });
     let stdout = '';
     let stderr = '';
-    child.stdout.on('data', (d) => { stdout += d.toString(); });
-    child.stderr.on('data', (d) => { stderr += d.toString(); });
+    // `onData(text)` lets the caller stream progress to the client — important
+    // for `git clone`, whose output keeps the WebSocket non-idle through an
+    // otherwise silent multi-second clone (some reverse proxies drop a quiet
+    // upgrade). git writes transfer progress to stderr.
+    child.stdout.on('data', (d) => {
+      const s = d.toString();
+      stdout += s;
+      if (opts.onData) opts.onData(opts.redact ? opts.redact(s) : s);
+    });
+    child.stderr.on('data', (d) => {
+      const s = d.toString();
+      stderr += s;
+      if (opts.onData) opts.onData(opts.redact ? opts.redact(s) : s);
+    });
     child.on('error', (e) => resolve({ code: -1, stdout, stderr: stderr + '\n' + e.message }));
     child.on('close', (code) => resolve({ code: code ?? -1, stdout, stderr }));
   });
@@ -145,10 +157,14 @@ function gitRun(args, opts) {
  * checkout — an interactive CLI session may have uncommitted work the user
  * expects to find again on reconnect.
  *
+ * @param {(text: string) => void} [onProgress] receives human-readable progress
+ *   (clone output) to stream to the client terminal.
  * @returns {Promise<string>} absolute workdir path
  * @throws  {Error} with a short, secret-free message code on failure
  */
-async function prepareWorkspace(project, token) {
+async function prepareWorkspace(project, token, onProgress) {
+  const say = (text) => { if (onProgress) onProgress(text); };
+
   // A project may pin an explicit clone path (shared with the worker).
   if (project.clonePath) {
     try {
@@ -177,6 +193,7 @@ async function prepareWorkspace(project, token) {
   // Reuse an existing checkout as-is (preserve the user's working tree).
   try {
     if (fs.statSync(path.join(workdir, '.git')).isDirectory()) {
+      say(`Using existing checkout of ${owner}/${name}\r\n`);
       return workdir;
     }
   } catch {
@@ -187,10 +204,16 @@ async function prepareWorkspace(project, token) {
     ? `https://${token}@github.com/${owner}/${name}.git`
     : `https://github.com/${owner}/${name}.git`;
   const branch = project.workingBranch || 'main';
+  const redact = (s) => redactToken(s, token);
 
+  say(`Cloning ${owner}/${name} (branch ${branch})…\r\n`);
+  // Shallow + single-branch keeps the first clone fast; --progress forces git
+  // to emit transfer progress even though stderr isn't a TTY, so bytes keep
+  // flowing to the client and the proxy never sees an idle upgrade. The user
+  // can `git fetch --unshallow` inside the session if full history is needed.
   const res = await gitRun(
-    ['clone', '--branch', branch, '--single-branch', remoteUrl, workdir],
-    {},
+    ['clone', '--progress', '--depth', '1', '--single-branch', '--branch', branch, remoteUrl, workdir],
+    { onData: say, redact },
   );
   if (res.code !== 0) {
     // Distinguish a bad branch from other failures so the UI can hint usefully.
@@ -198,6 +221,7 @@ async function prepareWorkspace(project, token) {
     console.warn(`[claude-pty] git clone failed for ${owner}/${name}: ${err.slice(0, 300)}`);
     throw new Error('clone_failed');
   }
+  say('Clone complete.\r\n');
   return workdir;
 }
 
@@ -329,7 +353,7 @@ function handleClaudeSession(ws, ctx = {}) {
     safeCloseSocket(ws, 1008, 'config_timeout');
   }, CONFIG_TIMEOUT_MS);
 
-  ws.once('message', async (raw, isBinary) => {
+  async function handleConfigFrame(raw, isBinary) {
     clearTimeout(configTimer);
     configTimer = null;
     configReceived = true;
@@ -406,10 +430,17 @@ function handleClaudeSession(ws, ctx = {}) {
       );
       fireAuditOpen();
 
-      // Clone / locate the repo.
+      // Clone / locate the repo. Stream git progress to the terminal as binary
+      // frames so the connection keeps producing traffic during the clone
+      // (prevents the reverse proxy dropping an otherwise-idle upgrade) and the
+      // user sees what's happening.
       sendStatus(ws, { type: 'status', status: 'preparing' });
+      const streamToTerm = (text) => {
+        if (ws.readyState !== ws.OPEN) return;
+        try { ws.send(Buffer.from(text, 'utf8'), { binary: true }); } catch {}
+      };
       try {
-        cwd = await prepareWorkspace(project, githubToken);
+        cwd = await prepareWorkspace(project, githubToken, streamToTerm);
       } catch (e) {
         const code = (e && e.message) || 'workspace_failed';
         sessionOutcome = code;
@@ -497,7 +528,20 @@ function handleClaudeSession(ws, ctx = {}) {
       }
       try { ptyProc.write(frame.toString('utf8')); } catch {}
     });
-  }); // end ws.once('message') config handler
+  } // end handleConfigFrame
+
+  // Run the config handler and guarantee any unexpected throw still surfaces a
+  // reason to the client (otherwise the socket would die as a bare 1006).
+  ws.once('message', (raw, isBinary) => {
+    handleConfigFrame(raw, isBinary).catch((e) => {
+      console.error('[claude-pty] config handler crashed:', e && e.message);
+      if (sessionOutcome === 'unknown' || sessionOutcome === 'attempting') {
+        sessionOutcome = 'handler_error';
+      }
+      try { sendStatus(ws, { type: 'error', message: 'internal_error' }); } catch {}
+      safeCloseSocket(ws, 1011, 'internal_error');
+    });
+  });
 
   // ── WebSocket lifecycle ───────────────────────────────────────────────────
 

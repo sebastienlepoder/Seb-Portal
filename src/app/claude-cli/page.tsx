@@ -107,6 +107,7 @@ const ERROR_COPY: Record<string, string> = {
   clone_failed: 'Cloning the repo failed. Check the repo, branch, and that GITHUB_TOKEN has access.',
   claude_cli_not_installed: 'The Claude CLI binary is not available in this deployment.',
   spawn_failed: 'Failed to start the Claude CLI process on the server.',
+  internal_error: 'The server hit an unexpected error starting the session (check portal logs).',
   idle_timeout: 'Session closed after 30 minutes of inactivity.',
   session_lifetime_exceeded: 'Session closed after reaching the 4-hour limit.',
 };
