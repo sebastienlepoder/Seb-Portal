@@ -23,7 +23,12 @@ globalThis.__PORTAL_TERMINAL_WS__ = true;
 
 // Declare these early so the helper functions below can close over them.
 const dev = process.env.NODE_ENV !== 'production';
-const hostname = process.env.HOSTNAME || '0.0.0.0';
+// Always bind all interfaces. Docker/Coolify set HOSTNAME to the container id,
+// so `process.env.HOSTNAME` would bind the server to a single interface — that
+// broke the loopback healthcheck (`wget 127.0.0.1` → ECONNREFUSED, health
+// "unknown") and left the upstream connection brittle behind the proxy. Bind
+// 0.0.0.0 explicitly and never feed the container-id hostname to Next.
+const hostname = '0.0.0.0';
 const port = parseInt(process.env.PORT || '3000', 10);
 
 // ── Prisma (lazy singleton for audit logging) ────────────────────────────────
@@ -197,7 +202,6 @@ function rejectUpgrade(socket, statusCode, statusText) {
 async function bootstrap() {
   const app = next({ dev, hostname, dir: __dirname });
   const nextHandler = app.getRequestHandler();
-  const nextUpgrade = app.getUpgradeHandler ? app.getUpgradeHandler() : null;
 
   await app.prepare();
 
@@ -242,24 +246,14 @@ async function bootstrap() {
     const isBridgePath = isTerminalPath || isClaudePath;
 
     if (!isBridgePath) {
-      // Forward to Next's upgrade handler ONLY in dev, where it powers the
-      // HMR websocket. In production (output: 'standalone') Next has no real
-      // upgrade handler: getUpgradeHandler() still returns a function, but
-      // invoking it rejects *asynchronously* with "Cannot read properties of
-      // undefined (reading 'bind')" and leaves the socket half-open. The old
-      // synchronous try/catch could not catch that rejection, so every stray
-      // upgrade spammed the logs with that error and dangled a socket. In
-      // production there are no legitimate non-terminal upgrades, so close them.
-      if (dev && nextUpgrade) {
-        Promise.resolve()
-          .then(() => nextUpgrade(req, socket, head))
-          .catch((err) => {
-            console.error('[server] next upgrade error:', err && err.message);
-            try { socket.destroy(); } catch { /* ignore */ }
-          });
-      } else {
-        socket.destroy();
-      }
+      // Never hand a non-bridge upgrade to Next. In standalone, Next's upgrade
+      // handler invokes handleRequestImpl with the raw socket as the response
+      // and throws "Cannot read properties of undefined (reading 'bind')" (the
+      // socket has no setHeader), which surfaces to the client as a corrupt
+      // frame / "Internal Server Error". `dev` was also unreliable in the
+      // deployed container, so don't condition on it — there are no legitimate
+      // non-bridge upgrades in this deployment; close them unconditionally.
+      socket.destroy();
       return;
     }
 
