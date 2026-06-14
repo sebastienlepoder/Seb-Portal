@@ -31,9 +31,13 @@ services:
       - "traefik.http.routers.portal-ws.entryPoints=https"
       - "traefik.http.routers.portal-ws.tls=true"
       - "traefik.http.routers.portal-ws.tls.certresolver=letsencrypt"
+      # Higher priority than Coolify's catch-all `PathPrefix(/)` router so WS
+      # upgrades match here. NO explicit service: reuse the container's
+      # Traefik-auto-generated service (the same one Coolify's working router
+      # uses). An explicit service needs a traefik.docker.network hint to
+      # resolve across this container's 3 networks, and without it Traefik
+      # drops the router — sending WS back to the gzip'd router.
       - "traefik.http.routers.portal-ws.priority=1000"
-      - "traefik.http.routers.portal-ws.service=portal-ws-svc"
-      - "traefik.http.services.portal-ws-svc.loadbalancer.server.port=3000"
     volumes:
       # Persist SQLite database. Default is the Coolify-managed bind path
       # (where this app actually runs). Override with PORTAL_DATA_VOLUME if
