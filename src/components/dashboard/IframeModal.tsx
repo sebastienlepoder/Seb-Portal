@@ -113,13 +113,13 @@ export function IframeModal({ url, title, onClose, inline = false }: IframeModal
               className="flex items-center gap-2 px-4 py-2 bg-portal-accent hover:bg-portal-accent-dark text-white rounded-lg text-sm transition-colors"
             >
               <ExternalLink className="h-4 w-4" />
-              Ouvrir dans un nouvel onglet
+              Open in new tab
             </a>
             <button
               onClick={onClose}
               className="px-4 py-2 bg-portal-card border border-portal-border text-portal-text rounded-lg text-sm hover:bg-portal-card-hover transition-colors"
             >
-              Fermer
+              Close
             </button>
           </div>
         </div>
@@ -142,14 +142,14 @@ export function IframeModal({ url, title, onClose, inline = false }: IframeModal
             target="_blank"
             rel="noopener noreferrer"
             className="p-1.5 text-portal-muted hover:text-portal-text hover:bg-portal-card-hover rounded-md transition-colors"
-            title="Ouvrir dans un nouvel onglet"
+            title="Open in new tab"
           >
             <ExternalLink className="h-4 w-4" />
           </a>
           <button
             onClick={onClose}
             className="p-1.5 text-portal-muted hover:text-portal-text hover:bg-portal-card-hover rounded-md transition-colors"
-            title="Fermer"
+            title="Close"
           >
             <X className="h-4 w-4" />
           </button>
@@ -162,7 +162,7 @@ export function IframeModal({ url, title, onClose, inline = false }: IframeModal
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-portal-bg z-10">
             <div className="animate-spin h-8 w-8 border-2 border-portal-accent border-t-transparent rounded-full" />
             <span className="text-xs text-portal-muted">
-              {phase === 'checking' ? `Vérification de ${title}…` : `Chargement de ${title}…`}
+              {phase === 'checking' ? `Checking ${title}…` : `Loading ${title}…`}
             </span>
           </div>
         )}

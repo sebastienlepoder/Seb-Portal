@@ -34,6 +34,7 @@ import {
   Clock,
   ListTodo,
   Terminal,
+  SquareTerminal,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -85,11 +86,12 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    id: 'development',
-    label: 'Development',
+    id: 'workspace',
+    label: 'Workspace',
     items: [
       // The agentic-OS workflow: projects, the tasks dispatched against them,
       // their files, the memory that scopes the AI, and the scheduler.
+      // Standalone business apps moved out to the "Business" group below.
       {
         href: '/projects',
         label: 'Projects',
@@ -122,6 +124,12 @@ const NAV_GROUPS: NavGroup[] = [
         match: (p) => p.startsWith('/admin/recurring'),
         adminOnly: true,
       },
+    ],
+  },
+  {
+    id: 'business',
+    label: 'Business',
+    items: [
       {
         href: '/amonis',
         label: 'Amonis Finance',
@@ -132,11 +140,11 @@ const NAV_GROUPS: NavGroup[] = [
   },
   {
     id: 'manage',
-    label: 'Manage',
+    label: 'Admin',
     adminOnly: true,
     items: [
       // Project management now lives on /projects; the scheduler lives under
-      // Development. This group is for the remaining admin-only surfaces.
+      // Workspace. This group is for the remaining admin-only surfaces.
       {
         href: '/admin/services',
         label: 'Manage services',
@@ -152,6 +160,11 @@ const NAV_GROUPS: NavGroup[] = [
         href: '/terminal',
         label: 'Web Terminal',
         icon: <Terminal className="h-3.5 w-3.5" />,
+      },
+      {
+        href: '/claude-cli',
+        label: 'Claude CLI',
+        icon: <SquareTerminal className="h-3.5 w-3.5" />,
       },
       {
         href: '/admin/mcp',

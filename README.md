@@ -99,9 +99,11 @@ docker compose up -d
 | Backup/export/import | ✅ |
 | Bookmarks import (Chrome HTML) | ✅ |
 | Iframe detection + fallback | ✅ |
-| Shopify connector scaffold | ✅ |
-| OneNote/Graph scaffold | ✅ |
-| Synology FileStation scaffold | ✅ |
+| Bookmarks page (list/search/import/delete) | ✅ |
+| OneNote/Graph integration (notebooks, pages, Outlook mail) | ✅ |
+| Charts (sparklines, bar/donut) — markets, reports, insights | ✅ |
+| Shopify connector | ⚙️ API only (no UI yet) |
+| Synology FileStation | ⚙️ API only (no UI yet) |
 | Guacamole stack | ✅ |
 | Nginx Proxy Manager stack | ✅ |
 | Docker Compose ready | ✅ |

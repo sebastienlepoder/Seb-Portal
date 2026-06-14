@@ -13,6 +13,7 @@ const { WebSocketServer } = require('ws');
 const { getIronSession } = require('iron-session');
 
 const { handleSshSession } = require('./src/server/terminal-ws.js');
+const { handleClaudeSession } = require('./src/server/claude-pty.js');
 
 // Marker so API routes (which run in THIS same Node process) can confirm the
 // custom WS-hosting server is the one actually serving — not the standalone
@@ -63,6 +64,41 @@ async function auditTerminalEvent({ userId, action, host, port: sshPort, usernam
   }
 }
 
+/**
+ * Persist a Claude CLI audit log row. Never called with secret values.
+ * Failures are swallowed so they never block or crash the CLI session.
+ */
+async function auditClaudeEvent({ userId, action, projectId, projectName, outcome, durationMs, ipAddress }) {
+  const prisma = getPrismaClient();
+  if (!prisma) return;
+  const details = { projectId, projectName, outcome };
+  if (durationMs != null) details.durationMs = durationMs;
+  try {
+    await prisma.auditLog.create({
+      data: {
+        userId: userId || null,
+        action,
+        details: JSON.stringify(details),
+        ipAddress: ipAddress || null,
+      },
+    });
+  } catch (e) {
+    console.error('[server] claude-cli audit log error:', e && e.message);
+  }
+}
+
+/** Look up a project by id for the Claude CLI bridge. Returns null on any error. */
+async function getProjectById(id) {
+  const prisma = getPrismaClient();
+  if (!prisma) return null;
+  try {
+    return await prisma.project.findUnique({ where: { id } });
+  } catch (e) {
+    console.warn('[server] claude-cli project lookup error:', e && e.message);
+    return null;
+  }
+}
+
 // ── Origin allowlist (defence-in-depth against CSRF-style WS hijacks) ────────
 // Browsers always include an Origin header on cross-origin WS upgrades.
 // If Origin is present AND we have a configured BASE_URL, it must match.
@@ -99,6 +135,7 @@ const SESSION_OPTIONS = {
 };
 
 const TERMINAL_WS_PATH = '/api/terminal/ws';
+const CLAUDE_WS_PATH = '/api/claude/ws';
 
 function parseCookieHeader(header) {
   if (!header) return [];
@@ -188,11 +225,14 @@ async function bootstrap() {
     }
 
     // Tolerate an optional trailing slash so a proxy that normalises the path
-    // can't accidentally divert the terminal upgrade to the catch-all branch.
+    // can't accidentally divert the upgrade to the catch-all branch.
     const isTerminalPath =
       pathname === TERMINAL_WS_PATH || pathname === `${TERMINAL_WS_PATH}/`;
+    const isClaudePath =
+      pathname === CLAUDE_WS_PATH || pathname === `${CLAUDE_WS_PATH}/`;
+    const isBridgePath = isTerminalPath || isClaudePath;
 
-    if (!isTerminalPath) {
+    if (!isBridgePath) {
       // Forward to Next's upgrade handler ONLY in dev, where it powers the
       // HMR websocket. In production (output: 'standalone') Next has no real
       // upgrade handler: getUpgradeHandler() still returns a function, but
@@ -214,8 +254,11 @@ async function bootstrap() {
       return;
     }
 
-    // Feature flag — disables the entire Web SSH Terminal if set.
-    if (process.env.DISABLE_TERMINAL === 'true') {
+    // Feature flags — disable either bridge independently.
+    if (isTerminalPath && process.env.DISABLE_TERMINAL === 'true') {
+      return rejectUpgrade(socket, 503, 'Service Unavailable');
+    }
+    if (isClaudePath && process.env.DISABLE_CLAUDE_CLI === 'true') {
       return rejectUpgrade(socket, 503, 'Service Unavailable');
     }
 
@@ -324,16 +367,28 @@ async function bootstrap() {
       }
 
       const sessionUserId = session.user.id;
-      // Audit callback scoped to this session; never receives secret values.
-      const auditFn = (params) =>
-        auditTerminalEvent({ ipAddress: remoteAddress, userId: sessionUserId, ...params });
 
       try {
-        handleSshSession(ws, { remoteAddress, sessionUserId, auditFn });
+        if (isClaudePath) {
+          // Audit callback scoped to this session; never receives secret values.
+          const auditFn = (params) =>
+            auditClaudeEvent({ ipAddress: remoteAddress, userId: sessionUserId, ...params });
+          handleClaudeSession(ws, {
+            remoteAddress,
+            sessionUserId,
+            githubToken: process.env.GITHUB_TOKEN || undefined,
+            getProjectById,
+            auditFn,
+          });
+        } else {
+          const auditFn = (params) =>
+            auditTerminalEvent({ ipAddress: remoteAddress, userId: sessionUserId, ...params });
+          handleSshSession(ws, { remoteAddress, sessionUserId, auditFn });
+        }
         // Listeners are wired now — let the buffered config frame through.
         ws.resume();
       } catch (err) {
-        console.error('[server] terminal-ws handler crashed:', err);
+        console.error('[server] ws bridge handler crashed:', err);
         try { ws.resume(); } catch { /* ignore */ }
         try { ws.close(1011, 'internal_error'); } catch { /* ignore */ }
       }

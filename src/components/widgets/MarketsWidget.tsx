@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { TrendingUp, TrendingDown, BarChart3 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Sparkline } from '@/components/ui/Charts';
 import type { MarketQuote } from '@/types';
 
 export function MarketsWidget() {
@@ -41,19 +42,27 @@ export function MarketsWidget() {
   return (
     <div className="bg-portal-card border border-portal-border rounded-xl p-4 hover:border-portal-accent/20 transition-all">
       <div className="text-xs text-portal-muted uppercase tracking-wider mb-3">Markets</div>
-      <div className="space-y-2">
+      <div className="space-y-3">
         {quotes.map((q) => (
-          <div key={q.symbol} className="flex items-center justify-between">
-            <div>
+          <div key={q.symbol} className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
               <span className="text-sm font-semibold text-portal-text">{q.symbol}</span>
               {q.price > 0 && (
                 <span className="text-sm text-portal-text-dim ml-2">${q.price.toFixed(2)}</span>
               )}
             </div>
+
+            {/* Per-ticker sparkline, when history is available */}
+            {q.sparkline && q.sparkline.length > 1 && (
+              <div className="w-16 sm:w-20 shrink-0">
+                <Sparkline data={q.sparkline} positive={q.change >= 0} height={24} />
+              </div>
+            )}
+
             {q.price > 0 && (
               <div
                 className={cn(
-                  'flex items-center gap-1 text-xs font-medium',
+                  'flex items-center gap-1 text-xs font-medium shrink-0 w-16 justify-end',
                   q.change >= 0 ? 'text-emerald-400' : 'text-red-400'
                 )}
               >
@@ -69,46 +78,11 @@ export function MarketsWidget() {
               </div>
             )}
             {q.price === 0 && (
-              <span className="text-xs text-portal-muted">Configure API key</span>
+              <span className="text-xs text-portal-muted shrink-0">Configure API key</span>
             )}
           </div>
         ))}
       </div>
-      {/* Sparkline placeholder */}
-      {quotes[0]?.sparkline && (
-        <div className="mt-3 pt-3 border-t border-portal-border">
-          <MiniSparkline data={quotes[0].sparkline} positive={quotes[0].change >= 0} />
-        </div>
-      )}
     </div>
-  );
-}
-
-function MiniSparkline({ data, positive }: { data: number[]; positive: boolean }) {
-  const min = Math.min(...data);
-  const max = Math.max(...data);
-  const range = max - min || 1;
-  const height = 30;
-  const width = 100;
-
-  const points = data
-    .map((v, i) => {
-      const x = (i / (data.length - 1)) * width;
-      const y = height - ((v - min) / range) * height;
-      return `${x},${y}`;
-    })
-    .join(' ');
-
-  return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-8">
-      <polyline
-        points={points}
-        fill="none"
-        stroke={positive ? '#22c55e' : '#ef4444'}
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
   );
 }

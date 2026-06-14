@@ -89,3 +89,31 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: 'Server error' }, { status: 500 });
   }
 }
+
+// DELETE: remove a single bookmark (?id=...), scoped to the current user.
+export async function DELETE(request: Request) {
+  try {
+    const user = await requireApiAuth();
+    if (!(await verifyCsrf(request))) {
+      return NextResponse.json({ ok: false, error: 'CSRF validation failed' }, { status: 403 });
+    }
+
+    const id = new URL(request.url).searchParams.get('id');
+    if (!id) {
+      return NextResponse.json({ ok: false, error: 'Missing id' }, { status: 400 });
+    }
+
+    // deleteMany scopes by userId so a user can only delete their own bookmark.
+    const { count } = await prisma.bookmark.deleteMany({ where: { id, userId: user.id } });
+    if (count === 0) {
+      return NextResponse.json({ ok: false, error: 'Not found' }, { status: 404 });
+    }
+
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    if ((e as Error).message === 'UNAUTHORIZED') {
+      return NextResponse.json({ ok: false, error: 'Not authenticated' }, { status: 401 });
+    }
+    return NextResponse.json({ ok: false, error: 'Server error' }, { status: 500 });
+  }
+}

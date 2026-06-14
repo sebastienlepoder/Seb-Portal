@@ -192,15 +192,17 @@ export default function CoolifyPage() {
               </div>
             </div>
             <div className="flex items-center gap-2 pl-12 sm:pl-0 sm:ml-auto">
-              <a
-                href={process.env.NEXT_PUBLIC_COOLIFY_URL || 'http://187.77.214.29:8000'}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-2 px-3 py-1.5 text-sm text-portal-muted hover:text-portal-text bg-portal-bg border border-portal-border rounded-lg transition-colors"
-              >
-                Open Dashboard
-                <ExternalLink className="h-3 w-3" />
-              </a>
+              {process.env.NEXT_PUBLIC_COOLIFY_URL && (
+                <a
+                  href={process.env.NEXT_PUBLIC_COOLIFY_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 px-3 py-1.5 text-sm text-portal-muted hover:text-portal-text bg-portal-bg border border-portal-border rounded-lg transition-colors"
+                >
+                  Open Dashboard
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              )}
               <button
                 onClick={fetchData}
                 disabled={loading}

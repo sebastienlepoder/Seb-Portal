@@ -44,7 +44,7 @@ export function UpdatePanel({ csrfToken }: UpdatePanelProps) {
   };
 
   const triggerUpdate = async () => {
-    if (!confirm('Êtes-vous sûr de vouloir mettre à jour? Le portail redémarrera.')) {
+    if (!confirm('Are you sure you want to update? The portal will restart.')) {
       return;
     }
 
@@ -67,7 +67,7 @@ export function UpdatePanel({ csrfToken }: UpdatePanelProps) {
         // If webhook/trigger method, poll for completion
         if (data.method === 'webhook' || data.method === 'trigger-file') {
           setTimeout(() => {
-            setMessage('Mise à jour en cours... Le portail va redémarrer.');
+            setMessage('Update in progress… The portal will restart.');
           }, 2000);
         }
       } else {
@@ -85,8 +85,8 @@ export function UpdatePanel({ csrfToken }: UpdatePanelProps) {
   }, []);
 
   const formatDate = (dateStr?: string) => {
-    if (!dateStr) return 'Jamais';
-    return new Date(dateStr).toLocaleString('fr-FR', {
+    if (!dateStr) return 'Never';
+    return new Date(dateStr).toLocaleString('en-US', {
       dateStyle: 'short',
       timeStyle: 'short',
     });
@@ -100,15 +100,15 @@ export function UpdatePanel({ csrfToken }: UpdatePanelProps) {
             <GitBranch className="h-5 w-5 text-portal-accent" />
           </div>
           <div>
-            <h3 className="text-lg font-semibold text-portal-text">Mises à jour</h3>
-            <p className="text-sm text-portal-muted">Gérer les mises à jour du portail</p>
+            <h3 className="text-lg font-semibold text-portal-text">Updates</h3>
+            <p className="text-sm text-portal-muted">Manage portal updates</p>
           </div>
         </div>
         <button
           onClick={checkForUpdates}
           disabled={loading}
           className="p-2 text-portal-muted hover:text-portal-text hover:bg-portal-card-hover rounded-lg transition-colors disabled:opacity-50"
-          title="Vérifier les mises à jour"
+          title="Check for updates"
         >
           <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
         </button>
@@ -117,13 +117,13 @@ export function UpdatePanel({ csrfToken }: UpdatePanelProps) {
       {/* Version Info */}
       <div className="grid grid-cols-2 gap-4 mb-4">
         <div className="bg-portal-bg rounded-lg p-3">
-          <div className="text-xs text-portal-muted mb-1">Version actuelle</div>
+          <div className="text-xs text-portal-muted mb-1">Current version</div>
           <div className="font-mono text-sm text-portal-text">
             {status.currentVersion || '...'}
           </div>
         </div>
         <div className="bg-portal-bg rounded-lg p-3">
-          <div className="text-xs text-portal-muted mb-1">Dernière version</div>
+          <div className="text-xs text-portal-muted mb-1">Latest version</div>
           <div className="font-mono text-sm text-portal-text">
             {status.latestVersion || '...'}
           </div>
@@ -135,29 +135,29 @@ export function UpdatePanel({ csrfToken }: UpdatePanelProps) {
         {status.updateAvailable ? (
           <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-500/10 text-amber-400 rounded-full text-sm">
             <Download className="h-3.5 w-3.5" />
-            Mise à jour disponible
+            Update available
           </div>
         ) : status.status === 'updating' ? (
           <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-500/10 text-blue-400 rounded-full text-sm">
             <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-            Mise à jour en cours...
+            Update in progress…
           </div>
         ) : (
           <div className="flex items-center gap-2 px-3 py-1.5 bg-green-500/10 text-green-400 rounded-full text-sm">
             <Check className="h-3.5 w-3.5" />
-            À jour
+            Up to date
           </div>
         )}
         <div className="text-xs text-portal-muted flex items-center gap-1">
           <Clock className="h-3 w-3" />
-          Vérifié: {formatDate(status.lastCheck)}
+          Checked: {formatDate(status.lastCheck)}
         </div>
       </div>
 
       {/* Changelog */}
       {status.changelog && status.changelog.length > 0 && (
         <div className="mb-4">
-          <div className="text-xs text-portal-muted mb-2">Changements:</div>
+          <div className="text-xs text-portal-muted mb-2">Changes:</div>
           <div className="bg-portal-bg rounded-lg p-3 max-h-32 overflow-y-auto">
             <ul className="space-y-1">
               {status.changelog.map((commit, i) => (
@@ -194,12 +194,12 @@ export function UpdatePanel({ csrfToken }: UpdatePanelProps) {
           {updating || status.status === 'updating' ? (
             <>
               <RefreshCw className="h-4 w-4 animate-spin" />
-              Mise à jour en cours...
+              Update in progress…
             </>
           ) : (
             <>
               <Download className="h-4 w-4" />
-              Mettre à jour maintenant
+              Update now
             </>
           )}
         </button>
@@ -208,7 +208,7 @@ export function UpdatePanel({ csrfToken }: UpdatePanelProps) {
       {/* Manual Instructions */}
       <details className="mt-4">
         <summary className="text-xs text-portal-muted cursor-pointer hover:text-portal-text">
-          Instructions manuelles (SSH)
+          Manual instructions (SSH)
         </summary>
         <div className="mt-2 bg-portal-bg rounded-lg p-3">
           <pre className="text-xs text-portal-text-dim font-mono whitespace-pre-wrap">

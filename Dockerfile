@@ -11,8 +11,13 @@ COPY package.json package-lock.json* ./
 ENV NODE_ENV=development
 RUN npm ci --ignore-scripts
 ENV NODE_ENV=production
-# argon2 needs native build
-RUN npm rebuild argon2
+# argon2 and node-pty are native modules; --ignore-scripts skipped their build.
+RUN npm rebuild argon2 node-pty
+# The Claude CLI ships as a per-platform native binary placed by its package
+# postinstall (also skipped by --ignore-scripts). Run it explicitly so
+# bin/claude.exe is the real binary; `|| true` because the runtime resolver in
+# src/server/claude-pty.js falls back to cli-wrapper.cjs if this is absent.
+RUN node node_modules/@anthropic-ai/claude-code/install.cjs || true
 
 # ── Stage 2: Build ────────────────────────────────────────────
 FROM node:20-slim AS builder
@@ -85,8 +90,8 @@ COPY --from=builder --chown=nextjs:nodejs /app/server.js ./server.js
 # so resolveWorkdir() silently falls back to throwaway /tmp clones and
 # re-runs `npm ci` on every task. Pre-creating it lets the fresh volume
 # inherit uid 1001 ownership on first mount.
-RUN mkdir -p /app/data /app/public/icons/generated /app/worker-clones \
-  && chown -R nextjs:nodejs /app/data /app/public/icons /app/worker-clones
+RUN mkdir -p /app/data /app/public/icons/generated /app/worker-clones /app/claude-cli-clones \
+  && chown -R nextjs:nodejs /app/data /app/public/icons /app/worker-clones /app/claude-cli-clones
 
 USER nextjs
 

@@ -116,7 +116,7 @@ export function ServiceEditorModal({
                 onChange={(e) => setForm({ ...form, openMode: e.target.checked ? 'iframe' : 'new_tab' })}
                 className="rounded"
               />
-              Ouvrir dans une iframe
+              Open in an iframe
             </label>
             <label className="flex items-center gap-2 text-xs text-portal-text">
               <input type="checkbox" checked={form.requiresVPN} onChange={(e) => setForm({ ...form, requiresVPN: e.target.checked })} className="rounded" />

@@ -22,6 +22,16 @@ import {
   X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Donut, HBarChart } from '@/components/ui/Charts';
+
+/** Hex colors per insight type, used by the distribution donut. */
+const INSIGHT_TYPE_HEX: Record<string, string> = {
+  feature_request: '#f59e0b',
+  pain_point: '#ef4444',
+  comparison: '#3b82f6',
+  review: '#a855f7',
+  discussion: '#94a3b8',
+};
 
 interface RedditPost {
   id: string;
@@ -172,6 +182,28 @@ export default function InsightsPage() {
     }
     return sorted;
   }, [posts, sortBy]);
+
+  // Insight-type distribution for the overview donut.
+  const typeSegments = useMemo(() => {
+    if (!stats) return [];
+    return Object.entries(INSIGHT_TYPE_CONFIG)
+      .map(([type, config]) => ({
+        label: config.label,
+        value: stats.byType[type] || 0,
+        color: INSIGHT_TYPE_HEX[type] || '#94a3b8',
+      }))
+      .filter((s) => s.value > 0);
+  }, [stats]);
+
+  // Competitor mentions, counted from the currently-loaded posts.
+  const competitorBars = useMemo(() => {
+    const counts = new Map<string, number>();
+    posts.forEach((p) => p.competitors.forEach((c) => counts.set(c, (counts.get(c) || 0) + 1)));
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([label, value]) => ({ label, value, color: 'accent' }));
+  }, [posts]);
 
   const toggleExpanded = (id: string) => {
     setExpandedPosts(prev => {
@@ -362,6 +394,28 @@ export default function InsightsPage() {
             </div>
           ) : (
             <div className="space-y-4 max-w-4xl mx-auto">
+              {/* Overview: type distribution + competitor mentions */}
+              {(typeSegments.length > 0 || competitorBars.length > 0) && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {typeSegments.length > 0 && (
+                    <div className="bg-portal-card border border-portal-border rounded-xl p-4">
+                      <h3 className="text-sm font-semibold text-portal-text mb-3">Insight Types</h3>
+                      <Donut
+                        segments={typeSegments}
+                        centerLabel={String(stats?.total ?? 0)}
+                        centerSub="insights"
+                      />
+                    </div>
+                  )}
+                  {competitorBars.length > 0 && (
+                    <div className="bg-portal-card border border-portal-border rounded-xl p-4">
+                      <h3 className="text-sm font-semibold text-portal-text mb-3">Top Competitor Mentions</h3>
+                      <HBarChart data={competitorBars} />
+                    </div>
+                  )}
+                </div>
+              )}
+
               {sortedPosts.map((post) => {
                 const config = INSIGHT_TYPE_CONFIG[post.insightType];
                 const isExpanded = expandedPosts.has(post.id);

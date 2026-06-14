@@ -64,6 +64,7 @@ async function fetchAlphaVantage(symbols: string[]): Promise<MarketQuote[]> {
         price: parseFloat(q['05. price'] || '0'),
         change: parseFloat(q['09. change'] || '0'),
         changePercent: parseFloat((q['10. change percent'] || '0%').replace('%', '')),
+        sparkline: await fetchAlphaVantageSparkline(symbol, apiKey),
         updatedAt: new Date().toISOString(),
       });
     } catch {
@@ -72,6 +73,30 @@ async function fetchAlphaVantage(symbols: string[]): Promise<MarketQuote[]> {
   }
 
   return quotes;
+}
+
+/**
+ * Best-effort ~30-day close history for a sparkline. Returns undefined on any
+ * failure so the widget simply omits the chart rather than breaking the quote.
+ */
+async function fetchAlphaVantageSparkline(symbol: string, apiKey: string): Promise<number[] | undefined> {
+  try {
+    const url = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${symbol}&outputsize=compact&apikey=${apiKey}`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) return undefined;
+    const d = await res.json();
+    const series = d['Time Series (Daily)'];
+    if (!series) return undefined;
+    // Keys are dates (desc); take the most recent 30, oldest→newest for the line.
+    const closes = Object.keys(series)
+      .sort()
+      .slice(-30)
+      .map((date) => parseFloat(series[date]['4. close']))
+      .filter((n) => Number.isFinite(n));
+    return closes.length >= 2 ? closes : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 async function fetchFinnhub(symbols: string[]): Promise<MarketQuote[]> {

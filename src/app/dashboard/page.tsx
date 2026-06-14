@@ -95,7 +95,7 @@ export default function DashboardPage() {
   };
 
   const handleDelete = async (svcId: string) => {
-    if (!confirm('Supprimer ce service ?')) return;
+    if (!confirm('Delete this service?')) return;
     await apiCall(`/api/services/${svcId}`, { method: 'DELETE' });
     refetchServices();
   };
@@ -290,7 +290,7 @@ export default function DashboardPage() {
                       className="flex items-center gap-1 px-2 py-1 text-[10px] text-portal-accent hover:bg-portal-accent/10 rounded-md transition-colors duration-200 border border-portal-accent/20 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent"
                     >
                       <Plus className="h-3 w-3" />
-                      Ajouter
+                      Add
                     </a>
                   )}
                 </div>
@@ -317,14 +317,14 @@ export default function DashboardPage() {
 
             {filtered.length === 0 && (
               <div className="text-center py-12 text-portal-muted">
-                <p className="text-lg">Aucun service trouvé</p>
+                <p className="text-lg">No services found</p>
                 {user.role === 'admin' && (
                   <a
                     href="/admin/services"
                     className="inline-flex items-center gap-2 mt-4 px-4 py-2 bg-portal-accent hover:bg-portal-accent-dark text-white rounded-lg text-sm transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-portal-accent min-h-[44px]"
                   >
                     <Plus className="h-4 w-4" />
-                    Ajouter un service
+                    Add a service
                   </a>
                 )}
               </div>
@@ -340,11 +340,11 @@ export default function DashboardPage() {
                 'bottom-5 right-5 h-14 w-14 flex items-center justify-center',
                 'sm:bottom-6 sm:right-6 sm:h-auto sm:w-auto sm:px-4 sm:py-3 sm:gap-2 sm:rounded-full'
               )}
-              title="Nouveau service"
-              aria-label="Nouveau service"
+              title="New service"
+              aria-label="New service"
             >
               <Plus className="h-5 w-5 shrink-0" />
-              <span className="hidden sm:inline text-sm font-medium">Nouveau service</span>
+              <span className="hidden sm:inline text-sm font-medium">New service</span>
             </a>
           )}
 

@@ -91,9 +91,9 @@ export default function NewProjectPage() {
           <div>
             <h1 className="text-xl font-bold text-portal-text flex items-center gap-2">
               <FolderPlus className="h-5 w-5 text-portal-accent" />
-              Nouveau projet
+              New project
             </h1>
-            <p className="text-sm text-portal-muted">Créer un nouveau projet à documenter</p>
+            <p className="text-sm text-portal-muted">Create a new project to document</p>
           </div>
         </div>
 
@@ -189,7 +189,7 @@ export default function NewProjectPage() {
               href="/projects"
               className="px-4 py-2 text-sm text-portal-muted hover:text-portal-text transition-colors"
             >
-              Annuler
+              Cancel
             </Link>
             <button
               type="submit"
@@ -204,7 +204,7 @@ export default function NewProjectPage() {
               ) : (
                 <>
                   <FolderPlus className="h-4 w-4" />
-                  Créer le projet
+                  Create project
                 </>
               )}
             </button>

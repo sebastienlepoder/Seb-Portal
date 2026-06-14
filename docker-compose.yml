@@ -37,6 +37,16 @@ services:
       - ./memory:/app/memory
       # Update trigger/status files (for self-update feature)
       - ./data:/data
+      # Persist Claude CLI repo clones (and their node_modules) between
+      # /claude-cli sessions. The image pre-creates the dir as uid 1001 so the
+      # fresh named volume inherits writable ownership on first mount.
+      - portal-claude-cli-clones:/app/claude-cli-clones
+      # Claude Max OAuth credentials — SAME host dir the worker mounts. The
+      # "Connect to Max" button on /claude-cli runs `claude auth login` in this
+      # container and writes .credentials.json here, so both the portal CLI and
+      # the worker then use the Max subscription. MUST be read-write (the CLI
+      # refreshes the access token ~daily) and owned by uid 1001 on the host.
+      - ${CLAUDE_CREDS_DIR:-/data/coolify/lepoder-portal/claude-creds}:/home/nextjs/.claude
       # Tailscale socket for native integration (optional)
       - /var/run/tailscale/tailscaled.sock:/var/run/tailscale/tailscaled.sock:ro
     env_file:
@@ -158,6 +168,8 @@ volumes:
   portal-icons:
     driver: local
   portal-worker-clones:
+    driver: local
+  portal-claude-cli-clones:
     driver: local
 
 networks:

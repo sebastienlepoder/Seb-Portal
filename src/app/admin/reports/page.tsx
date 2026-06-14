@@ -12,6 +12,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { HBarChart } from '@/components/ui/Charts';
 
 interface ReportData {
   period: string;
@@ -125,48 +126,29 @@ export default function ReportsPage() {
                   {report.mostVisited.length === 0 ? (
                     <p className="text-xs text-portal-muted">No data yet</p>
                   ) : (
-                    <div className="space-y-2">
-                      {report.mostVisited.map((item, i) => {
-                        const maxCount = report.mostVisited[0]?.count || 1;
-                        return (
-                          <div key={item.serviceId} className="flex items-center gap-3">
-                            <span className="text-xs text-portal-muted w-5">{i + 1}.</span>
-                            <div className="flex-1">
-                              <div className="flex items-center justify-between mb-1">
-                                <span className="text-xs text-portal-text">{item.name}</span>
-                                <span className="text-xs text-portal-muted">{item.count}</span>
-                              </div>
-                              <div className="h-1.5 bg-portal-border rounded-full overflow-hidden">
-                                <div
-                                  className="h-full bg-portal-accent rounded-full transition-all"
-                                  style={{ width: `${(item.count / maxCount) * 100}%` }}
-                                />
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
+                    <HBarChart
+                      data={report.mostVisited.map((item) => ({ label: item.name, value: item.count }))}
+                    />
                   )}
                 </div>
 
                 {/* Login Activity */}
                 <div className="bg-portal-card border border-portal-border rounded-xl p-4">
-                  <h3 className="text-sm font-semibold text-portal-text mb-3">Login Activity</h3>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-semibold text-portal-text">Login Activity</h3>
+                    <div className="flex items-center gap-3 text-[10px] text-portal-muted">
+                      <span className="flex items-center gap-1">
+                        <span className="h-2 w-2 rounded-sm bg-emerald-500" /> Success
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <span className="h-2 w-2 rounded-sm bg-red-500" /> Failed
+                      </span>
+                    </div>
+                  </div>
                   {report.loginActivity.length === 0 ? (
                     <p className="text-xs text-portal-muted">No data yet</p>
                   ) : (
-                    <div className="space-y-1">
-                      {report.loginActivity.map((day) => (
-                        <div key={day.date} className="flex items-center justify-between text-xs">
-                          <span className="text-portal-muted">{day.date}</span>
-                          <div className="flex items-center gap-3">
-                            <span className="text-emerald-400">{day.success} success</span>
-                            {day.fail > 0 && <span className="text-red-400">{day.fail} failed</span>}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                    <LoginActivityChart data={report.loginActivity} />
                   )}
                 </div>
               </div>
@@ -174,6 +156,43 @@ export default function ReportsPage() {
           </div>
         </div>
       </main>
+    </div>
+  );
+}
+
+/** Per-day stacked bars: success (green) below, failures (red) on top. */
+function LoginActivityChart({ data }: { data: { date: string; success: number; fail: number }[] }) {
+  const max = Math.max(1, ...data.map((d) => d.success + d.fail));
+  const chartH = 140;
+  return (
+    <div className="flex items-end gap-1.5 sm:gap-2" style={{ height: chartH + 20 }}>
+      {data.map((day) => {
+        const total = day.success + day.fail;
+        const successH = (day.success / max) * chartH;
+        const failH = (day.fail / max) * chartH;
+        return (
+          <div key={day.date} className="flex-1 flex flex-col items-center justify-end gap-1 min-w-0">
+            <span className="text-[10px] text-portal-text-dim tabular-nums">{total || ''}</span>
+            <div className="w-full flex flex-col justify-end" style={{ height: chartH }}>
+              {day.fail > 0 && (
+                <div
+                  className="w-full bg-red-500/80 rounded-t"
+                  style={{ height: Math.max(2, failH) }}
+                  title={`${day.fail} failed`}
+                />
+              )}
+              <div
+                className={cn('w-full bg-emerald-500/80', day.fail === 0 && 'rounded-t')}
+                style={{ height: Math.max(day.success > 0 ? 2 : 0, successH) }}
+                title={`${day.success} success`}
+              />
+            </div>
+            <span className="text-[9px] text-portal-muted truncate w-full text-center" title={day.date}>
+              {day.date.slice(5)}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }

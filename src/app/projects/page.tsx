@@ -175,7 +175,7 @@ export default function ProjectsPage() {
                   className="flex items-center gap-2 px-4 py-2 bg-portal-accent hover:bg-portal-accent-dark text-white rounded-lg transition-colors text-sm"
                 >
                   <Plus className="h-4 w-4" />
-                  Nouveau projet
+                  New project
                 </button>
               </div>
             )}
@@ -234,12 +234,12 @@ export default function ProjectsPage() {
           <div className="bg-portal-card border border-portal-border rounded-xl p-12 text-center">
             <FolderGit2 className="h-12 w-12 text-portal-muted mx-auto mb-4" />
             <h3 className="text-lg font-medium text-portal-text mb-2">
-              {projects.length === 0 ? 'Aucun projet' : 'Aucun projet pour ce filtre'}
+              {projects.length === 0 ? 'No projects' : 'No projects for this filter'}
             </h3>
             <p className="text-sm text-portal-muted mb-4">
               {projects.length === 0
-                ? 'Commencez par créer votre premier projet pour organiser votre documentation.'
-                : 'Essayez un autre filtre de statut.'}
+                ? 'Start by creating your first project to organize your documentation.'
+                : 'Try a different status filter.'}
             </p>
             {projects.length === 0 && isAdmin && (
               <button
@@ -247,7 +247,7 @@ export default function ProjectsPage() {
                 className="inline-flex items-center gap-2 px-4 py-2 bg-portal-accent hover:bg-portal-accent-dark text-white rounded-lg transition-colors text-sm"
               >
                 <Plus className="h-4 w-4" />
-                Créer un projet
+                Create project
               </button>
             )}
           </div>
@@ -302,7 +302,7 @@ export default function ProjectsPage() {
                       )}
                       <span className="flex items-center gap-1">
                         <Clock className="h-3.5 w-3.5" />
-                        {new Date(project.updatedAt).toLocaleDateString('fr-FR')}
+                        {new Date(project.updatedAt).toLocaleDateString('en-US')}
                       </span>
                       {project._count?.sessions && project._count.sessions > 0 && (
                         <span>{project._count.sessions} sessions</span>
