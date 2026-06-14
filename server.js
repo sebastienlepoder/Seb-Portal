@@ -332,7 +332,21 @@ async function bootstrap() {
         /* best-effort */
       }
 
+      // Keep the upstream alive across the async auth below. Coolify's Traefik
+      // half-closes the upstream socket when the backend produces NO bytes in
+      // the window between the 101 and the next write — which is exactly the
+      // async readSession() gap. Auth then completes, we write, and it fails
+      // with "write after end" while the client gets a dead tunnel. Writing a
+      // frame immediately (and pinging on a tight interval) fills that gap so
+      // the proxy holds the tunnel open into the handler. Sending while paused
+      // is fine — pause() only gates the read side.
+      try { ws.send(JSON.stringify({ type: 'status', status: 'connecting' })); } catch { /* ignore */ }
+      const earlyKeepalive = setInterval(() => {
+        if (ws.readyState === ws.OPEN) { try { ws.ping(); } catch { /* ignore */ } }
+      }, 200);
+
       const denyAndClose = (message, code) => {
+        clearInterval(earlyKeepalive);
         ws.resume(); // undo the pause() above so the close can flush
         try {
           if (ws.readyState === ws.OPEN) {
@@ -370,16 +384,8 @@ async function bootstrap() {
       }
 
       const sessionUserId = session.user.id;
-
-      // Push a frame to the client the instant the upgrade is authorized, BEFORE
-      // the handler waits for the client's first frame. Coolify's Traefik tears
-      // down a freshly-upgraded WebSocket whose backend stays silent after the
-      // 101 and injects its own "Internal Server Error" upstream page (which the
-      // browser then reads as a malformed frame → close 1006). The reject path
-      // only ever worked because it writes immediately; this mirrors that for
-      // authenticated sessions so the tunnel survives into the handler. Sending
-      // while the socket is paused is fine — pause() only gates the read side.
-      try { ws.send(JSON.stringify({ type: 'status', status: 'connecting' })); } catch { /* ignore */ }
+      // The session handler starts its own keepalive; stop the early one.
+      clearInterval(earlyKeepalive);
 
       try {
         if (isClaudePath) {
