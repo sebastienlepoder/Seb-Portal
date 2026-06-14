@@ -214,7 +214,16 @@ async function bootstrap() {
     }
   });
 
-  const wss = new WebSocketServer({ noServer: true });
+  // perMessageDeflate is DISABLED deliberately. With it on, `ws` negotiates
+  // permessage-deflate when the browser offers it and then sends compressed
+  // frames (RSV1 bit set). Coolify's Traefik strips the
+  // `Sec-WebSocket-Extensions` header from the 101 response, so the browser
+  // never enables decompression on its side — it then receives an RSV1 frame
+  // it didn't negotiate and aborts with "RSV1 must be clear" → close 1006,
+  // before any app data flows. This silently broke BOTH the SSH terminal and
+  // the Claude CLI (same server). Disabling compression makes every frame
+  // uncompressed (RSV1 always clear), which the client always accepts.
+  const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
 
   httpServer.on('upgrade', async (req, socket, head) => {
     let pathname = '';
