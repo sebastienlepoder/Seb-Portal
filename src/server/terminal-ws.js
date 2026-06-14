@@ -177,11 +177,13 @@ function handleSshSession(ws, ctx = {}) {
   // Pinging on a sub-second cadence from t=0 keeps the connection non-idle
   // through that window. ws auto-answers with pong; browsers handle the
   // reverse direction. 750ms beats the aggressive ~1s idle drop we observed.
-  keepaliveTimer = setInterval(() => {
+  const pingNow = () => {
     if (ws.readyState === ws.OPEN) {
       try { ws.ping(); } catch { /* socket dying */ }
     }
-  }, 750);
+  };
+  pingNow(); // fire immediately so the tunnel has traffic from t=0
+  keepaliveTimer = setInterval(pingNow, 750);
 
   // ── Idle timer (resets on every I/O event) ────────────────────────────────
   function resetIdleTimer() {

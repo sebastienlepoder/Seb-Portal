@@ -318,11 +318,13 @@ function handleClaudeSession(ws, ctx = {}) {
   // WebSocket that carries no traffic shortly after the upgrade, and there's a
   // quiet window between the config frame and the first byte of CLI output
   // while the repo clone runs.
-  keepaliveTimer = setInterval(() => {
+  const pingNow = () => {
     if (ws.readyState === ws.OPEN) {
       try { ws.ping(); } catch { /* socket dying */ }
     }
-  }, 750);
+  };
+  pingNow(); // fire immediately so the tunnel has traffic from t=0
+  keepaliveTimer = setInterval(pingNow, 750);
 
   function resetIdleTimer() {
     if (idleTimer) clearTimeout(idleTimer);

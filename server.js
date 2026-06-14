@@ -377,6 +377,16 @@ async function bootstrap() {
 
       const sessionUserId = session.user.id;
 
+      // Push a frame to the client the instant the upgrade is authorized, BEFORE
+      // the handler waits for the client's first frame. Coolify's Traefik tears
+      // down a freshly-upgraded WebSocket whose backend stays silent after the
+      // 101 and injects its own "Internal Server Error" upstream page (which the
+      // browser then reads as a malformed frame → close 1006). The reject path
+      // only ever worked because it writes immediately; this mirrors that for
+      // authenticated sessions so the tunnel survives into the handler. Sending
+      // while the socket is paused is fine — pause() only gates the read side.
+      try { ws.send(JSON.stringify({ type: 'status', status: 'connecting' })); } catch { /* ignore */ }
+
       try {
         if (isClaudePath) {
           // Audit callback scoped to this session; never receives secret values.
