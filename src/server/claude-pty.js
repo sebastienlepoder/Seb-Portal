@@ -190,14 +190,26 @@ async function prepareWorkspace(project, token, onProgress) {
     workdir = path.join(require('os').tmpdir(), `claude-cli-${owner}__${name}`);
   }
 
-  // Reuse an existing checkout as-is (preserve the user's working tree).
+  // Reuse a valid existing checkout as-is (preserve the user's working tree).
+  let hasGit = false;
   try {
-    if (fs.statSync(path.join(workdir, '.git')).isDirectory()) {
-      say(`Using existing checkout of ${owner}/${name}\r\n`);
-      return workdir;
-    }
+    hasGit = fs.statSync(path.join(workdir, '.git')).isDirectory();
   } catch {
-    /* no existing checkout — clone below */
+    hasGit = false;
+  }
+  if (hasGit) {
+    say(`Using existing checkout of ${owner}/${name}\r\n`);
+    return workdir;
+  }
+  // A prior interrupted attempt can leave a partial dir with no .git; remove it
+  // so `git clone` below doesn't fail on a non-empty destination.
+  try {
+    if (fs.existsSync(workdir)) {
+      say('Cleaning up an incomplete previous checkout…\r\n');
+      fs.rmSync(workdir, { recursive: true, force: true });
+    }
+  } catch (e) {
+    console.warn(`[claude-pty] failed to clean partial workdir: ${e && e.message}`);
   }
 
   const remoteUrl = token
